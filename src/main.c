@@ -102,7 +102,7 @@ static const char *const DNAME[3] = {"EASY", "NORM", "HARD"};
 static u8 perk, pend, pa, pb;                    // perk = owned bit mask, pend = ticks left to choose, pa/pb = the two offered
 static u8 fcost = 8, hc0 = 3, hc1 = 3, tm = 31, dm = 31, qmax0 = 5;   // flood cost, food per ant (you / red), mana trickle mask, popularity-drain mask, your queen HP cap
 static char pbuf[20];
-static const char PN[] = "FLOOD 4FASTEGGMANA UPCALM   QUEENUPSLOWRED";
+static const char PN[] = "FLOOD 4FASTEGGANA UP CALM   QUEENUPSLOWRED";
 static u8 tut, tev, tutor, lcx, lcy;             // tutorial: lesson (0 = off), events done, from-title flag, last cursor
 static u8 wins[3]; static u16 best[3], hiscore[3];           // records (SRAM), best = seconds, 0 = none
 
@@ -183,7 +183,7 @@ static void say(const char *m) { msg = m; msgt = 12; }
 static void hud(void) {
   u8 i, x; u32 s = (u32)gt * 2 / 15;
   ov_fill(1, 1, 18, 19);
-  ps(0, 18, "MP", 2); pn(3, 18, mana, 1);
+  ps(0, 18, "AP", 2); pn(3, 18, mana, 1);
   for (i = 0; i < 10; i++) BGMAP1[18 * 32 + 6 + i] = (u16)((mana > 2 * i ? BAR_F : BAR_E) | (1 << 12));
   ps(18, 18, "F", 2); pn(19, 18, stock[0], 1);
   ps(23, 18, "T", 2); pn(24, 18, (u8)(s / 60 > 99 ? 99 : s / 60), 1); pc(26, 18, ':', 1); pz(27, 18, (u8)(s % 60), 1);
@@ -201,9 +201,9 @@ static void hud(void) {
 // ---------- help card ----------
 static const char HELP[] =
   "#CONTROLS\n"
-  "A B    RAISE / LOWER LAND 1MP\n"
-  "L      FLOOD 3X3 (8 MP)\n"
-  "SEL A  EMBEZZLE 2 FOOD > 4 MP\n"
+  "A B    RAISE / LOWER LAND 1AP\n"
+  "L      FLOOD 3X3 (8 AP)\n"
+  "SEL A  ANTBEZZLE 2 FOOD > 4 AP\n"
   "R      FAST FORWARD\n"
   "START  PAUSE / RESUME\n"
   "\n"
@@ -213,8 +213,8 @@ static const char HELP[] =
   "\n"
   "#HOW\n"
   "ANTS CANT CLIMB OR SWIM\n"
-  "MANA: TRICKLE, FOOD HOME,\n"
-  "ELECTION AID (P 50 UP)\n"
+  "ANA: TRICKLE, FOOD HOME,\n"
+  "ANTLECTION AID (P 50 UP)\n"
   "P UNDER 25 = COUP\n"
   "NO COUP: PERK A OR B\n"
   "FLOODS AND QUAKES STRIKE\n";
@@ -486,8 +486,8 @@ static void disaster(void) {                     // hits both colonies alike, an
 }
 static void election(void) {
   u8 ok = appr >= 25;                            // anything but a coup earns a perk offer
-  if (appr >= 50) { mana = (mana + 8 > MANA_MAX) ? MANA_MAX : mana + 8; sfx_mana(); say("ELECTION WON! AID"); }
-  else if (appr >= 25) { sfx_deny(); say("ELECTION: NO BONUS"); }
+  if (appr >= 50) { mana = (mana + 8 > MANA_MAX) ? MANA_MAX : mana + 8; sfx_mana(); say("ANTLECTION WON! AID"); }
+  else if (appr >= 25) { sfx_deny(); say("ANTLECTION: NO BONUS"); }
   else { stock[0] >>= 1; mana = 0; appr = 40; sfx_qdead(); say("COUP! COFFERS LOOTED"); }
   if (ok && !tut && !sandbox) offer();
 }
@@ -621,21 +621,21 @@ static void newgame(void) {
 
 static void raise_land(void) {
   if (mana && hgt[cy][cx] < 3 && !is_nest(cx, cy)) { hgt[cy][cx]++; mana--; draw_cell(cx, cy); sfx_raise(); tev |= 2; return; }
-  sfx_deny(); say(is_nest(cx, cy) ? "NEST CANT BE EDITED" : hgt[cy][cx] >= 3 ? "ALREADY HIGHEST" : "NEED MANA");
+  sfx_deny(); say(is_nest(cx, cy) ? "NEST CANT BE EDITED" : hgt[cy][cx] >= 3 ? "ALREADY HIGHEST" : "NEED ANA");
 }
 static void lower_land(void) {
   if (mana && hgt[cy][cx] > 0 && !is_nest(cx, cy)) { hgt[cy][cx]--; mana--; draw_cell(cx, cy); sfx_lower(); tev |= 4; return; }
-  sfx_deny(); say(is_nest(cx, cy) ? "NEST CANT BE EDITED" : hgt[cy][cx] == 0 ? "ALREADY WATER" : "NEED MANA");
+  sfx_deny(); say(is_nest(cx, cy) ? "NEST CANT BE EDITED" : hgt[cy][cx] == 0 ? "ALREADY WATER" : "NEED ANA");
 }
 static void offering(void) {
   if (stock[0] < OFFER_FOOD) { sfx_deny(); say("NEED 2 FOOD"); return; }
-  if (mana >= MANA_MAX) { sfx_deny(); say("MANA IS FULL"); return; }
+  if (mana >= MANA_MAX) { sfx_deny(); say("ANA IS FULL"); return; }
   stock[0] -= OFFER_FOOD; mana = (mana + OFFER_MANA > MANA_MAX) ? MANA_MAX : mana + OFFER_MANA;
-  apr(-5); sfx_mana(); say("EMBEZZLED! P DOWN");
+  apr(-5); sfx_mana(); say("ANTBEZZLED! P DOWN");
 }
 static void flood(void) {
   s8 x, y;
-  if (mana < fcost) { sfx_deny(); say(fcost == 4 ? "FLOOD NEEDS 4 MANA" : "FLOOD NEEDS 8 MANA"); return; }
+  if (mana < fcost) { sfx_deny(); say(fcost == 4 ? "FLOOD NEEDS 4 ANA" : "FLOOD NEEDS 8 ANA"); return; }
   mana -= fcost; sfx_flood(); tev |= 8;
   for (y = (s8)cy - 1; y <= (s8)cy + 1; y++) for (x = (s8)cx - 1; x <= (s8)cx + 1; x++)
     if (x >= 0 && y >= 0 && x < W && y < H && hgt[y][x] && !is_nest(x, y)) { hgt[y][x]--; draw_cell(x, y); }
@@ -990,7 +990,7 @@ static void eye(void) {                              // time stands still while 
 static const u8 TEV[TN] = {0, 1, 2, 4, 0, 8, 16, 0, 0, 0};          // event bit that completes each lesson (0 = read only)
 static const char *const THINT[TN] = {0, "TRY: MOVE THE CURSOR", "TRY: PRESS A TO RAISE", "TRY: PRESS B TO LOWER", 0,
   "PRESS L TO FLOOD", "SEL+START: ANT EYE", 0, 0, 0};
-static const char *const TTITLE[TN] = {"WELCOME RULER!", "THE CURSOR", "RAISE LAND", "LOWER LAND", "MANA", "FLOOD", "ANT EYE", "THE COLONY", "POPULARITY", "READY TO RULE!"};
+static const char *const TTITLE[TN] = {"WELCOME ANTPEROR!", "THE CURSOR", "RAISE LAND", "LOWER LAND", "ANA", "FLOOD", "ANT EYE", "THE COLONY", "POPULARITY", "READY TO RULE!"};
 // Lesson text: 7 lines of up to 28 letters (the font has A-Z 0-9 : ! / only). *asterisks* switch gold highlighting on and off.
 static const char *const TBODY[TN] = {
   "YOU RULE THE *BLACK ANTS* OF\n"
@@ -1008,27 +1008,27 @@ static const char *const TBODY[TN] = {
   "REPEAT: MAP SCROLLS AT EDGE\n"
   "*NOW TRY IT!*",
   "*A* RAISES THE CURSOR TILE\n"
-  "BY ONE LEVEL: COST *1 MANA*\n"
+  "BY ONE LEVEL: COST *1 ANA*\n"
   "\n"
   "ANTS CANT CLIMB MORE THAN\n"
   "*1 STEP*: BUILD RAMPS AND\n"
   "STAIRS! NESTS CANT BE EDITED",
   "*B* LOWERS THE TILE BY ONE\n"
-  "LEVEL: COST *1 MANA*\n"
+  "LEVEL: COST *1 ANA*\n"
   "\n"
   "LEVEL 0 IS *WATER*: ANTS CANT\n"
   "WALK OR LIVE THERE: DIG\n"
   "MOATS TO STOP RED ANTS AND\n"
   "RAISE LAND TO BRIDGE GAPS",
-  "*MP* IS YOUR MANA: EVERY EDIT\n"
-  "COSTS MP: EARN MORE FROM:\n"
+  "*AP* IS YOUR ANA: EVERY EDIT\n"
+  "COSTS AP: EARN MORE FROM:\n"
   "*A SLOW TRICKLE*\n"
   "*FOOD CARRIED HOME*\n"
-  "*ELECTION AID*\n"
+  "*ANTLECTION AID*\n"
   "\n"
-  "*SEL A* EMBEZZLES: P DROPS 5",
+  "*SEL A* ANTBEZZLES: P DROPS 5",
   "*L* LOWERS A 3X3 AREA BY ONE\n"
-  "LEVEL: COST *8 MANA*\n"
+  "LEVEL: COST *8 ANA*\n"
   "\n"
   "ANTS ON TILES THAT HIT LEVEL\n"
   "0 *DROWN*: GREAT AGAINST RED\n"
@@ -1052,9 +1052,9 @@ static const char *const TBODY[TN] = {
   "NEW ANTS RAISE IT: DEAD ANTS\n"
   "AND HUNGER CUT IT\n"
   "\n"
-  "ELECTION EVERY MINUTE:\n"
-  "*P 50 UP*: 8 MP AID\n"
-  "*P UNDER 25*: COUP! MP LOST",
+  "ANTLECTION EVERY MINUTE:\n"
+  "*P 50 UP*: 8 AP AID\n"
+  "*P UNDER 25*: COUP! AP LOST",
   "KILL THE *RED QUEEN* TO WIN:\n"
   "LOSE YOURS AND ITS OVER\n"
   "\n"
@@ -1232,19 +1232,19 @@ static void tut_art(u8 i) {
       brect(x, y, 30, 6 * (k + 1), c); brect(x, y, 30, 1, C_WHITE);
       bctext(x + 15, 33, LV[k], 1, C_CREAM);
     }
-    btext(192, 20, "1 LEVEL", 1, C_CREAM); btext(192, 27, "1 MP", 1, C_GOLD);
+    btext(192, 20, "1 LEVEL", 1, C_CREAM); btext(192, 27, "1 AP", 1, C_GOLD);
     break;
   case 3:
     bground(26, C_GRASS);
     break;
   case 4:
-    btext(8, 5, "MP", 2, C_GOLD);
+    btext(8, 5, "AP", 2, C_GOLD);
     bdisc(70, 26, 4, C_WATER); btri(67, 17, 7, 6, C_WATER); bctext(70, 33, "TRICKLE", 1, C_CREAM);
     bdisc(112, 25, 5, C_LEAF); bdisc(111, 24, 3, C_GRASS); brect(111, 18, 2, 3, C_HILL); bctext(112, 33, "FOOD", 1, C_CREAM);
-    brect(154, 25, 15, 8, C_GRAY); brect(157, 19, 9, 7, C_CREAM); brect(157, 25, 9, 1, C_NAVY); bctext(162, 33, "ELECTION", 1, C_CREAM);
+    brect(154, 25, 15, 8, C_GRAY); brect(157, 19, 9, 7, C_CREAM); brect(157, 25, 9, 1, C_NAVY); bctext(162, 33, "ANTLECTION", 1, C_CREAM);
     break;
   case 5:
-    bctext(24, 33, "8 MP", 1, C_GOLD);
+    bctext(24, 33, "8 AP", 1, C_GOLD);
     for (y = 0; y < 3; y++) for (x = 0; x < 3; x++) { brect(58 + x * 12, 2 + y * 12, 11, 11, C_GRASS); brect(138 + x * 12, 2 + y * 12, 11, 11, C_WATER); }
     break;
   case 6:
@@ -1443,7 +1443,7 @@ static void tut_anim(u8 i, u16 fr) {
     brect(16, 14, 48, 10, (coup && ((f / 5) & 1)) ? C_PINK : C_RED); brect(64, 14, 48, 10, C_GRAY); brect(112, 14, 96, 10, C_GRASS);
     if (aid) brect(112 + (f * 2) % 92, 14, 4, 10, C_CREAM);
     bctext(40 + (coup ? ((f / 2) & 1) * 2 - 1 : 0), 17, coup ? "COUP!" : "COUP", 1, C_WHITE);
-    bctext(88, 17, "NOTHING", 1, C_CREAM); bctext(160, 17, "8 MP AID", 1, C_WHITE);
+    bctext(88, 17, "NOTHING", 1, C_CREAM); bctext(160, 17, "8 AP AID", 1, C_WHITE);
     if (aid) for (k = 0; k < 3; k++) { u = (f / 2 + k * 5) % 14; bplus(130 + k * 30, 12 - u, C_GRASS); }
     if (coup) for (k = 0; k < 3; k++) btext(30 + k * 18 + (((f + k) / 3) & 1), 5 + (((f + k * 2) / 4) & 1), "!", 1, C_RED);
     bdisc(xm, 5, 4, C_GOLD); btext(xm - 1, 3, "P", 1, C_NAVY); bdown(xm - 3, 9, 7, 4, C_GOLD);
@@ -1534,11 +1534,11 @@ static void pm_draw(void) {                            // everything except the 
     BGMAP1[32 + x] = (u16)((BIGF + g * 2) | (9 << 12)); BGMAP1[64 + x] = (u16)((BIGF + g * 2 + 1) | (9 << 12));
   }
   pm_rule(3); pm_rule(10); pm_rule(17);
-  ps(1, 4, "MANA", 9);     pn(6, 4, mana, 3);          ps(16, 4, "FOOD", 9);   pn(23, 4, stock[0], 3);
+  ps(1, 4, "ANA", 9);     pn(6, 4, mana, 3);          ps(16, 4, "FOOD", 9);   pn(23, 4, stock[0], 3);
   ps(1, 5, "ANTS", 9);     pn(6, 5, ncnt[0], 3);       ps(16, 5, "FOES", 9);   pn(23, 5, ncnt[1], 3);
   ps(1, 6, "POPULAR", 9);  pn(9, 6, appr, 3);          ps(16, 6, "QUEENS", 9);
   pc(23, 6, (char)('0' + qhp[0]), 3); pc(24, 6, '/', 3); pc(25, 6, (char)('0' + qhp[1]), 3);
-  ps(1, 7, "ELECTION", 9); pm_time(10, 7, (u32)(450 - etk) * 2 / 15);   ps(16, 7, "TIME", 9); pm_time(23, 7, (u32)gt * 2 / 15);
+  ps(1, 7, "ANTLECT", 9); pm_time(10, 7, (u32)(450 - etk) * 2 / 15);   ps(16, 7, "TIME", 9); pm_time(23, 7, (u32)gt * 2 / 15);
   ps(1, 8, "PERKS", 9);
   for (i = 0; i < 6; i++) if ((perk >> i) & 1) {
     for (n = 0; n < 7; n++) pc((u8)(7 + (c % 3) * 8 + n), (u8)(8 + c / 3), PN[i * 7 + n], 3);
@@ -1597,7 +1597,7 @@ static void pause_menu(void) {
 }
 static void tut_enter(void) {                        // show lessons until one needs the player to do something
   while (tut) {
-    if (tut > TN) { tut = 0; say("GOOD LUCK RULER!"); sfx_mana(); break; }
+    if (tut > TN) { tut = 0; say("GOOD LUCK ANTPEROR!"); sfx_mana(); break; }
     tut_card(tut - 1);
     if (!tut) { say("TUTORIAL SKIPPED"); break; }
     tev = 0; lcx = cx; lcy = cy;
