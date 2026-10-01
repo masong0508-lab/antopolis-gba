@@ -228,9 +228,9 @@ static void help_show(void) {
     if (*s) s++;
     y++;
   }
-  ps(0, 19, "START: BACK", 2);
+  ps(0, 19, "START OR B: BACK", 2);
   while (joy()) vsync();
-  while (!(joy() & J_START)) vsync();
+  while (!(joy() & (J_START | J_B))) vsync();
   while (joy()) vsync();
   ov_clear();
 }
@@ -276,14 +276,14 @@ static const u8 ARPO[4]  = {0, 1, 2, 1};
 static const u8 DPOLY[8] = {0x75,0x21,0x43,0x21,0x75,0x21,0x43,0x21};
 static const u8 DENV[8]  = {0xA1,0x41,0x81,0x41,0xA1,0x41,0x81,0x41};
 static const u8 WAVE[16] = {0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,0xFE,0xDC,0xBA,0x98,0x76,0x54,0x32,0x10};
-static u8 mus_on, mt, ms;
+static u8 mus_on, mt, ms, nomus;                 // nomus = music switched off from the pause menu
 // GBA wave RAM: with NR30 = 0 bank 0 plays and writes go to bank 1; then select bank 1 (bit 6) + DAC on (bit 7) = 0xC0
 static void music_start(void) {
   u8 i;
   NR30 = 0x00;
   for (i = 0; i < 8; i++) WAVE16[i] = (u16)(WAVE[2 * i] | (WAVE[2 * i + 1] << 8));
   NR30 = WAVE_ON;
-  mt = 7; ms = 0; mus_on = 1;
+  mt = 7; ms = 0; mus_on = !nomus;
 }
 static void music_stop(void) { mus_on = 0; NR12 = 0; NR22 = 0; NR42 = 0; NR30 = 0; }
 static void music_update(void) {                 // once per frame, called from vsync()
@@ -333,7 +333,7 @@ static void tm_start(void) {
   for (i = 0; i < 8; i++) WAVE16[i] = (u16)(TWAVE[2 * i] | (TWAVE[2 * i + 1] << 8));
   NR30 = WAVE_ON;
   NR51 = 0xD6;                                     // ch1 left, ch2 right, ch3 both, ch4 left (moves per step)
-  tmf = 21; tme = 127; tvt = 255; tvp = 0; tpan = 0; tmu = 1;      // the first update plays step 0
+  tmf = 21; tme = 127; tvt = 255; tvp = 0; tpan = 0; tmu = !nomus;      // the first update plays step 0
 }
 static void tm_stop(void) {
   tmu = 0;
@@ -611,7 +611,7 @@ static void newgame(void) {
   camx = 0; camy = H - VH; scx = 0; scy = (s16)camy * 8;
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) draw_cell(x, y);
   ov_clear(); hud();
-  say(sandbox ? "SANDBOX: NO LIMITS" : "A/B LAND  START HELP");
+  say(sandbox ? "SANDBOX: NO LIMITS" : "A/B LAND  START MENU");
   BG0HOFS = (u16)scx; BG0VOFS = (u16)scy;
   hide_all(); draw_sprites(); oam_flush();
   DISPCNT = 0x1340;
@@ -1058,7 +1058,7 @@ static const char *const TBODY[TN] = {
   "KILL THE *RED QUEEN* TO WIN:\n"
   "LOSE YOURS AND ITS OVER\n"
   "\n"
-  "*START* PAUSE AND HELP\n"
+  "*START* PAUSE MENU\n"
   "*R* FAST FORWARD\n"
   "\n"
   "*LONG LIVE THE QUEEN!*",
@@ -1293,6 +1293,7 @@ static void tut_anim(u8 i, u16 fr) {                   // sprites + small repain
     break;
   }
 }
+static u8 tview;                                       // 1 while the pause menu is browsing the lesson cards (labels change)
 static void tut_draw(u8 i) {                           // build a whole card (static parts); tut_anim then animates it
   const char *s; u8 x, y, g, n, len = 0;
   hide_all();
@@ -1315,8 +1316,8 @@ static void tut_draw(u8 i) {                           // build a whole card (st
   for (; *s; s++) {
     if (*s == '\n') { y++; x = 1; } else if (*s == '*') g ^= 1; else pc(x++, y, *s, g ? 9 : 3);
   }
-  ps(1, 18, "START", 9); ps(7, 18, i == TN - 1 ? "PLAY" : "NEXT", 3);
-  if (i < TN - 1) { ps(14, 18, "B", 9); ps(16, 18, "SKIP", 3); }
+  ps(1, 18, "START", 9); ps(7, 18, i == TN - 1 ? (tview ? "BACK" : "PLAY") : "NEXT", 3);
+  if (i < TN - 1 || tview) { ps(14, 18, "B", 9); ps(16, 18, tview ? "MENU" : "SKIP", 3); }
 }
 static void tut_card(u8 i) {
   u16 fr = 0;
@@ -1328,11 +1329,90 @@ static void tut_card(u8 i) {
     tut_anim(i, fr); oam_flush();
     BGMAP1[18 * 32 + 28] = (u16)(((fr & 32) ? 0 : ORN + 5) | (9 << 12));          // blinking "next" arrow
     if (joy() & J_START) break;
-    if (i < TN - 1 && (joy() & J_B)) { tut = 0; break; }
+    if ((i < TN - 1 || tview) && (joy() & J_B)) { tut = 0; break; }
   }
   while (joy()) vsync();
   hide_all(); vsync(); oam_flush();
   ov_clear(); hud();
+}
+// ---------- PAUSE MENU (START): live colony status + a menu (UP DOWN, A; START or B resumes) ----------
+#define PM_N 6
+static const char *const PITEM[PM_N] = {"RESUME", "CONTROLS", "HOW TO PLAY", "MUSIC", "FAST FORWARD", "QUIT TO TITLE"};
+static const char *const PHINT[PM_N] = {"BACK TO THE GAME", "BUTTONS AND RULES", "REPLAY THE LESSON CARDS", "MUSIC ON OR OFF", "SPEED UP THE GAME", "GIVE UP AND LEAVE"};
+static void pm_rule(u8 y) {
+  u8 x; for (x = 1; x < 29; x++) BGMAP1[y * 32 + x] = (u16)(ORN | (9 << 12));
+  BGMAP1[y * 32 + 14] = (u16)((ORN + 1) | (9 << 12)); BGMAP1[y * 32 + 15] = (u16)((ORN + 2) | (9 << 12));
+}
+static void pm_time(u8 x, u8 y, u32 sec) { pn(x, y, (u8)(sec / 60), 3); pc(x + 2, y, ':', 3); pz(x + 3, y, (u8)(sec % 60), 3); }
+static void pm_draw(void) {                            // everything except the menu rows
+  u8 i, n, x, c = 0, g;
+  ov_fill(1, 3, 0, 19);
+  ps(1, 0, "THE COLONY WAITS", 10); ps(sandbox ? 22 : 24, 0, sandbox ? "SANDBOX" : DNAME[diff], 10);
+  for (n = 0; n < 6; n++) {
+    g = gi("PAUSED"[n]); x = (u8)(12 + n);
+    BGMAP1[32 + x] = (u16)((BIGF + g * 2) | (9 << 12)); BGMAP1[64 + x] = (u16)((BIGF + g * 2 + 1) | (9 << 12));
+  }
+  pm_rule(3); pm_rule(10); pm_rule(17);
+  ps(1, 4, "MANA", 9);     pn(6, 4, mana, 3);          ps(16, 4, "FOOD", 9);   pn(23, 4, stock[0], 3);
+  ps(1, 5, "ANTS", 9);     pn(6, 5, ncnt[0], 3);       ps(16, 5, "FOES", 9);   pn(23, 5, ncnt[1], 3);
+  ps(1, 6, "POPULAR", 9);  pn(9, 6, appr, 3);          ps(16, 6, "QUEENS", 9);
+  pc(23, 6, (char)('0' + qhp[0]), 3); pc(24, 6, '/', 3); pc(25, 6, (char)('0' + qhp[1]), 3);
+  ps(1, 7, "ELECTION", 9); pm_time(10, 7, (u32)(450 - etk) * 2 / 15);   ps(16, 7, "TIME", 9); pm_time(23, 7, (u32)gt * 2 / 15);
+  ps(1, 8, "PERKS", 9);
+  for (i = 0; i < 6; i++) if ((perk >> i) & 1) {
+    for (n = 0; n < 7; n++) pc((u8)(7 + (c % 3) * 8 + n), (u8)(8 + c / 3), PN[i * 7 + n], 3);
+    c++;
+  }
+  if (!c) ps(7, 8, "NONE YET", 10);
+  ps(1, 19, "UP DOWN  A OK  START PLAY", 10);
+}
+static void pm_menu(u8 sel, u8 conf) {
+  u8 i, x, y;
+  for (i = 0; i < PM_N; i++) {
+    y = (u8)(11 + i);
+    for (x = 1; x < 29; x++) BGMAP1[y * 32 + x] = (u16)(1 | (3 << 12));
+    if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
+    ps(3, y, (conf && i == sel) ? "SURE? A YES   B NO" : PITEM[i], i == sel ? 9 : 3);
+    if (i == 3) ps(23, y, nomus ? "OFF" : "ON", 9);
+    if (i == 4) ps(23, y, ff ? "ON" : "OFF", 9);
+  }
+  for (x = 1; x < 29; x++) BGMAP1[18 * 32 + x] = (u16)(1 | (3 << 12));
+  ps(1, 18, PHINT[sel], 3);
+}
+static void pause_menu(void) {
+  u8 sel = 0, conf = 0, run = 1, act, i; u16 k, p, prev = 0;
+  hide_all(); vsync(); oam_flush();
+  while (joy()) vsync();
+  pm_draw(); pm_menu(sel, conf);
+  while (run) {
+    vsync(); k = joy(); p = k & ~prev; prev = k;
+    if (!p) continue;
+    if (conf) {                                        // quit confirmation: A = yes, anything else cancels
+      if (p & J_A) { over = 3; tut = 0; break; }
+      conf = 0; pm_menu(sel, conf); continue;
+    }
+    if (p & (J_START | J_B)) break;
+    if (p & J_UP)   { sel = sel ? sel - 1 : PM_N - 1; sfx_food(); }
+    if (p & J_DOWN) { sel = sel == PM_N - 1 ? 0 : sel + 1; sfx_food(); }
+    act = (u8)((p & J_A) || ((p & (J_LEFT | J_RIGHT)) && (sel == 3 || sel == 4)));
+    if (act) {
+      switch (sel) {
+      case 0: run = 0; break;
+      case 1: help_show(); pm_draw(); prev = joy(); break;
+      case 2: {
+        u8 sv = tut; tview = 1; tut = 1;               // browse the lesson cards without changing the game
+        for (i = 0; i < TN && tut; i++) tut_card(i);
+        tut = sv; tview = 0; pm_draw(); prev = joy(); break;
+      }
+      case 3: nomus ^= 1; if (nomus) music_stop(); else music_start(); sfx_mana(); break;
+      case 4: ff ^= 1; sfx_mana(); break;
+      default: conf = 1; sfx_deny(); break;
+      }
+    }
+    pm_menu(sel, conf);
+  }
+  while (joy()) vsync();
+  ov_clear();
 }
 static void tut_enter(void) {                        // show lessons until one needs the player to do something
   while (tut) {
@@ -1382,7 +1462,7 @@ static void play(void) {
     BG0HOFS = (u16)scx; BG0VOFS = (u16)scy; oam_flush();
     k = joy(); p = k & ~prev; prev = k;
     if ((p & J_START) && (k & J_SEL)) { selused = 1; eye(); prev = joy(); continue; }   // SELECT+START: ant eye
-    if (p & J_START) { help_show(); hud(); prev = joy(); continue; }
+    if (p & J_START) { pause_menu(); hud(); prev = joy(); continue; }
     dirs = (u8)(k & 15);
     if (dirs != last) { rep = 0; last = dirs; }
     if (dirs) {
@@ -1428,6 +1508,7 @@ static void play(void) {
     draw_sprites();
   }
   music_stop();
+  if (over == 3) { fade(0, 16); return; }              // quit from the pause menu: straight back to the title
   end_card();
   if (over == 1) jingle(WIN_TUNE, 6); else jingle(LOSE_TUNE, 4);
   vsync(); oam_flush();
