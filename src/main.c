@@ -916,8 +916,9 @@ static void eye_step(u8 *vx, u8 *vy, s8 dir) {
 }
 static s16 ease(s16 v, s16 t, s16 s) { s16 d = t - v; return d > s ? v + s : d < -s ? v - s : t; }
 static void eye(void) {                              // time stands still while you look through a black ant's eyes
-  u8 i, x, y, vi = MAXA, best = 255, d, rep = 0, vx = 0, vy = 0, vcol = 0, dirs, last = 0, on = 0, cur = 0, act = 0, jump, chg, vc;
+  u8 i, x, y, vi = MAXA, best = 255, d, rep = 0, vx = 0, vy = 0, vcol = 0, dirs, rt = 0, on = 0, cur = 0, act = 0, jump, chg, vc;
   s16 fa = vang, fx, fy, tx, ty, da;
+  s8 td, wd, tlast = 0, wlast = 0;
   u16 k, p, prev;
   tev |= 16;
   for (i = 0; i < MAXA; i++) if (vok(i)) { d = (u8)(dist(ant[i].x, cx) + dist(ant[i].y, cy)); if (d < best) { best = d; vi = i; } }
@@ -952,12 +953,19 @@ static void eye(void) {                              // time stands still while 
       jump = chg = 1;
     }
     dirs = (u8)((k & 15) | ((k & J_L) ? J_LEFT : 0) | ((k & J_R) ? J_RIGHT : 0));   // L / R turn too (as the tutorial says)
-    if (dirs != last) { rep = 0; last = dirs; }
-    if (dirs) {
-      if (dirs & (J_LEFT | J_RIGHT)) {                // turning: every 2 frames once held, matches the 4 units / frame ease
-        if (rep == 0 || (rep >= 8 && !(rep & 1))) { vang = (u8)(vang + ((dirs & J_RIGHT) ? TURN : 256 - TURN)); chg = 1; }
-      } else if (rep == 0 || (rep >= 8 && !(rep & 3))) {   // walking: one cell per 4 frames = the glide time
-        x = vx; y = vy; eye_step(&vx, &vy, (dirs & J_UP) ? 1 : -1); if (vx != x || vy != y) chg = 1;
+    td = (dirs & J_RIGHT) ? 1 : (dirs & J_LEFT) ? -1 : 0;   // turning and walking are independent: walk while you turn
+    wd = (dirs & J_UP) ? 1 : (dirs & J_DOWN) ? -1 : 0;
+    if (td != tlast) { rt = 0; tlast = td; }
+    if (wd != wlast) { rep = 0; wlast = wd; }
+    if (td) {
+      if (rt == 0) { vang = (u8)(vang + td * TURN); chg = 1; }          // a tap = one 11.25 degree click
+      else if (rt >= 6) { vang = (u8)(vang + td * 4); chg = 1; }        // held = a smooth sweep, every frame (floor eases 4 / frame)
+      if (rt < 250) rt++;
+    } else if (vang & 7) { vang = (u8)((vang + 4) & 0xF8); chg = 1; }   // let go: settle on the 8-unit grid so walking stays square
+    if (wd) {
+      if (rep == 0 || (rep >= 4 && !(rep & 3))) {                      // held = seamless walk: the next step starts as the glide ends
+        x = vx; y = vy; eye_step(&vx, &vy, wd);
+        if (vx != x || vy != y) chg = 1; else if (!(rep & 15)) sfx_deny();   // bumped into something: a thud, not silence
       }
       if (rep < 250) rep++;
     }
@@ -967,7 +975,7 @@ static void eye(void) {                              // time stands still while 
     da = (s16)(((vang - fa + 128) & 255) - 128);      // ease the floor toward the wanted pose
     fa = (s16)((fa + (da > 4 ? 4 : da < -4 ? -4 : da)) & 255);
     fx = ease(fx, tx, 64); fy = ease(fy, ty, 64);
-    i = (u8)(vcol >= VX && fa == vang && fx == tx && fy == ty && act >= 5);   // camera settled and overlay complete
+    i = (u8)(vcol >= VX && fa == vang && fx == tx && fy == ty && act >= 3);   // camera settled and overlay complete
     if (i != on) { ov_show(i); on = i; }
     cur ^= 1;
     m7_build(m7t[cur], (u8)fa, fx, fy);               // next frame's table (the other buffer is being read by DMA)
