@@ -42,6 +42,8 @@ typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s
 #define NR43 IO8(0x7C)
 #define NR44 IO8(0x7D)
 #define NR50 IO8(0x80)
+#define NR51 IO8(0x81)          // stereo routing: bits 0-3 right, 4-7 left (ch1..ch4), same layout as the GB
+#define WAVE_ON 0xC0            // NR30: DAC on + play wave bank 1 (bit 6); writes always go to the bank that is NOT playing
 #define WAVE16 ((volatile u16 *)0x04000090)
 #define TILE32  ((volatile u32 *)0x06000000)
 #define BGMAP0  ((volatile u16 *)0x0600E000)
@@ -114,8 +116,8 @@ static u16 joy(void) {
   if (k & 256) r |= J_R;   if (k & 512) r |= J_L;
   return r;
 }
-static void music_update(void);
-static void vsync(void) { while (VCOUNT >= 160); while (VCOUNT < 160); music_update(); }
+static void music_update(void), tm_update(void);
+static void vsync(void) { while (VCOUNT >= 160); while (VCOUNT < 160); music_update(); tm_update(); }
 
 // ---------- sprites (shadow OAM, copied in VBlank) ----------
 static u16 oam[128 * 4];
@@ -275,12 +277,12 @@ static const u8 DPOLY[8] = {0x75,0x21,0x43,0x21,0x75,0x21,0x43,0x21};
 static const u8 DENV[8]  = {0xA1,0x41,0x81,0x41,0xA1,0x41,0x81,0x41};
 static const u8 WAVE[16] = {0x01,0x23,0x45,0x67,0x89,0xAB,0xCD,0xEF,0xFE,0xDC,0xBA,0x98,0x76,0x54,0x32,0x10};
 static u8 mus_on, mt, ms;
-// GBA wave RAM: with NR30 bit 5 = 0 bank 0 plays and writes go to bank 1; then select bank 1 (0x20) + DAC on (0x80)
+// GBA wave RAM: with NR30 = 0 bank 0 plays and writes go to bank 1; then select bank 1 (bit 6) + DAC on (bit 7) = 0xC0
 static void music_start(void) {
   u8 i;
   NR30 = 0x00;
   for (i = 0; i < 8; i++) WAVE16[i] = (u16)(WAVE[2 * i] | (WAVE[2 * i + 1] << 8));
-  NR30 = 0xA0;
+  NR30 = WAVE_ON;
   mt = 7; ms = 0; mus_on = 1;
 }
 static void music_stop(void) { mus_on = 0; NR12 = 0; NR22 = 0; NR42 = 0; NR30 = 0; }
@@ -294,12 +296,91 @@ static void music_update(void) {                 // once per frame, called from 
   if (!(ms & 1)) {
     e = (ms & 15) >> 1;
     f = NOTE[BROOT[b] + BPAT[e] + 12];
-    NR30 = 0xA0; NR31 = 0xC8; NR32 = 0x40; NR33 = (u8)f; NR34 = (u8)(0xC0 | (f >> 8));
+    NR30 = WAVE_ON; NR31 = 0xC8; NR32 = 0x40; NR33 = (u8)f; NR34 = (u8)(0xC0 | (f >> 8));
     n = LEAD[(b << 3) + e];
     if (n && !h2) { f = NOTE[n]; NR21 = 0x80; NR22 = 0x83; NR23 = (u8)f; NR24 = (u8)(0x80 | (f >> 8)); }
     if (!hn) { NR41 = 0; NR42 = DENV[e]; NR43 = DPOLY[e]; NR44 = 0x80; }
   }
   ms = (ms + 1) & 127;
+}
+
+// ---------- title theme (ported from the GBC build): E phrygian-dominant, ~81 BPM, 16 bars (8 + 8), in stereo ----------
+// ch1 = echo of the lead (hard left), ch2 = lead with vibrato (hard right), ch3 = plucked 3+3+2 drone bass (centre),
+// ch4 = tiny footsteps that ping-pong between the speakers. The title owns all four channels (no sfx play there).
+static const u8 TLEAD[128] = {       // one entry per eighth note: 0 = rest, 1 = hold, else semitones above C2 (like LEAD)
+   0, 0, 0, 0,  0, 0,35,36,
+  40, 1, 1,38, 36, 1,35,33,
+  32, 1,33, 1, 35,36,35,33,
+  32, 1, 1, 1,  0, 0,35,36,
+  41, 1,40,38, 40, 1,36,38,
+  36, 1, 1,35, 33, 1,32,33,
+  44, 1,41,40, 38,36,35, 1,
+  40, 1, 1, 1,  1, 1, 0, 0,
+  32,37,39,40,41,39, 1, 1, 1,40,39, 1,41, 1, 1,38,
+  34,38, 1, 1,32,34,37, 1,34,35, 1, 1, 0, 0, 0, 0,
+  40,37,38, 1, 1, 1,36, 1, 1, 1, 1,35,37,35, 1, 0,
+  33,37, 1,40, 1, 1,37,40, 1, 1,41,39,41, 1, 0, 0};
+static const u8 TROOT[8] = {16, 16, 17, 16, 21, 17, 23, 16};         // bass root per bar: E E F E A F B E
+static const u8 TBASS[8] = {0, 255, 255, 0, 255, 255, 7, 255};       // per eighth: root, root, fifth (255 = none)
+static const char *const TSTEP[2] = {"X.x.x.xxX.x.x.x.", "X.x.xx.xX.x.xxx."};   // footsteps per 16th, alternating bars
+static const s8 TVIB[8] = {0, 1, 2, 1, 0, -1, -2, -1};
+static const u8 TWAVE[16] = {0x8C,0xFF,0xED,0xCD,0xDD,0xCD,0xEF,0xFC,0x83,0x00,0x12,0x32,0x22,0x32,0x10,0x03};   // hollow, reedy
+static u8 tmu, tmf, tme, tvt, tvp, tpan;           // on, frame in eighth, eighth 0-127, lead age, vibrato phase, noise side
+static u16 tlf;                                    // lead base frequency (vibrato wobbles around it)
+static void tm_start(void) {
+  u8 i;
+  NR30 = 0x00;                                     // bank 0 plays: load the waveform into bank 1, then switch to it
+  for (i = 0; i < 8; i++) WAVE16[i] = (u16)(TWAVE[2 * i] | (TWAVE[2 * i + 1] << 8));
+  NR30 = WAVE_ON;
+  NR51 = 0xD6;                                     // ch1 left, ch2 right, ch3 both, ch4 left (moves per step)
+  tmf = 21; tme = 127; tvt = 255; tvp = 0; tpan = 0; tmu = 1;      // the first update plays step 0
+}
+static void tm_stop(void) {
+  tmu = 0;
+  NR12 = 0; NR22 = 0; NR42 = 0; NR30 = 0;
+  NR51 = 0xFF;                                     // back to centred sound for the game
+}
+static void tm_update(void) {                      // once per frame from vsync(): 22 frames per eighth note
+  u8 b, e, n, s; u16 f; s16 a;
+  if (!tmu) return;
+  if (++tmf >= 22) { tmf = 0; tme = (tme + 1) & 127; }
+  b = tme >> 3; e = tme & 7;
+  if (tmf == 0) {
+    if (TBASS[e] != 255) {                         // bass: short plucks on the wave channel
+      f = NOTE[TROOT[b & 7] + TBASS[e]];
+      NR30 = WAVE_ON; NR31 = 0x60; NR32 = 0x40; NR33 = (u8)f; NR34 = (u8)(0xC0 | (f >> 8));
+    }
+    n = TLEAD[tme];
+    if (n > 1) {                                   // lead: 25% pulse, slow decay
+      tlf = NOTE[n]; tvt = 0; tvp = 0;
+      NR21 = 0x40; NR22 = 0xA5; NR23 = (u8)tlf; NR24 = (u8)(0x80 | (tlf >> 8));
+    }
+    n = TLEAD[(tme - 1) & 127];
+    if (n > 1) {                                   // echo: last eighth's note again, thin and quiet, on the other side
+      f = NOTE[n];
+      NR10 = 0; NR11 = 0x00; NR12 = 0x55; NR13 = (u8)f; NR14 = (u8)(0x80 | (f >> 8));
+    }
+  }
+  if (tmf == 0 || tmf == 11) {                     // footsteps on the 16th grid
+    s = (u8)((e << 1) | (tmf ? 1 : 0));
+    n = (u8)TSTEP[b & 1][s];
+    if (n != '.') {
+      tpan ^= 1;
+      NR51 = (u8)(0x56 | (tpan ? 0x80 : 0x08));
+      NR41 = 0; NR42 = (n == 'X') ? 0x51 : 0x31; NR43 = tpan ? 0x29 : 0x39; NR44 = 0x80;
+    }
+  }
+  if (tvt != 255) {                                // vibrato on the lead once the note has settled
+    if (tvt < 100) tvt++;
+    tvp++;
+    if (tvt >= 8) {
+      a = (s16)((2048 - tlf) >> 6); if (a < 1) a = 1;
+      s = (u8)TVIB[(tvp >> 1) & 7];                // -2..2 (a * v / 2 without mul/div)
+      n = (s == 2 || s == 254) ? (u8)a : (s == 1 || s == 255) ? (u8)(a >> 1) : 0;
+      f = (s >= 128) ? (u16)(tlf - n) : (u16)(tlf + n);
+      NR23 = (u8)f; NR24 = (u8)(f >> 8);           // no trigger bit: pitch only
+    }
+  }
 }
 
 // ---------- fade (hardware brightness-down, plus master volume) ----------
@@ -595,7 +676,7 @@ static void title(void) {
   wx[0] = 14; wx[1] = 62; wx[2] = 112; wx[3] = 200; wx[4] = 150;
   hide_all(); oam_flush();
   DISPCNT = 0x1340;
-  music_start();
+  tm_start();                                      // the title has its own stereo theme
   fade(16, 0);
   for (;;) {
     vsync(); oam_flush();
@@ -613,7 +694,7 @@ static void title(void) {
     }
   }
   fade(0, 16);
-  music_stop();
+  tm_stop();
   hide_all(); oam_flush();
   ov_clear();
   while (joy()) vsync();
@@ -670,7 +751,7 @@ static const s16 SINT[256] = {                        // sin(a), 256 = 1.0, a in
   -98,-92,-86,-80,-74,-68,-62,-56,-50,-44,-38,-31,-25,-19,-13,-6,
 };
 static const u8 BBH[VN + 1] = {0, 40, 32, 21, 16, 12, 10, 9, 8, 7, 6, 5, 5, 4, 4, 4, 3, 3, 3, 3, 3, 2, 2, 2, 2};
-static const char *const COMPASS[8] = {"E ", "SE", "S ", "SW", "W ", "NW", "N ", "NE"};
+static const char *const COMPASS[8] = {"EAST", "SOUTH EAST", "SOUTH", "SOUTH WEST", "WEST", "NORTH WEST", "NORTH", "NORTH EAST"};
 static s8 OFF[7][VN + 1];
 static u8 occ[H][W], cls[VR * 8], vang;               // vang = facing, 0..255
 static u16 KK[160], KQ[160], blt[160];                // per scanline: ground distance (cells * 2048), K * 4/3, BLDALPHA fog
@@ -793,20 +874,47 @@ static void occ_set(u8 on) {
   for (i = 0; i < MAXA; i++) if (ant[i].alive) occ[ant[i].y][ant[i].x] = on ? ant[i].team + 1 : 0;
   for (i = 0; i < 2; i++) if (qhp[i]) occ[nesty[i]][nestx[i]] = on ? 3 + i : 0;
 }
-static void eye_status(u8 vx, u8 vy) {
-  ov_fill(1, 1, 18, 19);
-  ps(0, 18, "X", 2); pn(1, 18, vx, 1); ps(5, 18, "Y", 2); pn(6, 18, vy, 1);
-  ps(10, 18, "H", 2); pc(11, 18, '0' + hgt[vy][vx], 1); ps(14, 18, "FACING", 2); ps(21, 18, COMPASS[((vang + 16) >> 5) & 7], 1);
-  ps(0, 19, "A NEXT B GO HERE START BACK", 1);
+static u8 vok(u8 i) { return i < MAXA ? (ant[i].alive && ant[i].team == 0) : qhp[0] > 0; }
+static void eye_dir(s8 *dx, s8 *dy) {                // the grid direction the ant faces (the axis closest to its heading)
+  s16 fx = SINT[(vang + 64) & 255], fy = SINT[vang]; *dx = *dy = 0;
+  if ((fx < 0 ? -fx : fx) >= (fy < 0 ? -fy : fy)) *dx = fx < 0 ? -1 : 1; else *dy = fy < 0 ? -1 : 1;
+}
+static const char *eye_ahead(u8 vx, u8 vy) {         // what a step forward would run into, in at most 6 letters
+  s8 dx, dy, a, b, d; u8 o;
+  eye_dir(&dx, &dy);
+  a = (s8)vx + dx; b = (s8)vy + dy;
+  if (a < 0 || b < 0 || a >= W || b >= H) return "EDGE";
+  o = occ[b][a];
+  if (o) return o == 1 ? "FRIEND" : o == 2 ? "ENEMY" : o == 3 ? "HOME" : "R NEST";
+  if (hgt[b][a] == 0) return "WATER";
+  d = (s8)hgt[b][a] - (s8)hgt[vy][vx];
+  return (d < -1 || d > 1) ? "CLIFF" : "CLEAR";
+}
+// Status panel (rows 16-19, 30 columns). Gold = labels, white = values:
+//   FROM ANT 3/12            HEIGHT 1        which ant you ride (or YOUR NEST), and the ground level under it
+//   FACING SOUTH WEST   AHEAD CLEAR          compass heading, and what one step forward would meet
+//   PAD: WALK/TURN  A: NEXT ANT              the controls, always on screen
+//   B: CURSOR HERE  START: LEAVE
+static void eye_status(u8 vi, u8 vx, u8 vy) {
+  u8 i, n = 0, r = 0;
+  ov_fill(1, 1, 16, 19);
+  if (vi < MAXA) {
+    for (i = 0; i < MAXA; i++) if (vok(i)) { n++; if (i == vi) r = n; }
+    ps(0, 16, "FROM", 2); ps(5, 16, "ANT", 1); pn(9, 16, r, 1); pc(11, 16, '/', 1); pn(12, 16, n, 1);
+  } else { ps(0, 16, "FROM", 2); ps(5, 16, "YOUR NEST", 1); }
+  ps(20, 16, "HEIGHT", 2); pc(27, 16, (char)('0' + hgt[vy][vx]), 1);
+  ps(0, 17, "FACING", 2); ps(7, 17, COMPASS[((vang + 16) >> 5) & 7], 1);
+  ps(18, 17, "AHEAD", 2); ps(24, 17, eye_ahead(vx, vy), 1);
+  ps(0, 18, "PAD: WALK/TURN  A: NEXT ANT", 1);
+  ps(0, 19, "B: CURSOR HERE  START: LEAVE", 1);
 }
 static void eye_step(u8 *vx, u8 *vy, s8 dir) {
-  s16 fx = SINT[(vang + 64) & 255], fy = SINT[vang]; s8 dx = 0, dy = 0;
-  if ((fx < 0 ? -fx : fx) >= (fy < 0 ? -fy : fy)) dx = fx < 0 ? -1 : 1; else dy = fy < 0 ? -1 : 1;
+  s8 dx, dy;
+  eye_dir(&dx, &dy);
   dx *= dir; dy *= dir;
   if (can_go(*vx, *vy, dx, dy)) { *vx += dx; *vy += dy; }
 }
 static s16 ease(s16 v, s16 t, s16 s) { s16 d = t - v; return d > s ? v + s : d < -s ? v - s : t; }
-static u8 vok(u8 i) { return i < MAXA ? (ant[i].alive && ant[i].team == 0) : qhp[0] > 0; }
 static void eye(void) {                              // time stands still while you look through a black ant's eyes
   u8 i, x, y, vi = MAXA, best = 255, d, rep = 0, vx = 0, vy = 0, vcol = 0, dirs, last = 0, on = 0, cur = 0, act = 0, jump, chg, vc;
   s16 fa = vang, fx, fy, tx, ty, da;
@@ -824,7 +932,7 @@ static void eye(void) {                              // time stands still while 
   floor_map((volatile u16 *)0x0600D800);              // screenblock 27
   m7_sky(m7t[0]); m7_sky(m7t[1]);
   m7_build(m7t[0], vang, fx, fy);
-  ov_show(0); eye_status(vx, vy);
+  ov_show(0); eye_status(vi, vx, vy);
   while (joy()) vsync();
   vsync(); eye_arm(m7t[0]);
   IO16(0x0C) = 0x5B0B;                                // BG2: priority 3, charblock 2, screenblock 27, 256x256 affine
@@ -843,7 +951,7 @@ static void eye(void) {                              // time stands still while 
       if (vi < MAXA) { vx = ant[vi].x; vy = ant[vi].y; } else { vx = nestx[0]; vy = nesty[0]; }
       jump = chg = 1;
     }
-    dirs = (u8)(k & 15);
+    dirs = (u8)((k & 15) | ((k & J_L) ? J_LEFT : 0) | ((k & J_R) ? J_RIGHT : 0));   // L / R turn too (as the tutorial says)
     if (dirs != last) { rep = 0; last = dirs; }
     if (dirs) {
       if (dirs & (J_LEFT | J_RIGHT)) {                // turning: every 2 frames once held, matches the 4 units / frame ease
@@ -855,7 +963,7 @@ static void eye(void) {                              // time stands still while 
     }
     tx = (s16)(vx * 256 + 128); ty = (s16)(vy * 256 + 128);
     if (jump) { fx = tx; fy = ty; }                   // jumping to another ant: no glide
-    if (chg) { vcol = 0; act = 0; eye_status(vx, vy); } else if (act < 250) act++;
+    if (chg) { vcol = 0; act = 0; eye_status(vi, vx, vy); } else if (act < 250) act++;
     da = (s16)(((vang - fa + 128) & 255) - 128);      // ease the floor toward the wanted pose
     fa = (s16)((fa + (da > 4 ? 4 : da < -4 ? -4 : da)) & 255);
     fx = ease(fx, tx, 64); fy = ease(fy, ty, 64);
