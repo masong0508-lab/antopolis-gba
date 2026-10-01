@@ -6,7 +6,7 @@
 #include "art.h"
 #include "logo.h"
 
-typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16;
+typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 
 // ---------- hardware ----------
 #define IO16(a) (*(volatile u16 *)(0x04000000u + (a)))
@@ -619,43 +619,107 @@ static void title(void) {
   while (joy()) vsync();
 }
 
-// ---------- ANT EYE: first-person 3D view from a black ant (SELECT+START) ----------
-// BG1 rows 0-15 (30 x 16 tiles = 240x128 px) are redrawn from a ray march over the heightmap, one ray per tile column.
-// Pixel classes are written straight as 4bpp colour indices of palette bank 5: 1 sky, 2/3 checker land, 4 hill, 5 water, 6 red, 7 black.
+// ---------- ANT EYE: first-person view from a black ant (SELECT+START) ----------
+// Hybrid renderer (video mode 1):
+//  * BG2 (affine) is a real Mode-7 floor: the 32x32 world as 8bpp tiles. HBlank DMA0 rewrites PA/PC + the reference point for every
+//    scanline (perspective, any angle, pixel-smooth, nearly free for the CPU); HBlank DMA1 fades the far floor into the sky (BLDALPHA).
+//  * BG1 (rows 0-15 = 30 x 16 tiles = 240x128 px) keeps the old one-ray-per-tile-column marcher, but only for what a flat plane
+//    cannot show: terrain above / below eye level, ants and nests. Eye-level cells are written as colour 0 (transparent).
+//  * While the camera moves (turn = ease, step = glide) the overlay is hidden and the floor does the work; the overlay is redrawn
+//    for the final pose in the background and appears when the camera has settled.
+// Overlay colour classes (4bpp, palette bank 5): 0 clear, 2/3 checker land, 4 hill, 5 water, 6 red, 7 black. BG2 uses the same
+// palette entries (80 + class) plus 96-98 for texture detail.
 #define VX 30
 #define VR 16
-#define EV 64                                         // first view tile (480 tiles)
+#define EV 64                                         // first overlay tile (480 tiles)
 #define VN 24                                         // ray steps, half a cell each
-static const s8 SIN16[16] = {0, 24, 45, 59, 64, 59, 45, 24, 0, -24, -45, -59, -64, -59, -45, -24};
+#define HZ 64                                         // horizon scanline
+#define FY0 65                                        // first Mode-7 scanline (D ~ 21 cells); above it: sky
+#define FY1 128                                       // first scanline of the status rows
+#define TURN 8                                        // angle units: 256 = full turn, so 8 = 11.25 degrees
+#define SKYC (-0x4000000)                             // reference point far outside the 256x256 map = transparent
+#define DMAR(n, o) (*(volatile u32 *)(0x040000B0u + (n) * 12u + (o)))
+#define DMA_ON  0x80000000u
+#define DMA_HBL 0x20000000u
+#define DMA_REP 0x02000000u
+#define DMA_W32 0x04000000u
+#define DMA_RLD 0x00600000u                           // dest increment + reload each HBlank
+#define DMA_FIX 0x00400000u
+#ifdef __arm__
+#define IWRAM __attribute__((section(".data.iwram"), long_call, noinline))   // hot code runs from IWRAM (ROM is ~6x slower)
+#else
+#define IWRAM
+#endif
+typedef struct { u32 ab, cd; s32 x, y; } M7;          // PA|PB<<16, PC|PD<<16, BG2X, BG2Y = registers 0x04000020..2F
+static const s16 SINT[256] = {                        // sin(a), 256 = 1.0, a in 1/256 turns, 0 = east, clockwise (y points down)
+  0,6,13,19,25,31,38,44,50,56,62,68,74,80,86,92,
+  98,104,109,115,121,126,132,137,142,147,152,157,162,167,172,177,
+  181,185,190,194,198,202,206,209,213,216,220,223,226,229,231,234,
+  237,239,241,243,245,247,248,250,251,252,253,254,255,255,256,256,
+  256,256,256,255,255,254,253,252,251,250,248,247,245,243,241,239,
+  237,234,231,229,226,223,220,216,213,209,206,202,198,194,190,185,
+  181,177,172,167,162,157,152,147,142,137,132,126,121,115,109,104,
+  98,92,86,80,74,68,62,56,50,44,38,31,25,19,13,6,
+  0,-6,-13,-19,-25,-31,-38,-44,-50,-56,-62,-68,-74,-80,-86,-92,
+  -98,-104,-109,-115,-121,-126,-132,-137,-142,-147,-152,-157,-162,-167,-172,-177,
+  -181,-185,-190,-194,-198,-202,-206,-209,-213,-216,-220,-223,-226,-229,-231,-234,
+  -237,-239,-241,-243,-245,-247,-248,-250,-251,-252,-253,-254,-255,-255,-256,-256,
+  -256,-256,-256,-255,-255,-254,-253,-252,-251,-250,-248,-247,-245,-243,-241,-239,
+  -237,-234,-231,-229,-226,-223,-220,-216,-213,-209,-206,-202,-198,-194,-190,-185,
+  -181,-177,-172,-167,-162,-157,-152,-147,-142,-137,-132,-126,-121,-115,-109,-104,
+  -98,-92,-86,-80,-74,-68,-62,-56,-50,-44,-38,-31,-25,-19,-13,-6,
+};
 static const u8 BBH[VN + 1] = {0, 40, 32, 21, 16, 12, 10, 9, 8, 7, 6, 5, 5, 4, 4, 4, 3, 3, 3, 3, 3, 2, 2, 2, 2};
 static const char *const COMPASS[8] = {"E ", "SE", "S ", "SW", "W ", "NW", "N ", "NE"};
 static s8 OFF[7][VN + 1];
-static u8 occ[H][W], cls[VR * 8], vang;
-static u32 ebuf[3][VR * 8];                           // rendered columns waiting for VBlank
+static u8 occ[H][W], cls[VR * 8], vang;               // vang = facing, 0..255
+static u16 KK[160], KQ[160], blt[160];                // per scanline: ground distance (cells * 2048), K * 4/3, BLDALPHA fog
+static M7 m7t[2][161];                                // double-buffered HBlank DMA tables
 static void view_init(void) {
-  u8 d, n; s16 v;
+  u8 d, n; u16 y; s32 k;
   for (d = 0; d < 7; d++) for (n = 1; n <= VN; n++) {
-    v = (s16)((((s16)d - 3) * 4 - 3) * 21) / n;
+    s16 v = (s16)((((s16)d - 3) * 4 - 3) * 21) / n;
     OFF[d][n] = v > 80 ? 80 : v < -80 ? -80 : (s8)v;
   }
+  // flat ground seen from 0.164 cells up with a 192 px focal length: distance D = 31.5 / (y + 0.5 - 64) cells; K = D * 2048
+  for (y = 0; y < 160; y++) {
+    KK[y] = KQ[y] = 0; blt[y] = 16;
+    if (y >= FY0 && y < FY1) {
+      k = 129024 / (2 * (s32)y - 127);
+      KK[y] = (u16)k; KQ[y] = (u16)(k * 4 / 3);
+      k = 16 - k / 3300; if (k < 3) k = 3;
+      blt[y] = (u16)(k | ((16 - k) << 8));
+    }
+  }
 }
-static void view_col(u8 c, u8 vx, u8 vy, u8 eh) {
-  s16 t = (s16)(((s16)c * 2 - 29) * 2 / 3), px = (s16)vx * 256 + 128, py = (s16)vy * 256 + 128, yt, a, e, r, rx, ry;
-  u8 n, x, y, h, o, col, lim = VR * 8, lb;
-  rx = (s16)((s16)SIN16[(vang + 4) & 15] * 32 - (s16)SIN16[vang] * t);
-  ry = (s16)((s16)SIN16[vang] * 32 + (s16)SIN16[(vang + 4) & 15] * t);
-  rx >>= 4; ry >>= 4;
-  for (n = 0; n < VR * 8; n++) cls[n] = 1;
+IWRAM static void view_col(u8 c, u8 vx, u8 vy, u8 eh, u8 ang) {   // one ray -> cls[0..127]
+  s16 t = (s16)(((s16)c * 2 - 29) * 2 / 3), px = (s16)vx * 256 + 128, py = (s16)vy * 256 + 128, yt, a, e, r, rx, ry, p0x, p0y;
+  s16 cs = SINT[(ang + 64) & 255], sn = SINT[ang];
+  s32 f, g;
+  u8 n, x, y, h, o, col, lim = VR * 8, lb, pcx = vx, pcy = vy, pf = 1;
+  rx = (s16)(((s16)cs * 32 - (s16)sn * t) >> 6);
+  ry = (s16)(((s16)sn * 32 + (s16)cs * t) >> 6);
+  for (n = 0; n < VR * 8; n++) cls[n] = 0;
   for (n = 1; n <= VN && lim; n++) {
+    p0x = px; p0y = py;
     px += rx; py += ry;
     if (px < 0 || py < 0 || px >= W * 256 || py >= H * 256) break;
     x = (u8)(px >> 8); y = (u8)(py >> 8);
     h = hgt[y][x];
     yt = 64 - OFF[h + 3 - eh][n];
     lb = lim;
+    if (h != eh && pf && (x != pcx || y != pcy)) {    // level ground -> raised / sunken cell: its front edge sits where the ray crossed the border,
+      f = 0;                                          // so the Mode-7 floor in front of it stays visible (steps are only half a cell apart)
+      if (x != pcx) f = (((s32)(rx > 0 ? x : x + 1) * 256 - p0x) * 16) / rx;
+      if (y != pcy) { g = (((s32)(ry > 0 ? y : y + 1) * 256 - p0y) * 16) / ry; if (g > f) f = g; }
+      f = (f > 16 ? 16 : f) + (n - 1) * 16; if (f < 1) f = 1;
+      f = 64 + 1008 / f;                              // eye-level ground row at that distance
+      if (f < lb) lb = (u8)f;
+    }
+    pcx = x; pcy = y; pf = (h == eh);
     if (yt < lb) {
       a = yt < 0 ? 0 : yt;
-      col = h == 0 ? 5 : h == 3 ? 4 : ((x + y) & 1) ? 2 : 3;
+      col = h == eh ? 0 : h == 0 ? 5 : h == 3 ? 4 : ((x + y) & 1) ? 2 : 3;   // eye level: leave it to the Mode-7 floor
       for (r = a; r < lb; r++) cls[r] = col;
       lim = (u8)a;
     }
@@ -671,6 +735,59 @@ static void view_col(u8 c, u8 vx, u8 vy, u8 eh) {
     }
   }
 }
+IWRAM static void eye_put(u8 c) {                     // cls[] -> the 16 tiles of overlay column c (every pixel row is one colour)
+  volatile u32 *d = TILE32 + (EV + c * VR) * 8; u8 i;
+  for (i = 0; i < VR * 8; i++) d[i] = cls[i] * 0x11111111u;
+}
+IWRAM static void ov_show(u8 on) {
+  u8 x, y;
+  for (x = 0; x < VX; x++) for (y = 0; y < VR; y++) BGMAP1[y * 32 + x] = on ? (u16)((EV + x * VR + y) | (5 << 12)) : 0;
+}
+// The ground as the Mode-7 hardware sees it. Screen pixel (x, y) shows the point P = cam + D*fwd + D*(u/192)*right, u = x + 0.5 - 120,
+// with D = K(y) cells ahead. In 8.8 texels (1 cell = 8 texels): PA,PC = K/192 * right, X0,Y0 = cam + K*fwd - 120 * (PA,PC).
+IWRAM static void m7_build(M7 *t, u8 ang, s16 fx, s16 fy) {
+  s32 cs = SINT[(ang + 64) & 255], sn = SINT[ang], bx = (s32)fx * 8, by = (s32)fy * 8, K, q, pa, pc;
+  u8 y;
+  for (y = FY0; y < FY1; y++) {
+    K = KK[y]; q = KQ[y];
+    pa = (-q * sn) >> 16; pc = (q * cs) >> 16;
+    t[y].ab = (u16)pa;                                // PB = 0
+    t[y].cd = (u16)pc;                                // PD = 0
+    t[y].x = bx + ((K * cs) >> 8) - pa * 120 + (pa >> 1);
+    t[y].y = by + ((K * sn) >> 8) - pc * 120 + (pc >> 1);
+  }
+}
+static void m7_sky(M7 *t) { u8 y; for (y = 0; y < 161; y++) { t[y].ab = t[y].cd = 0; t[y].x = t[y].y = SKYC; } }
+static void eye_arm(const M7 *t) {                    // call right after vsync(): line 0 by hand, lines 1.. by HBlank DMA
+  DMAR(0, 8) = 0; DMAR(1, 8) = 0;
+  *(volatile u32 *)0x04000020 = t[0].ab; *(volatile u32 *)0x04000024 = t[0].cd;
+  *(volatile u32 *)0x04000028 = (u32)t[0].x; *(volatile u32 *)0x0400002C = (u32)t[0].y;
+  IO16(0x52) = blt[0];
+  DMAR(0, 0) = (u32)(t + 1); DMAR(0, 4) = 0x04000020u; DMAR(0, 8) = DMA_ON | DMA_HBL | DMA_REP | DMA_W32 | DMA_RLD | 4;
+  DMAR(1, 0) = (u32)(blt + 1); DMAR(1, 4) = 0x04000052u; DMAR(1, 8) = DMA_ON | DMA_HBL | DMA_REP | DMA_FIX | 1;
+}
+static void floor_tiles(volatile u32 *d) {            // 8bpp 8x8 tiles: 0 clear, 1/2 grass (odd / even cell), 3 hill, 4 water
+  static const u8 BASE[4] = {82, 83, 84, 85}, SPEC[4] = {83, 82, 96, 97};
+  u8 t, p, k, px, py, hh; u32 w;
+  for (p = 0; p < 16; p++) d[p] = 0;
+  for (t = 1; t <= 4; t++) for (p = 0; p < 16; p++) {
+    w = 0;
+    for (k = 0; k < 4; k++) {
+      px = (u8)((p & 1) * 4 + k); py = (u8)(p >> 1);
+      hh = (u8)((px * 37 + py * 91 + t * 53) & 15);
+      w |= (u32)((t == 4 ? ((py & 3) == 1 && px >= 2 && px <= 5) : hh == 0) ? SPEC[t - 1] : BASE[t - 1]) << (k * 8);
+    }
+    d[t * 16 + p] = w;
+  }
+}
+static void floor_map(volatile u16 *m) {              // 32x32 one-byte entries, read as halfwords
+  u8 x, y, k, h; u16 e;
+  for (y = 0; y < H; y++) for (x = 0; x < W; x += 2) {
+    e = 0;
+    for (k = 0; k < 2; k++) { h = hgt[y][x + k]; e |= (u16)(h == 0 ? 4 : h == 3 ? 3 : ((x + k + y) & 1) ? 1 : 2) << (k * 8); }
+    m[y * 16 + x / 2] = e;
+  }
+}
 static void occ_set(u8 on) {
   u8 i;
   for (i = 0; i < MAXA; i++) if (ant[i].alive) occ[ant[i].y][ant[i].x] = on ? ant[i].team + 1 : 0;
@@ -679,64 +796,82 @@ static void occ_set(u8 on) {
 static void eye_status(u8 vx, u8 vy) {
   ov_fill(1, 1, 18, 19);
   ps(0, 18, "X", 2); pn(1, 18, vx, 1); ps(5, 18, "Y", 2); pn(6, 18, vy, 1);
-  ps(10, 18, "H", 2); pc(11, 18, '0' + hgt[vy][vx], 1); ps(14, 18, "FACING", 2); ps(21, 18, COMPASS[vang >> 1], 1);
+  ps(10, 18, "H", 2); pc(11, 18, '0' + hgt[vy][vx], 1); ps(14, 18, "FACING", 2); ps(21, 18, COMPASS[((vang + 16) >> 5) & 7], 1);
   ps(0, 19, "A NEXT B GO HERE START BACK", 1);
 }
 static void eye_step(u8 *vx, u8 *vy, s8 dir) {
-  s8 fx = SIN16[(vang + 4) & 15], fy = SIN16[vang], dx = 0, dy = 0;
+  s16 fx = SINT[(vang + 64) & 255], fy = SINT[vang]; s8 dx = 0, dy = 0;
   if ((fx < 0 ? -fx : fx) >= (fy < 0 ? -fy : fy)) dx = fx < 0 ? -1 : 1; else dy = fy < 0 ? -1 : 1;
   dx *= dir; dy *= dir;
   if (can_go(*vx, *vy, dx, dy)) { *vx += dx; *vy += dy; }
 }
+static s16 ease(s16 v, s16 t, s16 s) { s16 d = t - v; return d > s ? v + s : d < -s ? v - s : t; }
 static u8 vok(u8 i) { return i < MAXA ? (ant[i].alive && ant[i].team == 0) : qhp[0] > 0; }
 static void eye(void) {                              // time stands still while you look through a black ant's eyes
-  u8 i, x, y, k2, vi = MAXA, best = 255, d, rep = 0, go = 1, vx = 0, vy = 0, vcol = VX, dirs, last = 0, np = 0, pc0 = 0;
+  u8 i, x, y, vi = MAXA, best = 255, d, rep = 0, vx = 0, vy = 0, vcol = 0, dirs, last = 0, on = 0, cur = 0, act = 0, jump, chg, vc;
+  s16 fa = vang, fx, fy, tx, ty, da;
   u16 k, p, prev;
   tev |= 16;
   for (i = 0; i < MAXA; i++) if (vok(i)) { d = (u8)(dist(ant[i].x, cx) + dist(ant[i].y, cy)); if (d < best) { best = d; vi = i; } }
+  if (vi < MAXA) { vx = ant[vi].x; vy = ant[vi].y; } else { vx = nestx[0]; vy = nesty[0]; }
+  fx = (s16)(vx * 256 + 128); fy = (s16)(vy * 256 + 128);
   hide_all(); vsync(); oam_flush();
-  BGPAL[81] = RGB(10,18,28); BGPAL[82] = RGB(11,26,9); BGPAL[83] = RGB(4,16,6); BGPAL[84] = RGB(21,14,6);
-  BGPAL[85] = RGB(4,10,31);  BGPAL[86] = RGB(31,6,4);  BGPAL[87] = RGB(2,2,2);
-  for (x = 0; x < VX; x++) for (y = 0; y < VR; y++) BGMAP1[y * 32 + x] = (u16)((EV + x * VR + y) | (5 << 12));
+  BGPAL[82] = RGB(11,26,9); BGPAL[83] = RGB(4,16,6); BGPAL[84] = RGB(21,14,6); BGPAL[85] = RGB(4,10,31);
+  BGPAL[86] = RGB(31,6,4);  BGPAL[87] = RGB(2,2,2);  BGPAL[96] = RGB(15,9,3);  BGPAL[97] = RGB(12,19,31);
   for (y = 16; y < 20; y++) for (x = 0; x < 32; x++) BGMAP1[y * 32 + x] = 1 | (1 << 12);
   occ_set(1);
+  floor_tiles(TILE32 + 0x2000);                       // charblock 2 (0x06008000)
+  floor_map((volatile u16 *)0x0600D800);              // screenblock 27
+  m7_sky(m7t[0]); m7_sky(m7t[1]);
+  m7_build(m7t[0], vang, fx, fy);
+  ov_show(0); eye_status(vx, vy);
   while (joy()) vsync();
+  vsync(); eye_arm(m7t[0]);
+  IO16(0x0C) = 0x5B0B;                                // BG2: priority 3, charblock 2, screenblock 27, 256x256 affine
+  BLDCNT = 0x2044;                                    // alpha blend: BG2 over the backdrop (= sky colour)
+  DISPCNT = 0x1641;                                   // mode 1: BG1 + BG2 + OBJ
   prev = 0;
   for (;;) {
-    if (go) {
-      if (go == 1) { if (vi < MAXA) { vx = ant[vi].x; vy = ant[vi].y; } else { vx = nestx[0]; vy = nesty[0]; } }
-      go = 0; vcol = 0; eye_status(vx, vy);
-    }
     vsync();
-    for (k2 = 0; k2 < np; k2++) {                    // copy last frame's columns into VRAM (we are in VBlank)
-      volatile u32 *dst = TILE32 + (EV + (pc0 + k2) * VR) * 8;
-      for (x = 0; x < VR * 8; x++) dst[x] = ebuf[k2][x] * 0x11111111u;
-    }
-    np = 0;
-    if (vcol < VX) {                                 // 3 columns per frame: the view sweeps in, input stays live
-      pc0 = vcol;
-      for (k2 = 0; k2 < 3 && vcol < VX; k2++, vcol++) {
-        view_col(vcol, vx, vy, hgt[vy][vx]);
-        for (x = 0; x < VR * 8; x++) ebuf[k2][x] = cls[x];
-        np++;
-      }
-    }
+    eye_arm(m7t[cur]);                                // the table built last frame drives this frame's HBlank DMA
     k = joy(); p = k & ~prev; prev = k;
     if (p & J_START) break;
     if (p & J_B) { cx = vx; cy = vy; break; }
-    if (p & J_A) { i = 0; do { vi = (vi == MAXA) ? 0 : vi + 1; } while (!vok(vi) && ++i <= MAXA); sfx_food(); go = 1; }
+    jump = chg = 0;
+    if (p & J_A) {
+      i = 0; do { vi = (vi == MAXA) ? 0 : vi + 1; } while (!vok(vi) && ++i <= MAXA); sfx_food();
+      if (vi < MAXA) { vx = ant[vi].x; vy = ant[vi].y; } else { vx = nestx[0]; vy = nesty[0]; }
+      jump = chg = 1;
+    }
     dirs = (u8)(k & 15);
     if (dirs != last) { rep = 0; last = dirs; }
     if (dirs) {
-      if (rep == 0 || (rep >= 8 && !(rep & 3))) {
-        if (dirs & J_RIGHT) { vang = (vang + 1) & 15; go = 2; }
-        else if (dirs & J_LEFT) { vang = (vang + 15) & 15; go = 2; }
-        else { x = vx; y = vy; eye_step(&vx, &vy, (dirs & J_UP) ? 1 : -1); if (vx != x || vy != y) go = 2; }
+      if (dirs & (J_LEFT | J_RIGHT)) {                // turning: every 2 frames once held, matches the 4 units / frame ease
+        if (rep == 0 || (rep >= 8 && !(rep & 1))) { vang = (u8)(vang + ((dirs & J_RIGHT) ? TURN : 256 - TURN)); chg = 1; }
+      } else if (rep == 0 || (rep >= 8 && !(rep & 3))) {   // walking: one cell per 4 frames = the glide time
+        x = vx; y = vy; eye_step(&vx, &vy, (dirs & J_UP) ? 1 : -1); if (vx != x || vy != y) chg = 1;
       }
       if (rep < 250) rep++;
     }
+    tx = (s16)(vx * 256 + 128); ty = (s16)(vy * 256 + 128);
+    if (jump) { fx = tx; fy = ty; }                   // jumping to another ant: no glide
+    if (chg) { vcol = 0; act = 0; eye_status(vx, vy); } else if (act < 250) act++;
+    da = (s16)(((vang - fa + 128) & 255) - 128);      // ease the floor toward the wanted pose
+    fa = (s16)((fa + (da > 4 ? 4 : da < -4 ? -4 : da)) & 255);
+    fx = ease(fx, tx, 64); fy = ease(fy, ty, 64);
+    i = (u8)(vcol >= VX && fa == vang && fx == tx && fy == ty && act >= 5);   // camera settled and overlay complete
+    if (i != on) { ov_show(i); on = i; }
+    cur ^= 1;
+    m7_build(m7t[cur], (u8)fa, fx, fy);               // next frame's table (the other buffer is being read by DMA)
+    if (vcol < VX) {                                  // redraw the overlay for the final pose, as many columns as the frame allows
+      d = hgt[vy][vx];
+      do { view_col(vcol, vx, vy, d, vang); eye_put(vcol); vcol++; vc = (u8)VCOUNT; } while (vcol < VX && !(vc >= 100 && vc < 160));
+    }
   }
+  vsync();
+  DMAR(0, 8) = 0; DMAR(1, 8) = 0;
   occ_set(0);
+  DISPCNT = 0x1340; BLDCNT = 0xFF; IO16(0x0C) = 0;
   ov_clear(); hud();
   while (joy()) vsync();
 }
