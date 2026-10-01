@@ -990,119 +990,348 @@ static void eye(void) {                              // time stands still while 
 static const u8 TEV[TN] = {0, 1, 2, 4, 0, 8, 16, 0, 0, 0};          // event bit that completes each lesson (0 = read only)
 static const char *const THINT[TN] = {0, "TRY: MOVE THE CURSOR", "TRY: PRESS A TO RAISE", "TRY: PRESS B TO LOWER", 0,
   "PRESS L TO FLOOD", "SEL+START: ANT EYE", 0, 0, 0};
-static const char *const TCARD[TN] = {
-  "WELCOME RULER!\n"
-  "YOU RULE THE BLACK ANTS OF\n"
-  "EMPIRE ANTS. YOU CANT GIVE\n"
-  "THEM ORDERS: INSTEAD YOU\n"
-  "SHAPE THE LAND AND THEY\n"
-  "WALK AROUND IT\n"
+static const char *const TTITLE[TN] = {"WELCOME RULER!", "THE CURSOR", "RAISE LAND", "LOWER LAND", "MANA", "FLOOD", "ANT EYE", "THE COLONY", "POPULARITY", "READY TO RULE!"};
+// Lesson text: 7 lines of up to 28 letters (the font has A-Z 0-9 : ! / only). *asterisks* switch gold highlighting on and off.
+static const char *const TBODY[TN] = {
+  "YOU RULE THE *BLACK ANTS* OF\n"
+  "EMPIRE ANTS BUT YOU CANT\n"
+  "GIVE ORDERS: *SHAPE THE LAND*\n"
+  "AND THEY WALK AROUND IT\n"
   "\n"
-  "GOAL: KILL THE RED QUEEN\n"
-  "BEFORE THEY KILL YOURS\n",
-  "1/8 THE CURSOR\n"
-  "THE YELLOW FRAME IS YOUR\n"
+  "*GOAL:* KILL THE RED QUEEN\n"
+  "BEFORE THEY KILL YOURS",
+  "THE *YELLOW FRAME* IS YOUR\n"
   "CURSOR: LAND TOOLS WORK ON\n"
   "THE TILE UNDER IT\n"
   "\n"
-  "D PAD MOVES IT, HOLD TO\n"
-  "REPEAT. THE MAP SCROLLS\n"
-  "NEAR THE EDGE\n"
+  "*D PAD* MOVES IT: HOLD TO\n"
+  "REPEAT: MAP SCROLLS AT EDGE\n"
+  "*NOW TRY IT!*",
+  "*A* RAISES THE CURSOR TILE\n"
+  "BY ONE LEVEL: COST *1 MANA*\n"
   "\n"
-  "NOW TRY IT!\n",
-  "2/8 RAISE LAND\n"
-  "LAND HAS 4 HEIGHTS:\n"
-  "0 WATER  1 SAND\n"
-  "2 GRASS  3 HILL\n"
+  "ANTS CANT CLIMB MORE THAN\n"
+  "*1 STEP*: BUILD RAMPS AND\n"
+  "STAIRS! NESTS CANT BE EDITED",
+  "*B* LOWERS THE TILE BY ONE\n"
+  "LEVEL: COST *1 MANA*\n"
   "\n"
-  "A RAISES THE TILE UNDER THE\n"
-  "CURSOR, COST 1 MANA. ANTS\n"
-  "CANT CLIMB MORE THAN 1 STEP:\n"
-  "BUILD RAMPS AND STAIRS!\n"
-  "NESTS CANT BE EDITED\n",
-  "3/8 LOWER LAND\n"
-  "B LOWERS THE TILE, COST 1 MANA\n"
+  "LEVEL 0 IS *WATER*: ANTS CANT\n"
+  "WALK OR LIVE THERE: DIG\n"
+  "MOATS TO STOP RED ANTS AND\n"
+  "RAISE LAND TO BRIDGE GAPS",
+  "*MP* IS YOUR MANA: EVERY EDIT\n"
+  "COSTS MP: EARN MORE FROM:\n"
+  "*A SLOW TRICKLE*\n"
+  "*FOOD CARRIED HOME*\n"
+  "*ELECTION AID*\n"
   "\n"
-  "LEVEL 0 IS WATER: ANTS CANT\n"
-  "WALK ON IT AND DROWN IF\n"
-  "FLOODED. DIG MOATS TO STOP\n"
-  "RED ANTS, RAISE LAND TO\n"
-  "BRIDGE GAPS\n",
-  "4/8 MANA\n"
-  "MP IS YOUR MANA: EVERY EDIT\n"
-  "COSTS MP\n"
-  "\n"
-  "MP COMES FROM:\n"
-  " SLOW TRICKLE\n"
-  " FOOD CARRIED HOME\n"
-  " ELECTION AID\n"
-  "\n"
-  "SEL+A EMBEZZLES 2 FOOD INTO\n"
-  "4 MP BUT P DROPS BY 5\n",
-  "5/8 FLOOD\n"
-  "PRESS L (OR TAP SELECT):\n"
-  "LOWERS A 3X3 AREA BY ONE\n"
-  "LEVEL, COST 8 MP\n"
+  "*SEL A* EMBEZZLES: P DROPS 5",
+  "*L* LOWERS A 3X3 AREA BY ONE\n"
+  "LEVEL: COST *8 MANA*\n"
   "\n"
   "ANTS ON TILES THAT HIT LEVEL\n"
-  "0 DROWN: GREAT AGAINST RED\n"
+  "0 *DROWN*: GREAT AGAINST RED\n"
   "ARMIES BUT CAREFUL WITH\n"
-  "YOUR OWN! MP REFILLED\n",
-  "6/8 ANT EYE\n"
-  "SEE THE WORLD LIKE A BLACK\n"
-  "ANT: HOLD SELECT AND TAP\n"
-  "START\n"
-  "L R  TURN     U D  WALK\n"
-  "A    NEXT ANT\n"
-  "B    JUMP CURSOR HERE\n"
-  "START  BACK\n"
-  "RED POSTS: ENEMIES\n"
-  "TALL POSTS: QUEENS\n",
-  "7/8 THE COLONY\n"
-  "BLACK ANTS FIND FOOD AND\n"
-  "CARRY IT HOME. 3 FOOD HATCHES\n"
-  "A NEW ANT\n"
-  "EVERY 4TH IS A SOLDIER:\n"
+  "YOUR OWN!",
+  "HOLD *SEL* AND TAP *START*\n"
+  "TO SEE LIKE A BLACK ANT\n"
+  "*L R* TURN   *UP DOWN* WALK\n"
+  "*A* NEXT ANT  *B* CURSOR HERE\n"
+  "*START* LEAVE\n"
+  "*RED POSTS* ARE ENEMIES\n"
+  "*TALL POSTS* ARE QUEENS",
+  "*BLACK ANTS* FIND FOOD AND\n"
+  "CARRY IT HOME: *3 FOOD*\n"
+  "HATCHES A NEW ANT\n"
+  "EVERY 4TH ANT IS A *SOLDIER*:\n"
   "WITH 8 ANTS THEY MARCH ON\n"
   "THE RED NEST\n"
-  "ANTS FOLLOW TRAILS:\n"
-  "MAKE EASY PATHS!\n",
-  "8/8 POPULARITY\n"
-  "P IS POPULARITY. FOOD AND\n"
-  "NEW ANTS RAISE P: DEAD ANTS\n"
+  "ANTS FOLLOW *TRAILS*!",
+  "*P* IS POPULARITY: FOOD AND\n"
+  "NEW ANTS RAISE IT: DEAD ANTS\n"
   "AND HUNGER CUT IT\n"
   "\n"
   "ELECTION EVERY MINUTE:\n"
-  "P 50 UP: 8 MP AID\n"
-  "P UNDER 25: COUP! COFFERS\n"
-  "LOOTED\n",
-  "READY TO RULE!\n"
-  "KILL THE RED QUEEN TO WIN:\n"
+  "*P 50 UP*: 8 MP AID\n"
+  "*P UNDER 25*: COUP! MP LOST",
+  "KILL THE *RED QUEEN* TO WIN:\n"
   "LOSE YOURS AND ITS OVER\n"
   "\n"
-  "START: PAUSE HELP\n"
-  "R: FAST FORWARD\n"
+  "*START* PAUSE AND HELP\n"
+  "*R* FAST FORWARD\n"
   "\n"
-  "LONG LIVE THE QUEEN!\n"
-  "GOOD LUCK!\n",
+  "*LONG LIVE THE QUEEN!*",
 };
-static void tut_card(u8 i) {
-  const char *s = TCARD[i]; u8 y = 1, x;
-  hide_all(); vsync(); oam_flush();
-  ov_fill(1, 1, 0, 19);
-  while (*s) {
-    x = 2; while (*s && *s != '\n') pc(x++, y, *s++, y == 1 ? 2 : 1);
-    if (*s) s++;
-    y += (y == 1) ? 2 : 1;                           // title row 1, body from row 3
+
+// ----- card tiles (built once at boot, above the ANT EYE overlay tiles) and the picture canvas -----
+#define BIGF 544                                       // 2x gold title font, 2 tiles per glyph (top, bottom): 544..623
+#define BAND 624                                       // the picture: BW x BH tiles: 624..763
+#define ORN  764                                       // 764 rule, 765/766 centre diamond, 767/768 pip on/off, 769 arrow
+#define BW 28
+#define BH 5
+enum { C_SKY = 1, C_CREAM, C_GOLD, C_WATER, C_SAND, C_GRASS, C_HILL, C_RED, C_DARK, C_GRAY, C_STEEL, C_PINK, C_WHITE, C_LEAF, C_NAVY };
+static void tdraw(u16 t, const char *s) {             // 8x8 tile from 64 hex digits, row by row, leftmost pixel first
+  u8 y, x; u32 w; char c;
+  for (y = 0; y < 8; y++) {
+    for (w = 0, x = 0; x < 8; x++) { c = s[y * 8 + x]; w |= (u32)(c > '9' ? c - 'a' + 10 : c - '0') << (4 * x); }
+    TILE32[t * 8 + y] = w;
   }
-  ps(2, 18, "START: NEXT   B: SKIP", 2);
+}
+static void card_init(void) {
+  static const u16 PIC[16] = {0, RGB(4,7,18), RGB(31,29,22), RGB(31,27,8), RGB(8,16,28), RGB(28,24,14), RGB(8,20,6), RGB(14,9,5),
+    RGB(26,3,3), RGB(2,2,2), RGB(14,14,14), RGB(11,11,22), RGB(31,12,8), RGB(31,31,31), RGB(4,14,5), RGB(1,1,5)};
+  u8 g, x, y, i, p[16][8], px, py;
+  u32 w;
+  BGPAL[145] = RGB(1,1,5); BGPAL[146] = RGB(22,12,3); BGPAL[147] = RGB(31,27,8);       // bank 9: gold on night (titles, highlights, rules)
+  BGPAL[161] = RGB(1,1,5); BGPAL[162] = RGB(8,8,16);  BGPAL[163] = RGB(15,15,26);      // bank 10: dim steel (small labels)
+  for (i = 0; i < 16; i++) BGPAL[112 + i] = PIC[i];                                    // bank 7: the picture palette (see C_*)
+  for (g = 0; g < 40; g++) {                                                           // big font: the 3x5 glyph doubled, shadow then face
+    for (y = 0; y < 16; y++) for (x = 0; x < 8; x++) p[y][x] = 1;
+    for (i = 0; i < 2; i++)
+      for (y = 0; y < 5; y++) for (x = 0; x < 3; x++)
+        if ((FONT[g] >> (3 * (4 - y))) & (4 >> x)) {
+          px = (u8)(x * 2 + (i ? 0 : 1)); py = (u8)(y * 2 + 2 + (i ? 0 : 1));
+          p[py][px] = p[py][px + 1] = p[py + 1][px] = p[py + 1][px + 1] = i ? 3 : 2;
+        }
+    for (y = 0; y < 16; y++) {
+      for (w = 0, x = 0; x < 8; x++) w |= (u32)p[y][x] << (4 * x);
+      TILE32[(BIGF + g * 2 + (y >> 3)) * 8 + (y & 7)] = w;
+    }
+  }
+  tdraw(ORN,     "11111111" "11111111" "11111111" "22222222" "22222222" "11111111" "11111111" "11111111");
+  tdraw(ORN + 1, "11111113" "11111133" "11111333" "22223333" "22223333" "11111333" "11111133" "11111113");
+  tdraw(ORN + 2, "31111111" "33111111" "33311111" "33332222" "33332222" "33311111" "33111111" "31111111");
+  tdraw(ORN + 3, "11111111" "11111111" "11333311" "11333311" "11333311" "11333311" "11111111" "11111111");
+  tdraw(ORN + 4, "11111111" "11111111" "11222211" "11222211" "11222211" "11222211" "11111111" "11111111");
+  tdraw(ORN + 5, "11111111" "13111111" "13311111" "13331111" "13333111" "13331111" "13311111" "13111111");
+}
+
+static int bclip = BW * 8;
+static void bpx(int x, int y, u8 c) {
+  volatile u32 *d; u8 s;
+  if (x < 0 || y < 0 || x >= bclip || y >= BH * 8) return;
+  d = TILE32 + (BAND + (y >> 3) * BW + (x >> 3)) * 8 + (y & 7); s = (u8)((x & 7) * 4);
+  *d = (*d & ~(0xFu << s)) | ((u32)c << s);
+}
+static void brect(int x, int y, int w, int h, u8 c) { int i, j; for (j = 0; j < h; j++) for (i = 0; i < w; i++) bpx(x + i, y + j, c); }
+static void bdisc(int cx, int cy, int r, u8 c) { int i, j; for (j = -r; j <= r; j++) for (i = -r; i <= r; i++) if (i * i + j * j <= r * r + r) bpx(cx + i, cy + j, c); }
+static void bline(int x0, int y0, int x1, int y1, u8 c) {
+  int dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = y1 > y0 ? y0 - y1 : y1 - y0, sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, e = dx + dy, e2;
+  for (;;) {
+    bpx(x0, y0, c); if (x0 == x1 && y0 == y1) break;
+    e2 = 2 * e; if (e2 >= dy) { e += dy; x0 += sx; } if (e2 <= dx) { e += dx; y0 += sy; }
+  }
+}
+static void btri(int x, int y, int w, int h, u8 c) {    // filled triangle, apex up
+  int k, hw; for (k = 0; k < h; k++) { hw = h > 1 ? k * w / (2 * (h - 1)) : 0; brect(x + w / 2 - hw, y + k, 2 * hw + 1, 1, c); }
+}
+static void bdown(int x, int y, int w, int h, u8 c) {   // filled triangle, apex down
+  int k, hw; for (k = 0; k < h; k++) { hw = h > 1 ? (h - 1 - k) * w / (2 * (h - 1)) : 0; brect(x + w / 2 - hw, y + k, 2 * hw + 1, 1, c); }
+}
+static void btext(int x, int y, const char *s, u8 sc, u8 c) {   // the 3x5 font at 1x or 2x inside the picture
+  u16 g; int gx, gy;
+  for (; *s; s++, x += 4 * sc) {
+    g = FONT[gi(*s)];
+    for (gy = 0; gy < 5; gy++) for (gx = 0; gx < 3; gx++) if ((g >> (3 * (4 - gy))) & (4 >> gx)) brect(x + gx * sc, y + gy * sc, sc, sc, c);
+  }
+}
+static int blen(const char *s) { int n = 0; while (s[n]) n++; return n; }
+static void bctext(int cx, int y, const char *s, u8 sc, u8 c) { btext(cx - (blen(s) * 4 - 1) * sc / 2, y, s, sc, c); }
+static void bbtn(int cx, int cy, char ch) {            // round gamepad button
+  char t[2]; t[0] = ch; t[1] = 0;
+  bdisc(cx, cy, 9, C_STEEL); bdisc(cx, cy, 8, C_GOLD); btext(cx - 2, cy - 4, t, 2, C_NAVY);
+}
+static void bpill(int cx, int y, const char *s) {      // small pill key such as SEL / START
+  int w = blen(s) * 4 + 5, x = cx - w / 2;
+  brect(x + 4, y, w - 8, 9, C_GOLD); bdisc(x + 4, y + 4, 4, C_GOLD); bdisc(x + w - 5, y + 4, 4, C_GOLD);
+  btext(x + 3, y + 2, s, 1, C_NAVY);
+}
+static void barrow(int x, int y, u8 d, u8 c) {         // 9 px arrow centred on x, y: d 0 right, 1 down, 2 up
+  int k;
+  if (d == 0) { brect(x - 5, y - 1, 7, 3, c); for (k = 0; k < 4; k++) brect(x + 1 + k, y - 3 + k, 1, 7 - 2 * k, c); }
+  else if (d == 1) { brect(x - 1, y - 5, 3, 7, c); for (k = 0; k < 4; k++) brect(x - 3 + k, y + 1 + k, 7 - 2 * k, 1, c); }
+  else { brect(x - 1, y - 1, 3, 7, c); for (k = 0; k < 4; k++) brect(x - 3 + k, y - 1 - k, 7 - 2 * k, 1, c); }
+}
+static void bground(int y0, u8 c) {                     // textured ground strip
+  int x, y; brect(0, y0, BW * 8, BH * 8 - y0, c);
+  if (c == C_GRASS) for (y = y0 + 2; y < BH * 8; y += 4) for (x = (y * 3) % 7; x < BW * 8; x += 7) bpx(x, y, C_LEAF);
+}
+static void bant(int x, int y, int d, u8 body, u8 leg, u8 crown) {   // big side-view ant, head towards d (+1 right, -1 left)
+  int k;
+  for (k = -1; k <= 1; k++) bline(x, y + 2, x + k * 5, y + 9, leg);
+  bline(x + 8 * d, y - 2, x + 12 * d, y - 7, leg); bline(x + 8 * d, y - 2, x + 11 * d, y - 3, leg);
+  bdisc(x - 9 * d, y, 5, body); bdisc(x, y, 3, body); bdisc(x + 6 * d, y - 1, 3, body);
+  if (crown) { brect(x - 4, y - 9, 9, 3, C_GOLD); bpx(x - 4, y - 11, C_GOLD); bpx(x, y - 12, C_GOLD); bpx(x + 4, y - 11, C_GOLD); bpx(x, y - 9, C_RED); }
+}
+static void bsparkle(int x, int y, u8 c) { brect(x - 2, y, 5, 1, c); brect(x, y - 2, 1, 5, c); }
+static void bmana(int n) {                              // the MP bar of lesson 4: n of 10 segments filled
+  int k; for (k = 0; k < 10; k++) brect(36 + k * 17, 5, 15, 11, k < n ? C_GOLD : C_STEEL);
+}
+static void ant_spr(u8 s, int x, int y, u16 fr, u8 pal) { spr(s, 8 + x, 32 + y, (u8)(3 + (((fr >> 3) + s) & 1)), pal, 0, 0); }
+
+static const char MINI[4][19] = {"222211112222333322", "222110011122233322", "232210001222223222", "233221000112222222"};   // lesson 1 mini map
+static void tut_art(u8 i) {
+  int k, x, y; u8 c;
+  for (k = 0; k < BW * BH * 8; k++) TILE32[BAND * 8 + k] = 0x11111111u;
+  bclip = BW * 8;
+  switch (i) {
+  case 0:                                              // the two colonies and their queens
+    bdisc(112, 9, 5, C_GOLD); for (k = 0; k < 8; k++) bpx(112 + ((k & 1) ? 9 : 0) * ((k & 2) ? 1 : -1), 9 + (k & 4 ? 6 : 0), C_GOLD);
+    btri(88, 18, 48, 12, C_HILL); btri(60, 22, 30, 8, C_HILL);
+    bground(30, C_GRASS);
+    bant(26, 24, 1, C_DARK, C_GRAY, 1); bant(198, 24, -1, C_RED, C_PINK, 1);
+    break;
+  case 1:                                              // D-pad + a bit of map the cursor hops over
+    for (y = 0; y < 4; y++) for (x = 0; x < 18; x++) {
+      c = (u8)(MINI[y][x] - '0' + C_WATER); if (MINI[y][x] == '0') c = C_WATER; else if (MINI[y][x] == '1') c = C_SAND; else if (MINI[y][x] == '2') c = C_GRASS; else c = C_HILL;
+      brect(64 + x * 8, 4 + y * 8, 8, 8, c);
+    }
+    brect(63, 3, 146, 1, C_STEEL); brect(63, 36, 146, 1, C_STEEL); brect(63, 3, 1, 34, C_STEEL); brect(208, 3, 1, 34, C_STEEL);
+    brect(24, 4, 8, 8, C_GRAY); brect(16, 12, 8, 8, C_GRAY); brect(24, 12, 8, 8, C_STEEL); brect(32, 12, 8, 8, C_GRAY); brect(24, 20, 8, 8, C_GRAY);
+    btri(26, 6, 5, 3, C_WHITE); bdown(26, 22, 5, 3, C_WHITE);
+    for (k = 0; k < 3; k++) { bpx(18 + k, 14 + k, C_WHITE); bpx(18 + k, 18 - k, C_WHITE); bpx(37 - k, 14 + k, C_WHITE); bpx(37 - k, 18 - k, C_WHITE); }
+    bctext(28, 31, "D PAD", 1, C_CREAM);
+    break;
+  case 2:                                              // four heights as a staircase + the A button
+    for (k = 0; k < 4; k++) {
+      static const char *const LV[4] = {"0 WATER", "1 SAND", "2 GRASS", "3 HILL"};
+      c = (u8)(C_WATER + k); x = 8 + k * 32; y = 31 - 6 * (k + 1);
+      brect(x, y, 30, 6 * (k + 1), c); brect(x, y, 30, 1, C_WHITE);
+      bctext(x + 15, 33, LV[k], 1, C_CREAM);
+    }
+    bbtn(174, 24, 'A'); barrow(174, 8, 2, C_GOLD);
+    btext(192, 20, "1 LEVEL", 1, C_CREAM); btext(192, 27, "1 MP", 1, C_GOLD);
+    break;
+  case 3:                                              // a moat stops the red ants
+    bground(26, C_GRASS); brect(86, 26, 44, 14, C_WATER);
+    for (k = 0; k < 5; k++) { bline(90 + k * 9, 31, 93 + k * 9, 29, C_WHITE); bline(93 + k * 9, 29, 96 + k * 9, 31, C_WHITE); bline(94 + k * 9, 35, 97 + k * 9, 33, C_WHITE); bline(97 + k * 9, 33, 100 + k * 9, 35, C_WHITE); }
+    bbtn(108, 11, 'B'); barrow(108, 1, 1, C_GOLD);
+    bant(180, 18, -1, C_DARK, C_GRAY, 1);
+    break;
+  case 4:                                              // MP bar + the three ways to earn it
+    btext(8, 5, "MP", 2, C_GOLD); bmana(6);
+    bdisc(70, 26, 4, C_WATER); btri(67, 17, 7, 6, C_WATER); bctext(70, 33, "TRICKLE", 1, C_CREAM);
+    bdisc(112, 25, 5, C_LEAF); bdisc(111, 24, 3, C_GRASS); brect(111, 18, 2, 3, C_HILL); bctext(112, 33, "FOOD", 1, C_CREAM);
+    brect(154, 25, 15, 8, C_GRAY); brect(157, 19, 9, 7, C_CREAM); brect(157, 25, 9, 1, C_NAVY); bctext(162, 33, "ELECTION", 1, C_CREAM);
+    break;
+  case 5:                                              // a 3x3 patch goes under water
+    bbtn(24, 20, 'L'); bctext(24, 33, "8 MP", 1, C_GOLD);
+    for (y = 0; y < 3; y++) for (x = 0; x < 3; x++) { brect(58 + x * 12, 2 + y * 12, 11, 11, C_GRASS); brect(138 + x * 12, 2 + y * 12, 11, 11, C_WATER); }
+    barrow(112, 20, 0, C_GOLD);
+    for (y = 0; y < 3; y++) for (x = 0; x < 3; x++) { bline(139 + x * 12, 6 + y * 12, 141 + x * 12, 4 + y * 12, C_WHITE); bline(141 + x * 12, 4 + y * 12, 143 + x * 12, 6 + y * 12, C_WHITE); }
+    for (k = 0; k < 4; k++) { bpx(188 + k * 2, 8 + (k & 1) * 4, C_WHITE); bpx(190 + k * 2, 20 - (k & 1) * 4, C_WHITE); }
+    break;
+  case 6:                                              // what the ant sees + the keys
+    bclip = 140;
+    brect(0, 0, 140, 13, C_SKY); bground(13, C_GRASS);
+    for (k = 0; k < 9; k++) bline(70, 13, -60 + k * 35, 40, C_LEAF);
+    brect(0, 17, 140, 1, C_LEAF); brect(0, 22, 140, 1, C_LEAF); brect(0, 29, 140, 1, C_LEAF); brect(0, 37, 140, 1, C_LEAF);
+    brect(96, 21, 4, 10, C_RED); bdisc(98, 20, 2, C_RED); brect(44, 17, 2, 5, C_RED);
+    brect(70, 8, 3, 9, C_RED); brect(70, 6, 3, 2, C_GOLD);
+    bclip = BW * 8;
+    brect(140, 0, 1, 40, C_STEEL);
+    bpill(180, 7, "SEL"); bpill(180, 25, "START"); brect(179, 17, 3, 1, C_GOLD); brect(180, 16, 1, 3, C_GOLD);
+    break;
+  case 7:                                              // food goes home to the nest
+    bground(28, C_GRASS);
+    for (k = 0; k < 3; k++) { bdisc(18 + k * 6, 25 - (k & 1) * 2, 3, C_LEAF); bdisc(18 + k * 6, 24 - (k & 1) * 2, 1, C_GRASS); }
+    btri(158, 10, 52, 18, C_HILL); bdisc(184, 27, 5, C_NAVY); brect(179, 27, 11, 2, C_NAVY);
+    bpx(190, 24, C_DARK);
+    bctext(88, 7, "3 FOOD", 1, C_CREAM); bctext(88, 14, "NEW ANT", 1, C_GOLD);
+    break;
+  case 8:                                              // the popularity bar: coup, nothing, aid
+    brect(16, 14, 48, 10, C_RED); brect(64, 14, 48, 10, C_GRAY); brect(112, 14, 96, 10, C_GRASS);
+    brect(16, 13, 192, 1, C_WHITE); brect(16, 24, 192, 1, C_WHITE);
+    bctext(40, 5, "COUP", 1, C_PINK); bctext(160, 5, "8 MP AID", 1, C_GRASS);
+    bctext(16, 29, "0", 1, C_CREAM); bctext(64, 29, "25", 1, C_CREAM); bctext(112, 29, "50", 1, C_CREAM); bctext(208, 29, "100", 1, C_CREAM);
+    brect(64, 24, 1, 4, C_CREAM); brect(112, 24, 1, 4, C_CREAM);
+    bdown(133, 27, 9, 5, C_GOLD); bctext(137, 33, "P", 1, C_GOLD);
+    break;
+  default:                                             // the crown
+    bsparkle(40, 12, C_WHITE); bsparkle(184, 14, C_WHITE); bsparkle(64, 30, C_GOLD); bsparkle(160, 30, C_GOLD);
+    brect(90, 22, 44, 9, C_GOLD); brect(90, 29, 44, 2, C_HILL);
+    btri(90, 9, 11, 13, C_GOLD); btri(106, 4, 11, 18, C_GOLD); btri(123, 9, 11, 13, C_GOLD);
+    bdisc(95, 26, 2, C_RED); bdisc(112, 26, 2, C_WATER); bdisc(129, 26, 2, C_RED);
+    bdisc(95, 8, 1, C_WHITE); bdisc(112, 3, 1, C_WHITE); bdisc(129, 8, 1, C_WHITE);
+    bground(35, C_GRASS);
+    break;
+  }
+  brect(0, 0, BW * 8, 1, C_STEEL); brect(0, BH * 8 - 1, BW * 8, 1, C_STEEL); brect(0, 0, 1, BH * 8, C_STEEL); brect(BW * 8 - 1, 0, 1, BH * 8, C_STEEL);
+}
+static void tut_anim(u8 i, u16 fr) {                   // sprites + small repaints once per frame
+  u8 k, p; int x, y;
+  switch (i) {
+  case 0:
+    for (k = 0; k < 3; k++) {
+      ant_spr(k, 44 + (int)((fr / 2 + k * 21) % 63), 27, fr, 0);
+      ant_spr(3 + k, 170 - (int)((fr / 2 + k * 21) % 63), 27, fr, 1);
+    }
+    break;
+  case 1:
+    p = (u8)((fr / 7) % 20);
+    if (p < 8) { x = 4 + p; y = 0; } else if (p < 11) { x = 11; y = p - 7; } else if (p < 18) { x = 11 - (p - 10); y = 3; } else { x = 4; y = 3 - (p - 17); }
+    spr(0, 8 + 64 + x * 8, 32 + 4 + y * 8, 1, 2, 0, 0);
+    break;
+  case 2:
+    p = (u8)((fr / 34) % 5);
+    if (p < 4) ant_spr(0, 8 + p * 32 + 11, 31 - 6 * (p + 1) - 7, fr, 0); else spr_hide(0);
+    break;
+  case 3:
+    k = (u8)((fr / 2) % 100); x = 20 + (k < 50 ? k : 100 - k);
+    ant_spr(0, x, 18, fr, 1);
+    break;
+  case 4:
+    if (fr % 20 == 0) bmana(4 + (int)((fr / 20) % 7));
+    break;
+  case 7:
+    for (k = 0; k < 4; k++) ant_spr(k, 30 + (int)((fr / 3 + k * 25) % 110), 23, fr, 0);
+    break;
+  case 9:
+    ant_spr(0, 58 - 0, 27, fr, 0); ant_spr(1, 160, 27, fr, 0);
+    if ((fr & 31) == 0) { bsparkle(40, 12, (fr & 32) ? C_SKY : C_WHITE); bsparkle(184, 14, (fr & 32) ? C_WHITE : C_SKY); }
+    break;
+  }
+}
+static void tut_draw(u8 i) {                           // build a whole card (static parts); tut_anim then animates it
+  const char *s; u8 x, y, g, n, len = 0;
+  hide_all();
+  ov_fill(1, 3, 0, 19);
+  if (i == 0) ps(1, 0, "A QUICK TOUR", 10);
+  else if (i == TN - 1) ps(1, 0, "ALL DONE", 10);
+  else { ps(1, 0, "LESSON", 10); pc(8, 0, (char)('0' + i), 10); pc(9, 0, '/', 10); pc(10, 0, '8', 10); }
+  for (n = 0; n < TN; n++) BGMAP1[19 + n] = (u16)((ORN + (n <= i ? 3 : 4)) | (9 << 12));
+  while (TTITLE[i][len]) len++;
+  for (n = 0; n < len; n++) {
+    g = gi(TTITLE[i][n]); x = (u8)((30 - len) / 2 + n);
+    BGMAP1[32 + x] = (u16)((BIGF + g * 2) | (9 << 12)); BGMAP1[64 + x] = (u16)((BIGF + g * 2 + 1) | (9 << 12));
+  }
+  for (x = 1; x < 29; x++) { BGMAP1[3 * 32 + x] = (u16)(ORN | (9 << 12)); BGMAP1[17 * 32 + x] = (u16)(ORN | (9 << 12)); }
+  BGMAP1[3 * 32 + 14] = BGMAP1[17 * 32 + 14] = (u16)((ORN + 1) | (9 << 12));
+  BGMAP1[3 * 32 + 15] = BGMAP1[17 * 32 + 15] = (u16)((ORN + 2) | (9 << 12));
+  tut_art(i);
+  for (y = 0; y < BH; y++) for (x = 0; x < BW; x++) BGMAP1[(4 + y) * 32 + 1 + x] = (u16)((BAND + y * BW + x) | (7 << 12));
+  s = TBODY[i]; y = 10; x = 1; g = 0;
+  for (; *s; s++) {
+    if (*s == '\n') { y++; x = 1; } else if (*s == '*') g ^= 1; else pc(x++, y, *s, g ? 9 : 3);
+  }
+  ps(1, 18, "START", 9); ps(7, 18, i == TN - 1 ? "PLAY" : "NEXT", 3);
+  if (i < TN - 1) { ps(14, 18, "B", 9); ps(16, 18, "SKIP", 3); }
+}
+static void tut_card(u8 i) {
+  u16 fr = 0;
+  hide_all(); vsync(); oam_flush();
+  tut_draw(i);
   while (joy()) vsync();
   for (;;) {
-    vsync();
+    vsync(); fr++;
+    tut_anim(i, fr); oam_flush();
+    BGMAP1[18 * 32 + 28] = (u16)(((fr & 32) ? 0 : ORN + 5) | (9 << 12));          // blinking "next" arrow
     if (joy() & J_START) break;
-    if (joy() & J_B) { tut = 0; break; }
+    if (i < TN - 1 && (joy() & J_B)) { tut = 0; break; }
   }
   while (joy()) vsync();
+  hide_all(); vsync(); oam_flush();
   ov_clear(); hud();
 }
 static void tut_enter(void) {                        // show lessons until one needs the player to do something
@@ -1207,11 +1436,8 @@ static void play(void) {
   fade(0, 16);
 }
 
-int main(void) {
+static void gfx_init(void) {                          // palettes, tiles, maps, layers (everything main() needs before the first screen)
   u8 i, x, y; static const u8 BARRM[4] = {1, 2, 2, 3};
-  DISPCNT = 0x80;
-  logo_play();                                        // Danny Steel boot logo (START skips)
-  IO16(0x0C) = IO16(0x0E) = 0; IO16(0x14) = IO16(0x16) = 0; IO16(0x48) = IO16(0x4A) = 0;   // undo the logo's BG2/3, BG1 scroll, windows
   for (i = 0; i < 255; i++) { BGPAL[i] = 0; OBJPAL[i] = 0; }
   SNDX = 0x80; SNDH = 0x0002; SNDL = 0xFF77;          // PSG on, 100% DMG volume, all channels both sides
   BLDCNT = 0xFF; BLDY = 16;
@@ -1232,9 +1458,16 @@ int main(void) {
   for (i = 0; i < 5; i++) put_tile(OBJT32 + i * 8, SPT + i * 16, 0);
   for (y = 0; y < 32; y++) for (x = 0; x < 32; x++) { BGMAP0[y * 32 + x] = BT; BGMAP1[y * 32 + x] = 0; }
   BGPAL[81] = RGB(10,18,28); view_init();
+  card_init();
   BG0CNT = 2 | (28 << 8);                             // priority 2, charblock 0, screenblock 28
   BG1CNT = 0 | (29 << 8);                             // priority 0
   hide_all(); oam_flush();
+}
+int main(void) {
+  DISPCNT = 0x80;
+  logo_play();                                        // Danny Steel boot logo (START skips)
+  IO16(0x0C) = IO16(0x0E) = 0; IO16(0x14) = IO16(0x16) = 0; IO16(0x48) = IO16(0x4A) = 0;   // undo the logo's BG2/3, BG1 scroll, windows
+  gfx_init();
   save_load();
   diff = 1;
   for (;;) { title(); newgame(); play(); }
