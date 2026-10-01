@@ -87,7 +87,7 @@ typedef struct { u8 x, y, team, alive, carry, sol; } Ant;
 static u8 hgt[H][W], food[H][W], ph[H][W];
 static Ant ant[MAXA];
 static u8 nestx[2], nesty[2], stock[2], qhp[2], ncnt[2], hatched[2];
-static u8 cx, cy, mana, over, camx, camy, sandbox, cheat, ff, appr, diff, slice;
+static u8 cx, cy, mana, over, camx, camy, sandbox, cheat, spd = 4, sf, appr, diff, slice;
 static u16 gt, etk;                      // gt = game ticks (7.5 per second), etk = ticks since the last election
 static s16 scx, scy;
 static u32 rs = 2463534242u;
@@ -178,6 +178,19 @@ static void ov_clear(void) { ov_fill(0, 0, 0, 31); }          // fully transpare
 
 static void say(const char *m) { msg = m; msgt = 12; }
 
+// ---------- game speed (pause menu: SPEED; R / SEL+B toggles NORMAL <-> VERY FAST; FRAME ADVANCE: R steps one game tick) ----------
+// 0 PAUSED (world frozen, you can still edit), 1 FRAME ADVANCE*, 2 VERY SLOW, 3 SLOW, 4 NORMAL, 5 FAST, 6 VERY FAST, 7 LIGH ANT NING*   (* = unlocked by 10 wins)
+static const char *const SPNAME[8] = {"PAUSED", "FRAME ADVANCE", "VERY SLOW", "SLOW", "NORMAL", "FAST", "VERY FAST", "LIGH ANT NING"};
+static const char *const SPTAG[8] = {"STOP", "STEP", "1/4", "1/2", "", "X2", "X4", "X8"};
+static const u8 SPN[8] = {0, 0, 1, 1, 1, 2, 4, 8};          // ant slices per frame (8 slices = 1 game tick = 8 frames at NORMAL)
+static const u8 SPM[8] = {0, 0, 3, 1, 0, 0, 0, 0};          // run only when (frame & mask) == 0: VERY SLOW every 4th frame, SLOW every 2nd
+static u8 spd_ok(void) { return (u8)((u16)wins[0] + wins[1] + wins[2] >= 10); }
+static void spd_next(s8 dir) {                          // step through the speeds, skipping the two that are still locked
+  u8 i;
+  for (i = 0; i < 8; i++) { spd = (u8)((spd + dir + 8) & 7); if (spd_ok() || (spd != 1 && spd != 7)) break; }
+}
+static void spd_toggle(void) { spd = spd == 4 ? 6 : 4; say(spd == 6 ? "FAST FORWARD ON" : "NORMAL SPEED"); }
+
 // ---------- HUD (BG1 rows 18-19) ----------
 // row 18: MP nn [bar] F nn  T m:ss        row 19: Q a/b  A nn  R nn  P nn  FF  D NORM   (a hint replaces row 19)
 static void hud(void) {
@@ -194,7 +207,7 @@ static void hud(void) {
   ps(0, 19, "Q", 2); pc(1, 19, '0' + qhp[0], 1); pc(2, 19, '/', 1); pc(3, 19, '0' + qhp[1], 1);
   ps(6, 19, "A", 2); pn(7, 19, ncnt[0], 1); ps(10, 19, "R", 2); pn(11, 19, ncnt[1], 1);
   ps(14, 19, "P", 2); pn(15, 19, appr, 1);
-  if (ff) ps(19, 19, "FF", 2);
+  if (spd != 4) ps(19, 19, SPTAG[spd], 2);
   ps(23, 19, "D", 2); ps(25, 19, DNAME[diff], 1);
 }
 
@@ -607,7 +620,7 @@ static void newgame(void) {
   stock[0] = stock[1] = 0; qhp[0] = qhp[1] = QHP; hatched[0] = hatched[1] = 0;
   for (k = 0; k < 3; k++) { spawn(0); spawn(1); }
   count(ncnt);
-  perk = 0; pend = 0; set_rules(); ff = 0; appr = 50; etk = 0; slice = 0; cheat = 0; cx = nestx[0]; cy = nesty[0] - 2; mana = 10; gt = 0; over = 0; msgt = 0;
+  perk = 0; pend = 0; set_rules(); spd = 4; sf = 0; appr = 50; etk = 0; slice = 0; cheat = 0; cx = nestx[0]; cy = nesty[0] - 2; mana = 10; gt = 0; over = 0; msgt = 0;
   camx = 0; camy = H - VH; scx = 0; scy = (s16)camy * 8;
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) draw_cell(x, y);
   ov_clear(); hud();
@@ -1526,8 +1539,8 @@ static void tut_card(u8 i) {
 }
 // ---------- PAUSE MENU (START): live colony status + a menu (UP DOWN, A; START or B resumes) ----------
 #define PM_N 6
-static const char *const PITEM[PM_N] = {"RESUME", "CONTROLS", "HOW TO PLAY", "MUSIC", "FAST FORWARD", "QUIT TO TITLE"};
-static const char *const PHINT[PM_N] = {"BACK TO THE GAME", "BUTTONS AND RULES", "REPLAY THE LESSON CARDS", "MUSIC ON OR OFF", "SPEED UP THE GAME", "GIVE UP AND LEAVE"};
+static const char *const PITEM[PM_N] = {"RESUME", "CONTROLS", "HOW TO PLAY", "MUSIC", "SPEED", "QUIT TO TITLE"};
+static const char *const PHINT[PM_N] = {"BACK TO THE GAME", "BUTTONS AND RULES", "REPLAY THE LESSON CARDS", "MUSIC ON OR OFF", "LEFT RIGHT CHANGES SPEED", "GIVE UP AND LEAVE"};
 static void pm_rule(u8 y) {
   u8 x; for (x = 1; x < 29; x++) BGMAP1[y * 32 + x] = (u16)(ORN | (9 << 12));
   BGMAP1[y * 32 + 14] = (u16)((ORN + 1) | (9 << 12)); BGMAP1[y * 32 + 15] = (u16)((ORN + 2) | (9 << 12));
@@ -1563,10 +1576,10 @@ static void pm_menu(u8 sel, u8 conf) {
     if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
     ps(3, y, (conf && i == sel) ? "SURE? A YES   B NO" : PITEM[i], i == sel ? 9 : 3);
     if (i == 3) ps(23, y, nomus ? "OFF" : "ON", 9);
-    if (i == 4) ps(23, y, ff ? "ON" : "OFF", 9);
+    if (i == 4) ps(15, y, SPNAME[spd], 9);
   }
   for (x = 1; x < 29; x++) BGMAP1[18 * 32 + x] = (u16)(1 | (3 << 12));
-  ps(1, 18, PHINT[sel], 3);
+  ps(1, 18, (sel == 4 && !spd_ok() && !conf) ? "10 WINS UNLOCK 2 SPEEDS" : PHINT[sel], 3);
 }
 static void pause_menu(void) {
   u8 sel = 0, conf = 0, run = 1, act, i; u16 k, p, prev = 0;
@@ -1594,7 +1607,7 @@ static void pause_menu(void) {
         tut = sv; tview = 0; pm_draw(); prev = joy(); break;
       }
       case 3: nomus ^= 1; if (nomus) music_stop(); else music_start(); sfx_mana(); break;
-      case 4: ff ^= 1; sfx_mana(); break;
+      case 4: spd_next((p & J_LEFT) ? -1 : 1); sfx_mana(); break;
       default: conf = 1; sfx_deny(); break;
       }
     }
@@ -1671,7 +1684,7 @@ static void play(void) {
     if (k & J_SEL) {                                 // SELECT: modifier. SEL+A embezzle, SEL+B fast forward, alone (on release) flood
       if (p & J_SEL) selused = 0;
       if (p & J_A) { offering(); selused = 1; }
-      if (p & J_B) { ff ^= 1; say(ff ? "FAST FORWARD ON" : "FAST FORWARD OFF"); selused = 1; }
+      if (p & J_B) { spd_toggle(); selused = 1; }
     } else {
       if (selprev && !selused) flood();
       if (pend && !msgt && (p & (J_A | J_B))) pick((p & J_A) ? pa : pb);   // offer on the HUD: A / B take a perk
@@ -1679,14 +1692,15 @@ static void play(void) {
     }
     selprev = (u8)(k & J_SEL);
     if (p & J_L) flood();                            // GBA shoulder shortcuts
-    if (p & J_R) { ff ^= 1; say(ff ? "FAST FORWARD ON" : "FAST FORWARD OFF"); }
+    if (p & J_R) { if (spd == 1) { for (n = 8; n; n--) tick_slice(); sfx_food(); } else spd_toggle(); }
     if (tut && (cx != lcx || cy != lcy)) { tev |= 1; lcx = cx; lcy = cy; }
     if (tut && (tev & TEV[tut - 1])) { sfx_mana(); tut++; tut_enter(); prev = joy(); }
     if (tut) { qhp[0] = qhp[1] = QHP; if (appr < 50) appr = 50; }          // no game over mid-lesson
     if (cheat) { mana = MANA_MAX; stock[0] = 99; appr = 99; }
     if (sandbox) { mana = MANA_MAX; qhp[0] = qhp[1] = QHP; appr = 99; }
     follow(); scroll_step();
-    for (n = ff ? 4 : 1; n; n--) tick_slice();
+    n = SPN[spd]; if (n && (sf++ & SPM[spd])) n = 0;     // PAUSED / FRAME ADVANCE: none; slow speeds skip frames
+    for (; n; n--) tick_slice();
     if (++t >= 8) {
       t = 0; count(ncnt);
       if (tut && !msgt && THINT[tut - 1]) { msg = THINT[tut - 1]; msgt = 1; }   // keep the lesson goal on the HUD
