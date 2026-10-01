@@ -4,6 +4,7 @@
 // New on GBA: 30x18 tile view, 24 ants per colony, difficulty levels, game timer, SRAM records, L/R shortcuts.
 #include <stdint.h>
 #include "art.h"
+#include "logo.h"
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16;
 
@@ -95,8 +96,13 @@ static const u16 CHEAT[10] = {J_LEFT, J_LEFT, J_RIGHT, J_RIGHT, J_UP, J_DOWN, J_
 static const u8 RCOST[3] = {4, 3, 2};            // food per red ant: easy, normal, hard
 static const u8 TRK[3] = {15, 31, 63};           // mana trickle mask (every 16 / 32 / 64 ticks)
 static const char *const DNAME[3] = {"EASY", "NORM", "HARD"};
+// roguelike perks (ported from the GBC build): after an election that is not a coup, take one of two random perks with A or B
+static u8 perk, pend, pa, pb;                    // perk = owned bit mask, pend = ticks left to choose, pa/pb = the two offered
+static u8 fcost = 8, hc0 = 3, hc1 = 3, tm = 31, dm = 31, qmax0 = 5;   // flood cost, food per ant (you / red), mana trickle mask, popularity-drain mask, your queen HP cap
+static char pbuf[20];
+static const char PN[] = "FLOOD 4FASTEGGMANA UPCALM   QUEENUPSLOWRED";
 static u8 tut, tev, tutor, lcx, lcy;             // tutorial: lesson (0 = off), events done, from-title flag, last cursor
-static u8 wins[3]; static u16 best[3];           // records (SRAM), best = seconds, 0 = none
+static u8 wins[3]; static u16 best[3], hiscore[3];           // records (SRAM), best = seconds, 0 = none
 
 static u32 rnd(void) { rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; return rs >> 8; }
 
@@ -204,12 +210,12 @@ static const char HELP[] =
   "THEY KILL YOURS\n"
   "\n"
   "#HOW\n"
-  "ANTS CANT CLIMB CLIFFS OR\n"
-  "SWIM: BUILD BRIDGES, CUT\n"
-  "PATHS, FLOOD THE ENEMY\n"
+  "ANTS CANT CLIMB OR SWIM\n"
   "MANA: TRICKLE, FOOD HOME,\n"
   "ELECTION AID (P 50 UP)\n"
-  "P UNDER 25 = COUP\n";
+  "P UNDER 25 = COUP\n"
+  "NO COUP: PERK A OR B\n"
+  "FLOODS AND QUAKES STRIKE\n";
 static void help_show(void) {
   const char *s = HELP; u8 y = 1, x, g;
   hide_all(); vsync(); oam_flush();
@@ -311,16 +317,22 @@ static void fade(u8 from, u8 to) {               // 0 = full colour, 16 = black
 static void save_write(void) {
   u8 i, s = 0;
   SRAM[0] = 'E'; SRAM[1] = 'A'; SRAM[2] = 'N'; SRAM[3] = 'T';
-  for (i = 0; i < 3; i++) { SRAM[4 + i] = wins[i]; SRAM[7 + 2 * i] = (u8)(best[i] & 255); SRAM[8 + 2 * i] = (u8)(best[i] >> 8); }
-  for (i = 4; i < 13; i++) s = (u8)(s + SRAM[i]);
-  SRAM[13] = s;
+  for (i = 0; i < 3; i++) {
+    SRAM[4 + i] = wins[i]; SRAM[7 + 2 * i] = (u8)(best[i] & 255); SRAM[8 + 2 * i] = (u8)(best[i] >> 8);
+    SRAM[13 + 2 * i] = (u8)(hiscore[i] & 255); SRAM[14 + 2 * i] = (u8)(hiscore[i] >> 8);
+  }
+  for (i = 4; i < 19; i++) s = (u8)(s + SRAM[i]);
+  SRAM[19] = s;
 }
 static void save_load(void) {
   u8 i, s = 0;
-  for (i = 4; i < 13; i++) s = (u8)(s + SRAM[i]);
-  if (SRAM[0] == 'E' && SRAM[1] == 'A' && SRAM[2] == 'N' && SRAM[3] == 'T' && SRAM[13] == s) {
-    for (i = 0; i < 3; i++) { wins[i] = SRAM[4 + i]; best[i] = (u16)(SRAM[7 + 2 * i] | (SRAM[8 + 2 * i] << 8)); }
-  } else { for (i = 0; i < 3; i++) { wins[i] = 0; best[i] = 0; } save_write(); }
+  for (i = 4; i < 19; i++) s = (u8)(s + SRAM[i]);
+  if (SRAM[0] == 'E' && SRAM[1] == 'A' && SRAM[2] == 'N' && SRAM[3] == 'T' && SRAM[19] == s) {
+    for (i = 0; i < 3; i++) {
+      wins[i] = SRAM[4 + i]; best[i] = (u16)(SRAM[7 + 2 * i] | (SRAM[8 + 2 * i] << 8));
+      hiscore[i] = (u16)(SRAM[13 + 2 * i] | (SRAM[14 + 2 * i] << 8));
+    }
+  } else { for (i = 0; i < 3; i++) { wins[i] = 0; best[i] = 0; hiscore[i] = 0; } save_write(); }
 }
 
 // ---------- world ----------
@@ -353,10 +365,50 @@ static void count(u8 *c) { u8 i; c[0] = c[1] = 0; for (i = 0; i < MAXA; i++) if 
 
 static void apr(s8 d) { s16 v = (s16)appr + d; appr = v < 0 ? 0 : v > 99 ? 99 : (u8)v; }
 static void die(Ant *a) { a->alive = 0; if (a->team == 0) apr(-2); }
+static void set_rules(void) {
+  fcost = 8; hc0 = 3; hc1 = RCOST[diff]; tm = TRK[diff]; dm = 31; qmax0 = QHP;
+  if (perk & 1) fcost = 4;                       // FLOOD 4
+  if (perk & 2) hc0 = 2;                         // FASTEGG
+  if (perk & 4) tm >>= 1;                        // MANA UP
+  if (perk & 8) dm = (u8)((dm << 1) | 1);        // CALM: popularity sinks slower, disasters rarer
+  if (perk & 16) qmax0 = QHP + 1;                // QUEENUP
+  if (perk & 32) hc1++;                          // SLOWRED
+}
+static void offer(void) {                        // two different perks you do not own yet
+  u8 i;
+  if (perk == 63) return;
+  do pa = (u8)(rnd() & 7); while (pa > 5 || ((perk >> pa) & 1));
+  pb = pa;
+  do pb = pb > 4 ? 0 : pb + 1; while ((perk >> pb) & 1);
+  pbuf[0] = 'A'; pbuf[1] = ':'; pbuf[9] = ' '; pbuf[10] = 'B'; pbuf[11] = ':';
+  for (i = 0; i < 7; i++) { pbuf[2 + i] = PN[pa * 7 + i]; pbuf[12 + i] = PN[pb * 7 + i]; }
+  pbuf[19] = 0; pend = 80;                       // about 10 s to choose
+}
+static void pick(u8 i) {
+  perk |= (u8)(1 << i); pend = 0; set_rules();
+  if (i == 4 && qhp[0]) qhp[0]++;
+  sfx_mana(); say("PERK TAKEN!");
+}
+static void hit(u8 px, u8 py, u8 q) {            // 3x3 patch: every tile sinks one level; q = earthquake (each tile up or down)
+  s8 x, y;
+  for (y = (s8)py - 1; y <= (s8)py + 1; y++) for (x = (s8)px - 1; x <= (s8)px + 1; x++)
+    if (x >= 0 && y >= 0 && x < W && y < H && !is_nest(x, y)) {
+      if (q && (rnd() & 1)) { if (hgt[y][x] < 3) hgt[y][x]++; } else if (hgt[y][x]) hgt[y][x]--;
+      draw_cell(x, y);
+    }
+}
+static u8 dmask_dis(void) { u8 b = diff == 0 ? 127 : diff == 1 ? 63 : 31; return (perk & 8) ? (u8)((b << 1) | 1) : b; }
+static void disaster(void) {                     // hits both colonies alike, anywhere on the map
+  u8 q = (u8)(rnd() & 1);
+  hit((u8)(rnd() & (W - 1)), (u8)(rnd() & (H - 1)), q);
+  sfx_flood(); say(q ? "EARTHQUAKE!" : "FLASH FLOOD!");
+}
 static void election(void) {
+  u8 ok = appr >= 25;                            // anything but a coup earns a perk offer
   if (appr >= 50) { mana = (mana + 8 > MANA_MAX) ? MANA_MAX : mana + 8; sfx_mana(); say("ELECTION WON! AID"); }
   else if (appr >= 25) { sfx_deny(); say("ELECTION: NO BONUS"); }
   else { stock[0] >>= 1; mana = 0; appr = 40; sfx_qdead(); say("COUP! COFFERS LOOTED"); }
+  if (ok && !tut && !sandbox) offer();
 }
 static void step_ant(Ant *a) {
   u8 d, t = a->team, e = t ^ 1, found = 0, bd = 0, tx, ty, de;
@@ -399,18 +451,20 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
   count(ncnt);
   for (i = 0; i < 2; i++) {
     if (!qhp[i]) continue;
-    cst = i ? RCOST[diff] : 3;
+    cst = i ? hc1 : hc0;
     if (stock[i] >= cst && spawn(i)) { stock[i] -= cst; if (i == 0) { sfx_spawn(); apr(1); } }
     else if (ncnt[i] == 0 && (gt & 31) == 0) spawn(i);
-    if ((gt & 127) == 0 && qhp[i] < QHP) qhp[i]++;
+    if ((gt & 127) == 0 && qhp[i] < (i ? QHP : qmax0)) qhp[i]++;
   }
-  if ((gt & 31) == 0) apr(!stock[0] && ncnt[0] ? -2 : -1);
+  if ((gt & dm) == 0) apr(!stock[0] && ncnt[0] ? -2 : -1);
+  if (pend) pend--;
+  if (!tut && !sandbox && gt > 90 && (gt & dmask_dis()) == 0 && !(rnd() & 3)) disaster();   // rarer on EASY / with CALM
   if (++etk >= 450) { etk = 0; election(); }
   if ((gt & 7) == 0) for (i = 0; i < 2; i++) {
     x = rnd() & (W - 1); y = rnd() & (H - 1);
     if (hgt[y][x] && !food[y][x] && !is_nest(x, y)) { food[y][x] = 1; draw_cell(x, y); }
   }
-  if ((gt & TRK[diff]) == 0 && mana < MANA_MAX) mana++;
+  if ((gt & tm) == 0 && mana < MANA_MAX) mana++;
 }
 static void bump(u8 cx0, u8 cy0, u8 v, u8 r) {
   s8 x, y;
@@ -472,7 +526,7 @@ static void newgame(void) {
   stock[0] = stock[1] = 0; qhp[0] = qhp[1] = QHP; hatched[0] = hatched[1] = 0;
   for (k = 0; k < 3; k++) { spawn(0); spawn(1); }
   count(ncnt);
-  ff = 0; appr = 50; etk = 0; slice = 0; cheat = 0; cx = nestx[0]; cy = nesty[0] - 2; mana = 10; gt = 0; over = 0; msgt = 0;
+  perk = 0; pend = 0; set_rules(); ff = 0; appr = 50; etk = 0; slice = 0; cheat = 0; cx = nestx[0]; cy = nesty[0] - 2; mana = 10; gt = 0; over = 0; msgt = 0;
   camx = 0; camy = H - VH; scx = 0; scy = (s16)camy * 8;
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) draw_cell(x, y);
   ov_clear(); hud();
@@ -500,8 +554,8 @@ static void offering(void) {
 }
 static void flood(void) {
   s8 x, y;
-  if (mana < 8) { sfx_deny(); say("FLOOD NEEDS 8 MANA"); return; }
-  mana -= 8; sfx_flood(); tev |= 8;
+  if (mana < fcost) { sfx_deny(); say(fcost == 4 ? "FLOOD NEEDS 4 MANA" : "FLOOD NEEDS 8 MANA"); return; }
+  mana -= fcost; sfx_flood(); tev |= 8;
   for (y = (s8)cy - 1; y <= (s8)cy + 1; y++) for (x = (s8)cx - 1; x <= (s8)cx + 1; x++)
     if (x >= 0 && y >= 0 && x < W && y < H && hgt[y][x] && !is_nest(x, y)) { hgt[y][x]--; draw_cell(x, y); }
 }
@@ -822,19 +876,28 @@ static void tut_enter(void) {                        // show lessons until one n
 }
 
 // ---------- play ----------
+static u16 calc_score(u32 secs) {                 // 300/600/900 by level + speed bonus + 5 per ant + popularity + 10 per queen HP
+  u16 sc = (u16)(300 * (diff + 1));
+  if (secs < 600) sc = (u16)(sc + 600 - secs);
+  return (u16)(sc + ncnt[0] * 5 + appr + qhp[0] * 10);
+}
+static void pd(u8 x, u8 y, u16 v, u8 p) { u8 i; for (i = 4; i--; v /= 10) pc(x + i, y, (char)('0' + v % 10), p); }
 static void end_card(void) {
-  u32 s = (u32)gt * 2 / 15; u8 nb = 0;
+  u32 s = (u32)gt * 2 / 15; u8 nb = 0, nh = 0; u16 sc = 0;
   ov_fill(1, 1, 18, 19);
   if (over == 1) {
     if (!sandbox && !cheat) {
       if (wins[diff] < 99) wins[diff]++;
       if (!best[diff] || s < best[diff]) { best[diff] = (u16)s; nb = 1; }
+      if (sc = calc_score(s), sc > hiscore[diff]) { hiscore[diff] = sc; nh = 1; }
       save_write();
     }
+    if (!sc) sc = calc_score(s);
     ps(0, 18, "YOU WIN!", 2); ps(10, 18, "TIME", 2);
     pn(15, 18, (u8)(s / 60 > 99 ? 99 : s / 60), 1); pc(17, 18, ':', 1); pz(18, 18, (u8)(s % 60), 1);
     if (nb) ps(21, 18, "NEW BEST!", 2);
   } else ps(0, 18, "COLONY LOST!", 2);
+  if (over == 1) { ps(13, 19, "SCORE", 2); pd(19, 19, sc, 1); if (nh) ps(24, 19, "HIGH!", 2); }
   ps(0, 19, "PRESS START", 1);
 }
 static void play(void) {
@@ -870,8 +933,8 @@ static void play(void) {
       if (p & J_B) { ff ^= 1; say(ff ? "FAST FORWARD ON" : "FAST FORWARD OFF"); selused = 1; }
     } else {
       if (selprev && !selused) flood();
-      if (p & J_A) raise_land();
-      if (p & J_B) lower_land();
+      if (pend && !msgt && (p & (J_A | J_B))) pick((p & J_A) ? pa : pb);   // offer on the HUD: A / B take a perk
+      else { if (p & J_A) raise_land(); if (p & J_B) lower_land(); }
     }
     selprev = (u8)(k & J_SEL);
     if (p & J_L) flood();                            // GBA shoulder shortcuts
@@ -886,6 +949,7 @@ static void play(void) {
     if (++t >= 8) {
       t = 0; count(ncnt);
       if (tut && !msgt && THINT[tut - 1]) { msg = THINT[tut - 1]; msgt = 1; }   // keep the lesson goal on the HUD
+      else if (pend && !msgt) { msg = pbuf; msgt = 1; }                          // keep the perk offer on the HUD
       hud();
     }
     if (!qhp[1]) over = 1; else if (!qhp[0]) over = 2;
@@ -903,6 +967,9 @@ static void play(void) {
 int main(void) {
   u8 i, x, y; static const u8 BARRM[4] = {1, 2, 2, 3};
   DISPCNT = 0x80;
+  logo_play();                                        // Danny Steel boot logo (START skips)
+  IO16(0x0C) = IO16(0x0E) = 0; IO16(0x14) = IO16(0x16) = 0; IO16(0x48) = IO16(0x4A) = 0;   // undo the logo's BG2/3, BG1 scroll, windows
+  for (i = 0; i < 255; i++) { BGPAL[i] = 0; OBJPAL[i] = 0; }
   SNDX = 0x80; SNDH = 0x0002; SNDL = 0xFF77;          // PSG on, 100% DMG volume, all channels both sides
   BLDCNT = 0xFF; BLDY = 16;
   // palettes
