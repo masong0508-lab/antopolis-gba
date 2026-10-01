@@ -1107,14 +1107,44 @@ static void card_init(void) {
   tdraw(ORN + 5, "11111111" "13111111" "13311111" "13331111" "13333111" "13331111" "13311111" "13111111");
 }
 
+// ----- the picture band. Each card draws its static background ONCE into bgbuf (EWRAM). Every frame tut_anim copies it to sbuf,
+// paints the moving parts on top, and band_put() DMAs the result into the band tiles during VBlank: smooth, no tearing -----
+#ifdef __arm__
+#define EWRAM __attribute__((section(".ewram")))
+#else
+#define EWRAM
+#endif
+EWRAM static u32 bgbuf[BW * BH * 8], sbuf[BW * BH * 8];
+static u32 *cur = bgbuf;
 static int bclip = BW * 8;
-static void bpx(int x, int y, u8 c) {
-  volatile u32 *d; u8 s;
-  if (x < 0 || y < 0 || x >= bclip || y >= BH * 8) return;
-  d = TILE32 + (BAND + (y >> 3) * BW + (x >> 3)) * 8 + (y & 7); s = (u8)((x & 7) * 4);
+static int iabs(int a) { return a < 0 ? -a : a; }
+static int tease(int t, int len) {                    // smoothstep: 0..1000 over len frames
+  int u; if (t <= 0) return 0; if (t >= len) return 1000;
+  u = t * 1000 / len; return (u * u / 1000) * (3000 - 2 * u) / 1000;
+}
+IWRAM static void bpx(int x, int y, u8 c) {
+  u32 *d; u8 s;
+  if ((unsigned)x >= (unsigned)bclip || (unsigned)y >= BH * 8) return;
+  d = cur + ((y >> 3) * BW + (x >> 3)) * 8 + (y & 7); s = (u8)((x & 7) * 4);
   *d = (*d & ~(0xFu << s)) | ((u32)c << s);
 }
-static void brect(int x, int y, int w, int h, u8 c) { int i, j; for (j = 0; j < h; j++) for (i = 0; i < w; i++) bpx(x + i, y + j, c); }
+IWRAM static void brect(int x, int y, int w, int h, u8 c) {
+  int i, j, xe = x + w, ye = y + h; u32 wc = (u32)c * 0x11111111u;
+  if (x < 0) x = 0; if (y < 0) y = 0; if (xe > bclip) xe = bclip; if (ye > BH * 8) ye = BH * 8;
+  for (j = y; j < ye; j++)
+    for (i = x; i < xe; ) {
+      if (!(i & 7) && i + 8 <= xe) { cur[((j >> 3) * BW + (i >> 3)) * 8 + (j & 7)] = wc; i += 8; }
+      else { bpx(i, j, c); i++; }
+    }
+}
+static u8 bget(int x, int y) {
+  if ((unsigned)x >= BW * 8 || (unsigned)y >= BH * 8) return 0;
+  return (u8)((bgbuf[((y >> 3) * BW + (x >> 3)) * 8 + (y & 7)] >> ((x & 7) * 4)) & 15);
+}
+static void band_put(void) {                          // sbuf -> band tiles (call in VBlank)
+  DMAR(3, 0) = (u32)sbuf; DMAR(3, 4) = (u32)(TILE32 + BAND * 8); DMAR(3, 8) = DMA_ON | DMA_W32 | (BW * BH * 8);
+}
+static void bbox(int x, int y, int w, int h, u8 c) { brect(x, y, w, 1, c); brect(x, y + h - 1, w, 1, c); brect(x, y, 1, h, c); brect(x + w - 1, y, 1, h, c); }
 static void bdisc(int cx, int cy, int r, u8 c) { int i, j; for (j = -r; j <= r; j++) for (i = -r; i <= r; i++) if (i * i + j * j <= r * r + r) bpx(cx + i, cy + j, c); }
 static void bline(int x0, int y0, int x1, int y1, u8 c) {
   int dx = x1 > x0 ? x1 - x0 : x0 - x1, dy = y1 > y0 ? y0 - y1 : y1 - y0, sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1, e = dx + dy, e2;
@@ -1123,13 +1153,13 @@ static void bline(int x0, int y0, int x1, int y1, u8 c) {
     e2 = 2 * e; if (e2 >= dy) { e += dy; x0 += sx; } if (e2 <= dx) { e += dx; y0 += sy; }
   }
 }
-static void btri(int x, int y, int w, int h, u8 c) {    // filled triangle, apex up
+static void btri(int x, int y, int w, int h, u8 c) {
   int k, hw; for (k = 0; k < h; k++) { hw = h > 1 ? k * w / (2 * (h - 1)) : 0; brect(x + w / 2 - hw, y + k, 2 * hw + 1, 1, c); }
 }
-static void bdown(int x, int y, int w, int h, u8 c) {   // filled triangle, apex down
+static void bdown(int x, int y, int w, int h, u8 c) {
   int k, hw; for (k = 0; k < h; k++) { hw = h > 1 ? (h - 1 - k) * w / (2 * (h - 1)) : 0; brect(x + w / 2 - hw, y + k, 2 * hw + 1, 1, c); }
 }
-static void btext(int x, int y, const char *s, u8 sc, u8 c) {   // the 3x5 font at 1x or 2x inside the picture
+static void btext(int x, int y, const char *s, u8 sc, u8 c) {
   u16 g; int gx, gy;
   for (; *s; s++, x += 4 * sc) {
     g = FONT[gi(*s)];
@@ -1138,164 +1168,312 @@ static void btext(int x, int y, const char *s, u8 sc, u8 c) {   // the 3x5 font 
 }
 static int blen(const char *s) { int n = 0; while (s[n]) n++; return n; }
 static void bctext(int cx, int y, const char *s, u8 sc, u8 c) { btext(cx - (blen(s) * 4 - 1) * sc / 2, y, s, sc, c); }
-static void bbtn(int cx, int cy, char ch) {            // round gamepad button
-  char t[2]; t[0] = ch; t[1] = 0;
-  bdisc(cx, cy, 9, C_STEEL); bdisc(cx, cy, 8, C_GOLD); btext(cx - 2, cy - 4, t, 2, C_NAVY);
+static void bplus(int x, int y, u8 c) { brect(x - 1, y, 3, 1, c); brect(x, y - 1, 1, 3, c); }
+static void bsparkle(int x, int y, u8 c) { brect(x - 2, y, 5, 1, c); brect(x, y - 2, 1, 5, c); }
+static void bbtn(int cx, int cy, char ch, int pr) {
+  char t[2]; t[0] = ch; t[1] = 0; if (pr) cy++;
+  bdisc(cx, cy, 9, C_STEEL); bdisc(cx, cy, 8, pr ? C_WHITE : C_GOLD); btext(cx - 2, cy - 4, t, 2, C_NAVY);
 }
-static void bpill(int cx, int y, const char *s) {      // small pill key such as SEL / START
+static void bpill(int cx, int y, const char *s, u8 fill) {
   int w = blen(s) * 4 + 5, x = cx - w / 2;
-  brect(x + 4, y, w - 8, 9, C_GOLD); bdisc(x + 4, y + 4, 4, C_GOLD); bdisc(x + w - 5, y + 4, 4, C_GOLD);
+  brect(x + 4, y, w - 8, 9, fill); bdisc(x + 4, y + 4, 4, fill); bdisc(x + w - 5, y + 4, 4, fill);
   btext(x + 3, y + 2, s, 1, C_NAVY);
 }
-static void barrow(int x, int y, u8 d, u8 c) {         // 9 px arrow centred on x, y: d 0 right, 1 down, 2 up
+static void barrow(int x, int y, u8 d, u8 c) {
   int k;
   if (d == 0) { brect(x - 5, y - 1, 7, 3, c); for (k = 0; k < 4; k++) brect(x + 1 + k, y - 3 + k, 1, 7 - 2 * k, c); }
   else if (d == 1) { brect(x - 1, y - 5, 3, 7, c); for (k = 0; k < 4; k++) brect(x - 3 + k, y + 1 + k, 7 - 2 * k, 1, c); }
   else { brect(x - 1, y - 1, 3, 7, c); for (k = 0; k < 4; k++) brect(x - 3 + k, y - 1 - k, 7 - 2 * k, 1, c); }
 }
-static void bground(int y0, u8 c) {                     // textured ground strip
+static void bground(int y0, u8 c) {
   int x, y; brect(0, y0, BW * 8, BH * 8 - y0, c);
   if (c == C_GRASS) for (y = y0 + 2; y < BH * 8; y += 4) for (x = (y * 3) % 7; x < BW * 8; x += 7) bpx(x, y, C_LEAF);
 }
-static void bant(int x, int y, int d, u8 body, u8 leg, u8 crown) {   // big side-view ant, head towards d (+1 right, -1 left)
-  int k;
-  for (k = -1; k <= 1; k++) bline(x, y + 2, x + k * 5, y + 9, leg);
-  bline(x + 8 * d, y - 2, x + 12 * d, y - 7, leg); bline(x + 8 * d, y - 2, x + 11 * d, y - 3, leg);
+static void bant(int x, int y, int d, u8 body, u8 leg, u8 crown, int ph) {
+  int k, fx;
+  for (k = -1; k <= 1; k++) { fx = k * 5 + ((((ph + k) & 3) < 2) ? -1 : 1) * 2; bline(x, y + 2, x + fx, y + 9, leg); }
+  bline(x + 8 * d, y - 2, x + 12 * d, y - 7 + ((ph >> 1) & 1) * 2, leg); bline(x + 8 * d, y - 2, x + 11 * d, y - 3 + (ph & 1), leg);
   bdisc(x - 9 * d, y, 5, body); bdisc(x, y, 3, body); bdisc(x + 6 * d, y - 1, 3, body);
   if (crown) { brect(x - 4, y - 9, 9, 3, C_GOLD); bpx(x - 4, y - 11, C_GOLD); bpx(x, y - 12, C_GOLD); bpx(x + 4, y - 11, C_GOLD); bpx(x, y - 9, C_RED); }
 }
-static void bsparkle(int x, int y, u8 c) { brect(x - 2, y, 5, 1, c); brect(x, y - 2, 1, 5, c); }
-static void bmana(int n) {                              // the MP bar of lesson 4: n of 10 segments filled
-  int k; for (k = 0; k < 10; k++) brect(36 + k * 17, 5, 15, 11, k < n ? C_GOLD : C_STEEL);
+static void bwave(int x, int y, int s) { bpx(x + s, y + 2, C_WHITE); bpx(x + s + 1, y + 1, C_WHITE); bpx(x + s + 2, y, C_WHITE); bpx(x + s + 3, y + 1, C_WHITE); bpx(x + s + 4, y + 2, C_WHITE); }
+static void bmana(int n, int fl, int all) {
+  int k; for (k = 0; k < 10; k++) brect(36 + k * 17, 5, 15, 11, k >= n ? C_STEEL : (k == fl || all) ? C_WHITE : C_GOLD);
 }
 static void ant_spr(u8 s, int x, int y, u16 fr, u8 pal) { spr(s, 8 + x, 32 + y, (u8)(3 + (((fr >> 3) + s) & 1)), pal, 0, 0); }
 
-static const char MINI[4][19] = {"222211112222333322", "222110011122233322", "232210001222223222", "233221000112222222"};   // lesson 1 mini map
+static const char MINI[4][19] = {"222211112222333322", "222110011122233322", "232210001222223222", "233221000112222222"};
+static void mpos(int p, int *x, int *y) {
+  if (p < 8) { *x = 4 + p; *y = 0; } else if (p < 11) { *x = 11; *y = p - 7; } else if (p < 18) { *x = 11 - (p - 10); *y = 3; } else { *x = 4; *y = 3 - (p - 17); }
+}
 static void tut_art(u8 i) {
-  int k, x, y; u8 c;
-  for (k = 0; k < BW * BH * 8; k++) TILE32[BAND * 8 + k] = 0x11111111u;
-  bclip = BW * 8;
+  static const char *const LV[4] = {"0 WATER", "1 SAND", "2 GRASS", "3 HILL"};
+  int k, x, y; u8 c; char ch;
+  cur = bgbuf; bclip = BW * 8;
+  for (k = 0; k < BW * BH * 8; k++) bgbuf[k] = 0x11111111u;
   switch (i) {
-  case 0:                                              // the two colonies and their queens
-    bdisc(112, 9, 5, C_GOLD); for (k = 0; k < 8; k++) bpx(112 + ((k & 1) ? 9 : 0) * ((k & 2) ? 1 : -1), 9 + (k & 4 ? 6 : 0), C_GOLD);
-    btri(88, 18, 48, 12, C_HILL); btri(60, 22, 30, 8, C_HILL);
-    bground(30, C_GRASS);
-    bant(26, 24, 1, C_DARK, C_GRAY, 1); bant(198, 24, -1, C_RED, C_PINK, 1);
+  case 0:
+    bdisc(112, 9, 5, C_GOLD); btri(88, 18, 48, 12, C_HILL); btri(60, 22, 30, 8, C_HILL); bground(30, C_GRASS);
     break;
-  case 1:                                              // D-pad + a bit of map the cursor hops over
+  case 1:
     for (y = 0; y < 4; y++) for (x = 0; x < 18; x++) {
-      c = (u8)(MINI[y][x] - '0' + C_WATER); if (MINI[y][x] == '0') c = C_WATER; else if (MINI[y][x] == '1') c = C_SAND; else if (MINI[y][x] == '2') c = C_GRASS; else c = C_HILL;
+      ch = MINI[y][x]; c = ch == '0' ? C_WATER : ch == '1' ? C_SAND : ch == '2' ? C_GRASS : C_HILL;
       brect(64 + x * 8, 4 + y * 8, 8, 8, c);
     }
-    brect(63, 3, 146, 1, C_STEEL); brect(63, 36, 146, 1, C_STEEL); brect(63, 3, 1, 34, C_STEEL); brect(208, 3, 1, 34, C_STEEL);
+    bbox(63, 3, 146, 34, C_STEEL);
     brect(24, 4, 8, 8, C_GRAY); brect(16, 12, 8, 8, C_GRAY); brect(24, 12, 8, 8, C_STEEL); brect(32, 12, 8, 8, C_GRAY); brect(24, 20, 8, 8, C_GRAY);
     btri(26, 6, 5, 3, C_WHITE); bdown(26, 22, 5, 3, C_WHITE);
-    for (k = 0; k < 3; k++) { bpx(18 + k, 14 + k, C_WHITE); bpx(18 + k, 18 - k, C_WHITE); bpx(37 - k, 14 + k, C_WHITE); bpx(37 - k, 18 - k, C_WHITE); }
+    for (k = 0; k < 3; k++) { bpx(20 - k, 14 + k, C_WHITE); bpx(20 - k, 18 - k, C_WHITE); bpx(35 + k, 14 + k, C_WHITE); bpx(35 + k, 18 - k, C_WHITE); }
     bctext(28, 31, "D PAD", 1, C_CREAM);
     break;
-  case 2:                                              // four heights as a staircase + the A button
+  case 2:
     for (k = 0; k < 4; k++) {
-      static const char *const LV[4] = {"0 WATER", "1 SAND", "2 GRASS", "3 HILL"};
       c = (u8)(C_WATER + k); x = 8 + k * 32; y = 31 - 6 * (k + 1);
       brect(x, y, 30, 6 * (k + 1), c); brect(x, y, 30, 1, C_WHITE);
       bctext(x + 15, 33, LV[k], 1, C_CREAM);
     }
-    bbtn(174, 24, 'A'); barrow(174, 8, 2, C_GOLD);
     btext(192, 20, "1 LEVEL", 1, C_CREAM); btext(192, 27, "1 MP", 1, C_GOLD);
     break;
-  case 3:                                              // a moat stops the red ants
-    bground(26, C_GRASS); brect(86, 26, 44, 14, C_WATER);
-    for (k = 0; k < 5; k++) { bline(90 + k * 9, 31, 93 + k * 9, 29, C_WHITE); bline(93 + k * 9, 29, 96 + k * 9, 31, C_WHITE); bline(94 + k * 9, 35, 97 + k * 9, 33, C_WHITE); bline(97 + k * 9, 33, 100 + k * 9, 35, C_WHITE); }
-    bbtn(108, 11, 'B'); barrow(108, 1, 1, C_GOLD);
-    bant(180, 18, -1, C_DARK, C_GRAY, 1);
+  case 3:
+    bground(26, C_GRASS);
     break;
-  case 4:                                              // MP bar + the three ways to earn it
-    btext(8, 5, "MP", 2, C_GOLD); bmana(6);
+  case 4:
+    btext(8, 5, "MP", 2, C_GOLD);
     bdisc(70, 26, 4, C_WATER); btri(67, 17, 7, 6, C_WATER); bctext(70, 33, "TRICKLE", 1, C_CREAM);
     bdisc(112, 25, 5, C_LEAF); bdisc(111, 24, 3, C_GRASS); brect(111, 18, 2, 3, C_HILL); bctext(112, 33, "FOOD", 1, C_CREAM);
     brect(154, 25, 15, 8, C_GRAY); brect(157, 19, 9, 7, C_CREAM); brect(157, 25, 9, 1, C_NAVY); bctext(162, 33, "ELECTION", 1, C_CREAM);
     break;
-  case 5:                                              // a 3x3 patch goes under water
-    bbtn(24, 20, 'L'); bctext(24, 33, "8 MP", 1, C_GOLD);
+  case 5:
+    bctext(24, 33, "8 MP", 1, C_GOLD);
     for (y = 0; y < 3; y++) for (x = 0; x < 3; x++) { brect(58 + x * 12, 2 + y * 12, 11, 11, C_GRASS); brect(138 + x * 12, 2 + y * 12, 11, 11, C_WATER); }
-    barrow(112, 20, 0, C_GOLD);
-    for (y = 0; y < 3; y++) for (x = 0; x < 3; x++) { bline(139 + x * 12, 6 + y * 12, 141 + x * 12, 4 + y * 12, C_WHITE); bline(141 + x * 12, 4 + y * 12, 143 + x * 12, 6 + y * 12, C_WHITE); }
-    for (k = 0; k < 4; k++) { bpx(188 + k * 2, 8 + (k & 1) * 4, C_WHITE); bpx(190 + k * 2, 20 - (k & 1) * 4, C_WHITE); }
     break;
-  case 6:                                              // what the ant sees + the keys
-    bclip = 140;
-    brect(0, 0, 140, 13, C_SKY); bground(13, C_GRASS);
-    for (k = 0; k < 9; k++) bline(70, 13, -60 + k * 35, 40, C_LEAF);
-    brect(0, 17, 140, 1, C_LEAF); brect(0, 22, 140, 1, C_LEAF); brect(0, 29, 140, 1, C_LEAF); brect(0, 37, 140, 1, C_LEAF);
-    brect(96, 21, 4, 10, C_RED); bdisc(98, 20, 2, C_RED); brect(44, 17, 2, 5, C_RED);
-    brect(70, 8, 3, 9, C_RED); brect(70, 6, 3, 2, C_GOLD);
-    bclip = BW * 8;
-    brect(140, 0, 1, 40, C_STEEL);
-    bpill(180, 7, "SEL"); bpill(180, 25, "START"); brect(179, 17, 3, 1, C_GOLD); brect(180, 16, 1, 3, C_GOLD);
+  case 6:
+    bclip = 140; bground(13, C_GRASS); bclip = BW * 8;
+    brect(140, 0, 1, 40, C_STEEL); brect(179, 17, 3, 1, C_GOLD); brect(180, 16, 1, 3, C_GOLD);
     break;
-  case 7:                                              // food goes home to the nest
+  case 7:
     bground(28, C_GRASS);
     for (k = 0; k < 3; k++) { bdisc(18 + k * 6, 25 - (k & 1) * 2, 3, C_LEAF); bdisc(18 + k * 6, 24 - (k & 1) * 2, 1, C_GRASS); }
     btri(158, 10, 52, 18, C_HILL); bdisc(184, 27, 5, C_NAVY); brect(179, 27, 11, 2, C_NAVY);
-    bpx(190, 24, C_DARK);
-    bctext(88, 7, "3 FOOD", 1, C_CREAM); bctext(88, 14, "NEW ANT", 1, C_GOLD);
     break;
-  case 8:                                              // the popularity bar: coup, nothing, aid
-    brect(16, 14, 48, 10, C_RED); brect(64, 14, 48, 10, C_GRAY); brect(112, 14, 96, 10, C_GRASS);
+  case 8:
     brect(16, 13, 192, 1, C_WHITE); brect(16, 24, 192, 1, C_WHITE);
-    bctext(40, 5, "COUP", 1, C_PINK); bctext(160, 5, "8 MP AID", 1, C_GRASS);
     bctext(16, 29, "0", 1, C_CREAM); bctext(64, 29, "25", 1, C_CREAM); bctext(112, 29, "50", 1, C_CREAM); bctext(208, 29, "100", 1, C_CREAM);
     brect(64, 24, 1, 4, C_CREAM); brect(112, 24, 1, 4, C_CREAM);
-    bdown(133, 27, 9, 5, C_GOLD); bctext(137, 33, "P", 1, C_GOLD);
     break;
-  default:                                             // the crown
-    bsparkle(40, 12, C_WHITE); bsparkle(184, 14, C_WHITE); bsparkle(64, 30, C_GOLD); bsparkle(160, 30, C_GOLD);
+  default:
     brect(90, 22, 44, 9, C_GOLD); brect(90, 29, 44, 2, C_HILL);
     btri(90, 9, 11, 13, C_GOLD); btri(106, 4, 11, 18, C_GOLD); btri(123, 9, 11, 13, C_GOLD);
-    bdisc(95, 26, 2, C_RED); bdisc(112, 26, 2, C_WATER); bdisc(129, 26, 2, C_RED);
     bdisc(95, 8, 1, C_WHITE); bdisc(112, 3, 1, C_WHITE); bdisc(129, 8, 1, C_WHITE);
     bground(35, C_GRASS);
     break;
   }
-  brect(0, 0, BW * 8, 1, C_STEEL); brect(0, BH * 8 - 1, BW * 8, 1, C_STEEL); brect(0, 0, 1, BH * 8, C_STEEL); brect(BW * 8 - 1, 0, 1, BH * 8, C_STEEL);
+  bbox(0, 0, BW * 8, BH * 8, C_STEEL);
 }
-static void tut_anim(u8 i, u16 fr) {                   // sprites + small repaints once per frame
-  u8 k, p; int x, y;
+static void tut_anim(u8 i, u16 fr) {
+  int f = fr, k, x, y, t, u; u8 c;
+  cur = sbuf; bclip = BW * 8;
+  for (k = 0; k < BW * BH * 8; k++) sbuf[k] = bgbuf[k];
   switch (i) {
-  case 0:
-    for (k = 0; k < 3; k++) {
-      ant_spr(k, 44 + (int)((fr / 2 + k * 21) % 63), 27, fr, 0);
-      ant_spr(3 + k, 170 - (int)((fr / 2 + k * 21) % 63), 27, fr, 1);
+  case 0: {
+    static const u8 SX[10] = {10, 34, 58, 84, 140, 166, 190, 212, 70, 150}, SY[10] = {5, 12, 3, 9, 4, 11, 6, 3, 2, 8};
+    static const s8 RX[8] = {1, 1, 0, -1, -1, -1, 0, 1}, RY[8] = {0, 1, 1, 1, 0, -1, -1, -1};
+    for (k = 0; k < 10; k++) {
+      t = ((f / 9) + k * 3) & 7;
+      if (t == 0) bsparkle(SX[k], SY[k], C_WHITE); else if (t < 4) bpx(SX[k], SY[k], C_CREAM); else bpx(SX[k], SY[k], C_STEEL);
     }
-    break;
-  case 1:
-    p = (u8)((fr / 7) % 20);
-    if (p < 8) { x = 4 + p; y = 0; } else if (p < 11) { x = 11; y = p - 7; } else if (p < 18) { x = 11 - (p - 10); y = 3; } else { x = 4; y = 3 - (p - 17); }
-    spr(0, 8 + 64 + x * 8, 32 + 4 + y * 8, 1, 2, 0, 0);
-    break;
-  case 2:
-    p = (u8)((fr / 34) % 5);
-    if (p < 4) ant_spr(0, 8 + p * 32 + 11, 31 - 6 * (p + 1) - 7, fr, 0); else spr_hide(0);
-    break;
-  case 3:
-    k = (u8)((fr / 2) % 100); x = 20 + (k < 50 ? k : 100 - k);
-    ant_spr(0, x, 18, fr, 1);
-    break;
-  case 4:
-    if (fr % 20 == 0) bmana(4 + (int)((fr / 20) % 7));
-    break;
-  case 7:
-    for (k = 0; k < 4; k++) ant_spr(k, 30 + (int)((fr / 3 + k * 25) % 110), 23, fr, 0);
-    break;
-  case 9:
-    ant_spr(0, 58 - 0, 27, fr, 0); ant_spr(1, 160, 27, fr, 0);
-    if ((fr & 31) == 0) { bsparkle(40, 12, (fr & 32) ? C_SKY : C_WHITE); bsparkle(184, 14, (fr & 32) ? C_WHITE : C_SKY); }
-    break;
+    for (k = 0; k < 8; k++) for (u = 7; u <= 8 + ((((f / 6) + k) & 1) * 3); u++) bpx(112 + RX[k] * u, 9 + RY[k] * u, C_GOLD);
+    t = f % 300;
+    if (t < 18) for (u = 0; u < 5; u++) bpx(200 - t * 7 + u * 2, 1 + t - u, u == 0 ? C_WHITE : u < 3 ? C_CREAM : C_STEEL);
+    bant(26, 24 - ((f / 24) & 1), 1, C_DARK, C_GRAY, 1, f / 8);
+    bant(198, 24 - (((f + 12) / 24) & 1), -1, C_RED, C_PINK, 1, f / 8 + 2);
+    if (f % 50 < 6) bsparkle(26, 9, C_WHITE);
+    if ((f + 25) % 50 < 6) bsparkle(198, 9, C_WHITE);
+    for (k = 0; k < 3; k++) {
+      ant_spr((u8)k, 44 + (f / 2 + k * 21) % 63, 27, fr, 0);
+      ant_spr((u8)(3 + k), 170 - (f / 2 + k * 21) % 63, 27, fr, 1);
+    }
+    break; }
+  case 1: {
+    int p0 = (f / 7) % 20, px, py;
+    mpos((p0 + 18) % 20, &x, &y); bbox(64 + x * 8, 4 + y * 8, 8, 8, C_GRAY);
+    mpos((p0 + 19) % 20, &x, &y); bbox(64 + x * 8, 4 + y * 8, 8, 8, C_CREAM);
+    if (f % 7 < 4) {
+      if (p0 >= 1 && p0 <= 7) { brect(32, 12, 8, 8, C_GOLD); for (k = 0; k < 3; k++) { bpx(35 + k, 14 + k, C_NAVY); bpx(35 + k, 18 - k, C_NAVY); } }
+      else if (p0 >= 8 && p0 <= 10) { brect(24, 20, 8, 8, C_GOLD); bdown(26, 22, 5, 3, C_NAVY); }
+      else if (p0 >= 11 && p0 <= 17) { brect(16, 12, 8, 8, C_GOLD); for (k = 0; k < 3; k++) { bpx(20 - k, 14 + k, C_NAVY); bpx(20 - k, 18 - k, C_NAVY); } }
+      else { brect(24, 4, 8, 8, C_GOLD); btri(26, 6, 5, 3, C_NAVY); }
+    }
+    mpos(p0, &px, &py);
+    spr(0, 8 + 64 + px * 8, 32 + 4 + py * 8 - (f % 7 < 2), 1, 2, 0, 0);
+    break; }
+  case 2: {
+    int s = (f / 40) % 5, ux, ay, pr;
+    u = f % 40; pr = (s < 4 && u < 8);
+    for (k = 0; k < 3; k++) bpx(8 + ((f / 3 + k * 9) % 28), 26 + (k & 1) * 2, C_WHITE);
+    if (s < 4 && u < 10) brect(8 + s * 32, 31 - 6 * (s + 1) - (u < 6 ? 2 : 0), 30, 2, (u & 2) ? C_CREAM : C_WHITE);
+    bbtn(174, 24, 'A', pr);
+    barrow(174, 8 - ((f / 8) & 1), 2, C_GOLD);
+    if (s < 4 && u < 24) { bplus(148, 24 - u, C_GOLD); btext(151, 22 - u, "1", 1, C_GOLD); }
+    if (s < 4) {
+      if (s == 0 || u >= 12) { ux = 8 + s * 32 + 11; ay = 31 - 6 * (s + 1) - 7; }
+      else { ux = 8 + (s - 1) * 32 + 11 + 32 * u / 12; ay = 31 - 6 * s - 7 - 6 * u / 12 - u * (12 - u) / 6; }
+      ant_spr(0, ux, ay, fr, 0);
+    } else {
+      ant_spr(0, 8 + 3 * 32 + 8, 31 - 24 - 7 - (((f / 6) & 1) * 2), fr, 0);
+      brect(126, 1, 1, 6, C_CREAM); brect(127, 1, 5 - ((f / 6) & 1), 3, C_RED);
+      if ((f / 5) & 1) bsparkle(100, 4, C_WHITE); else bsparkle(140, 6, C_GOLD);
+    }
+    break; }
+  case 3: {
+    int T = f % 280, ax, dd, wy, x0 = 86, w = 44, mv = 1;
+    bant(180, 18, -1, C_DARK, C_GRAY, 1, f / 8);
+    if (T >= 64 && T < 240) {
+      dd = (T - 64) * 14 / 12; if (dd > 14) dd = 14;
+      if (T >= 220) { u = T - 220; x0 = 86 + u * 22 / 20; w = 44 - u * 44 / 20; }
+      if (w > 0) {
+        brect(x0, 26, w, dd, C_HILL);
+        if (T >= 76) {
+          wy = 40 - (T - 76) * 12 / 16; if (wy < 28) wy = 28;
+          brect(x0, wy, w, 40 - wy, C_WATER);
+          if (w > 6 && wy <= 30) for (k = 0; k < 4; k++) { bwave(x0 + (k * 11 + f / 3) % (w - 5), 30, 0); bwave(x0 + (k * 11 + 5 + f / 2) % (w - 5), 35, 0); }
+        }
+      }
+      if (T < 78) for (k = 0; k < 6; k++) bpx(86 + (T * 7 + k * 13) % 44, 25 - (T - 64) / 2 - k % 3, C_SAND);
+    }
+    bbtn(108, 11, 'B', T >= 60 && T < 76);
+    if (T >= 62 && T < 92) { brect(128, 18 - (T - 62) / 3, 3, 1, C_GOLD); btext(132, 16 - (T - 62) / 3, "1", 1, C_GOLD); }
+    if (T < 60) ax = 4 + T; else if (T < 92) { ax = 64; mv = 0; } else if (T < 104) ax = 64 + (T - 92); else if (T < 140) { ax = 76; mv = 0; }
+    else if (T < 210) ax = 76 - (T - 140) * 80 / 70; else ax = -100;
+    if (ax > -8) ant_spr(0, ax, 18, mv ? fr : 0, 1); else spr_hide(0);
+    if ((T >= 70 && T < 92) || (T >= 104 && T < 140)) { brect(ax - 1, 4, 9, 10, C_WHITE); bpx(ax + 3, 14, C_WHITE); btext(ax + 3, 6, "!", 1, C_RED); }
+    if (T >= 140 && T < 200 && ((f / 5) & 1)) bsparkle(180, 3, C_GOLD);
+    break; }
+  case 4: {
+    static const u8 SXP[3] = {70, 112, 162}, SYP[3] = {16, 18, 19};
+    static const u8 CORE[3] = {C_WHITE, C_GRASS, C_CREAM}, TRAIL[3] = {C_STEEL, C_LEAF, C_STEEL};
+    int w = (f / 30) % 10, uq = f % 30, n, fl = -1, tx, ty, sx, sy, j, q, px, py;
+    if (w < 8) n = 2 + w; else if (w == 8) n = 10; else n = 10 - uq * 8 / 30;
+    if (w >= 1 && w <= 7 && uq < 8) fl = n - 1;
+    bmana(n, fl, w == 8 && ((uq / 4) & 1));
+    if (w < 8) {
+      sx = SXP[w % 3]; sy = SYP[w % 3]; tx = 36 + n * 17 + 7; ty = 11;
+      for (j = 2; j >= 0; j--) {
+        q = uq - j * 3; if (q < 0) continue;
+        px = sx + (tx - sx) * q / 30; py = sy + (ty - sy) * q / 30 - q * (30 - q) * 12 / 225;
+        if (j) bpx(px, py, TRAIL[w % 3]); else bdisc(px, py, 1, CORE[w % 3]);
+      }
+      if (uq < 8) bsparkle(sx, sy - 5, C_WHITE);
+    }
+    if (w == 8 && (uq & 4)) { bsparkle(60, 3, C_WHITE); bsparkle(190, 18, C_WHITE); }
+    bpx(69, 22 + (f / 6) % 4, C_WHITE);
+    break; }
+  case 5: {
+    int T = f % 210, cx, cy, d, tf, ax, ay;
+    bbtn(24, 20, 'L', T >= 28 && T < 40);
+    barrow(112 + ((f / 6) & 1) * 2, 20, 0, C_GOLD);
+    for (cy = 0; cy < 3; cy++) for (cx = 0; cx < 3; cx++) {
+      d = iabs(cx - 1) + iabs(cy - 1); tf = 40 + d * 9; x = 58 + cx * 12; y = 2 + cy * 12;
+      if (T >= tf && T < 190) {
+        u = T - tf; brect(x, y, 11, 11, u < 5 ? C_WHITE : C_WATER);
+        if (u >= 5) { bwave(x + 1, y + 3, ((f / 8 + cx + cy) % 3) * 2); bwave(x + 1, y + 8, ((f / 8 + cx + cy + 1) % 3) * 2); }
+      }
+      bwave(139 + cx * 12, 5 + cy * 12, ((f / 8 + cx * 2 + cy) % 3) * 2); bwave(139 + cx * 12, 10 + cy * 12, ((f / 8 + cx + cy * 2) % 3) * 2);
+    }
+    for (k = 0; k < 2; k++) {
+      cx = k ? 2 : 0; cy = k ? 2 : 1; d = iabs(cx - 1) + iabs(cy - 1); tf = 40 + d * 9;
+      ax = 58 + cx * 12 + 1 + ((f / 10 + k) & 1); ay = 2 + cy * 12 + 2;
+      if (T < tf) ant_spr((u8)k, ax, ay, fr, 0);
+      else {
+        spr_hide((u8)k); u = T - tf;
+        if (u < 28) for (t = 0; t < 3; t++) bdisc(58 + cx * 12 + 3 + t * 3, 2 + cy * 12 + 8 - u / 2 - t * 3, t == 1, C_WHITE);
+      }
+    }
+    for (k = 0; k < 4; k++) { u = (f / 2 + k * 8) % 24; bpx(184 + k * 6, 30 - u, C_WHITE); if (u > 1) bpx(184 + k * 6, 31 - u, C_STEEL); }
+    break; }
+  case 6: {
+    static const s8 PLX[4] = {-16, 12, 3, -5}; static const u8 PLO[4] = {0, 75, 150, 225};
+    int sw, x0, e, z, s, gy, h, w, ph = f % 240;
+    sw = (ph < 120 ? ph : 240 - ph) - 60; x0 = 70 - sw / 3;
+    bclip = 140;
+    for (k = 0; k < 3; k++) { x = (f / 6 + k * 70) % 200 - 30 - sw / 2; bdisc(x, 4 + (k & 1) * 3, 3, C_STEEL); bdisc(x + 5, 5 + (k & 1) * 3, 2, C_STEEL); }
+    for (k = 0; k < 9; k++) bline(x0, 13, -60 + k * 35 - sw, 40, C_LEAF);
+    for (k = 0; k < 6; k++) { z = k * 20 + 20 - (f % 20); y = 13 + 560 / z; if (y < 40) brect(0, y, 140, 1, C_LEAF); }
+    for (k = 0; k < 4; k++) {
+      e = (f + PLO[k]) % 300; z = 140 - e * 4 / 10; s = 400 / z;
+      gy = 13 + 7 * s / 5; h = s / 2 + 1; w = s / 8 + 1; x = x0 + PLX[k] * s / 10;
+      if (k == 3) { h *= 2; brect(x - w / 2, gy - h, w, h, C_PINK); brect(x - w / 2 - 1, gy - h, w + 2, h / 5 + 1, C_GOLD); }
+      else brect(x - w / 2, gy - h, w, h, C_RED);
+    }
+    bclip = BW * 8;
+    ph = f % 180;
+    bpill(180, 7, "SEL", ph < 110 ? C_WHITE : C_GOLD);
+    bpill(180, 25, "START", (ph >= 50 && ph < 66) ? C_WHITE : C_GOLD);
+    if (ph >= 66 && ph < 80) bbox(1, 1, 138, 38, C_GOLD);
+    break; }
+  case 7: {
+    static char tb[] = "FOOD 0/3";
+    int j = (f + 10) / 40, r = j % 3, n = j == 0 ? 0 : (r == 0 ? 3 : r), s = (f + 10) % 120, ax;
+    for (k = 0; k < 4; k++) {
+      u = (f + 40 * (k + 1)) % 160;
+      if (u < 70) { ax = 20 + u * 11 / 5; ant_spr((u8)k, ax, 23, fr, 0); brect(ax + 2, 20, 3, 2, C_GRASS); bpx(ax + 3, 19, C_LEAF); }
+      else if (u < 80) { spr_hide((u8)k); if (u < 76) bsparkle(184, 20, C_GOLD); }
+      else if (u < 150) ant_spr((u8)k, 174 - (u - 80) * 11 / 5, 23, fr, 0);
+      else ant_spr((u8)k, 20, 23, 0, 0);
+    }
+    tb[5] = (char)('0' + n); bctext(112, 7, tb, 1, C_CREAM);
+    bctext(112, 14, "NEW ANT", 1, (j >= 3 && s < 70) ? C_GOLD : C_STEEL);
+    spr_hide(4);
+    if (j >= 3) {
+      if (s < 26) {
+        x = 182 + ((s > 8 && ((s / 3) & 1)) ? 1 : 0); brect(x, 22, 5, 7, C_WHITE); brect(x + 1, 21, 3, 1, C_WHITE); brect(x + 1, 29, 3, 1, C_WHITE);
+        if (s > 16) { bpx(183, 24, C_DARK); bpx(184, 25, C_DARK); bpx(185, 24, C_DARK); }
+      } else if (s < 95) {
+        ax = 176 - (s - 26) * 11 / 5; ant_spr(4, ax, 23, fr, 2);
+        bpx(ax + 9 + f % 5, 22 + f % 3, C_GOLD); bpx(ax + 12 + f % 4, 25 + f % 2, C_WHITE);
+      }
+    }
+    break; }
+  case 8: {
+    int T = f % 420, v, xm, coup, aid;
+    if (T < 60) v = 62; else if (T < 120) v = 62 - 44 * tease(T - 60, 60) / 1000; else if (T < 180) v = 18;
+    else if (T < 260) v = 18 + 23 * tease(T - 180, 80) / 1000; else if (T < 300) v = 41;
+    else if (T < 360) v = 41 + 37 * tease(T - 300, 60) / 1000; else v = 78 - 16 * tease(T - 360, 60) / 1000;
+    xm = 16 + v * 192 / 100; coup = v < 25; aid = v >= 50;
+    brect(16, 14, 48, 10, (coup && ((f / 5) & 1)) ? C_PINK : C_RED); brect(64, 14, 48, 10, C_GRAY); brect(112, 14, 96, 10, C_GRASS);
+    if (aid) brect(112 + (f * 2) % 92, 14, 4, 10, C_CREAM);
+    bctext(40 + (coup ? ((f / 2) & 1) * 2 - 1 : 0), 17, coup ? "COUP!" : "COUP", 1, C_WHITE);
+    bctext(88, 17, "NOTHING", 1, C_CREAM); bctext(160, 17, "8 MP AID", 1, C_WHITE);
+    if (aid) for (k = 0; k < 3; k++) { u = (f / 2 + k * 5) % 14; bplus(130 + k * 30, 12 - u, C_GRASS); }
+    if (coup) for (k = 0; k < 3; k++) btext(30 + k * 18 + (((f + k) / 3) & 1), 5 + (((f + k * 2) / 4) & 1), "!", 1, C_RED);
+    bdisc(xm, 5, 4, C_GOLD); btext(xm - 1, 3, "P", 1, C_NAVY); bdown(xm - 3, 9, 7, 4, C_GOLD);
+    break; }
+  default: {
+    static const u8 GX[8] = {60, 46, 76, 150, 170, 184, 40, 192}, GY[8] = {10, 28, 15, 10, 26, 12, 12, 26};
+    static const u8 CC[6] = {C_RED, C_GOLD, C_GRASS, C_PINK, C_WHITE, C_CREAM};
+    for (k = 0; k < 28; k++) {
+      x = (k * 37 + k * k * 11) % 224 + (((f / 6) + k) & 3) - 1; y = (f * (1 + k % 3)) / 3 % 46 + (k * 7) % 46; y = y % 46 - 4;
+      brect(x, y, 2, (k & 1) ? 3 : 2, CC[k % 6]);
+    }
+    t = f % 90;
+    if (t < 56) for (y = 4; y < 31; y++) { x = 84 + t + (31 - y) * 3 / 5; for (u = 0; u < 3; u++) if (bget(x + u, y) == C_GOLD) bpx(x + u, y, C_WHITE); }
+    c = (u8)((f / 12) & 1);
+    bdisc(95, 26, 2, c ? C_PINK : C_RED); bdisc(112, 26, 2, c ? C_WHITE : C_WATER); bdisc(129, 26, 2, c ? C_RED : C_PINK);
+    for (k = 0; k < 8; k++) { t = (f + k * 13) % 48; if (t < 6) bsparkle(GX[k], GY[k], C_WHITE); else if (t < 12) bplus(GX[k], GY[k], C_GOLD); }
+    for (k = 0; k < 2; k++) { t = (f + k * 20) % 40; ant_spr((u8)k, k ? 160 : 58, 27 - (t < 20 ? t * (20 - t) / 16 : 0), fr, 0); }
+    break; }
   }
 }
 static u8 tview;                                       // 1 while the pause menu is browsing the lesson cards (labels change)
-static void tut_draw(u8 i) {                           // build a whole card (static parts); tut_anim then animates it
-  const char *s; u8 x, y, g, n, len = 0;
+static const char *tps; static u8 tpx, tpy, tpg;       // lesson text types itself in
+static void tut_type(u8 n) {
+  while (n && *tps) {
+    if (*tps == '\n') { tpy++; tpx = 1; } else if (*tps == '*') tpg ^= 1; else { pc(tpx++, tpy, *tps, tpg ? 9 : 3); n--; }
+    tps++;
+  }
+}
+static void tut_draw(u8 i) {
+  u8 x, y, g, n, len = 0;
   hide_all();
   ov_fill(1, 3, 0, 19);
   if (i == 0) ps(1, 0, "A QUICK TOUR", 10);
@@ -1310,27 +1488,30 @@ static void tut_draw(u8 i) {                           // build a whole card (st
   for (x = 1; x < 29; x++) { BGMAP1[3 * 32 + x] = (u16)(ORN | (9 << 12)); BGMAP1[17 * 32 + x] = (u16)(ORN | (9 << 12)); }
   BGMAP1[3 * 32 + 14] = BGMAP1[17 * 32 + 14] = (u16)((ORN + 1) | (9 << 12));
   BGMAP1[3 * 32 + 15] = BGMAP1[17 * 32 + 15] = (u16)((ORN + 2) | (9 << 12));
-  tut_art(i);
+  tut_art(i); tut_anim(i, 0); band_put();
   for (y = 0; y < BH; y++) for (x = 0; x < BW; x++) BGMAP1[(4 + y) * 32 + 1 + x] = (u16)((BAND + y * BW + x) | (7 << 12));
-  s = TBODY[i]; y = 10; x = 1; g = 0;
-  for (; *s; s++) {
-    if (*s == '\n') { y++; x = 1; } else if (*s == '*') g ^= 1; else pc(x++, y, *s, g ? 9 : 3);
-  }
+  tps = TBODY[i]; tpx = 1; tpy = 10; tpg = 0;
   ps(1, 18, "START", 9); ps(7, 18, i == TN - 1 ? (tview ? "BACK" : "PLAY") : "NEXT", 3);
   if (i < TN - 1 || tview) { ps(14, 18, "B", 9); ps(16, 18, tview ? "MENU" : "SKIP", 3); }
 }
 static void tut_card(u8 i) {
-  u16 fr = 0;
+  u16 fr = 0; u8 tl;
   hide_all(); vsync(); oam_flush();
   tut_draw(i);
   while (joy()) vsync();
   for (;;) {
     vsync(); fr++;
-    tut_anim(i, fr); oam_flush();
-    BGMAP1[18 * 32 + 28] = (u16)(((fr & 32) ? 0 : ORN + 5) | (9 << 12));          // blinking "next" arrow
+    band_put(); oam_flush();
+    tut_anim(i, fr);
+    tut_type(5);
+    tl = (u8)((fr & 63) < 32 ? (fr & 31) : 31 - (fr & 31));
+    BGPAL[147] = RGB(31, 25 + tl / 5, 6 + tl / 4);
+    BGMAP1[19 + i] = (u16)(((fr & 16) ? ORN + 4 : ORN + 3) | (9 << 12));
+    BGMAP1[18 * 32 + 28] = (u16)(((fr & 32) ? 0 : ORN + 5) | (9 << 12));
     if (joy() & J_START) break;
     if ((i < TN - 1 || tview) && (joy() & J_B)) { tut = 0; break; }
   }
+  BGPAL[147] = RGB(31, 27, 8);
   while (joy()) vsync();
   hide_all(); vsync(); oam_flush();
   ov_clear(); hud();
