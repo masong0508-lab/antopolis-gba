@@ -19,3 +19,13 @@ PAD: WALK/TURN  A: NEXT ANT
 B: CURSOR HERE  START: LEAVE
 ```
 `FROM` is which of your ants you ride (or `YOUR NEST`), `HEIGHT` the ground level under it, `FACING` the compass heading in full words, and `AHEAD` what one step forward meets: `CLEAR`, `CLIFF`, `WATER`, `EDGE`, `FRIEND`, `ENEMY`, `HOME` or `R NEST` (the red nest). The controls stay on screen. L / R now turn as well as LEFT / RIGHT, matching the tutorial card.
+
+## Remaster update
+- New readable 5x7 font and a 3-row HUD with icons: hearts for both queens, ant counts, AP bar, food, popularity, time.
+- Bottom line tells you what is under the cursor and what A / B will do there. Cursor turns red where you can't edit.
+- New terrain art: soft edges = steps ants can walk, dark edges = cliffs they can't. Water shimmers.
+- 4 maps on the title (UP/DOWN pick a row, LEFT/RIGHT change it): MEADOW, RIVER, LAKES, CANYON. There is always a path between the nests.
+- Food grows in berry patches; ant trails show on the ground; nests are big mounds with a 16x16 queen.
+- Ants find their way home and to the enemy around water and cliffs (pathfinding), and walk smoothly.
+- SELECT jumps the cursor: alert spot, else HOME > ARMY > RED NEST. Alerts when your queen is hit or food is stolen.
+- Perks are picked on their own card; a VICTORY / DEFEAT screen with stats; pop-ups (+1, splash, puff, heart) and screen shake.

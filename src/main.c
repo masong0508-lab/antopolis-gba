@@ -7,6 +7,13 @@
 #include "logo.h"
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
+#include "font8.h"
+#include "art2.h"
+#ifdef __arm__
+#define EWRAM __attribute__((section(".ewram")))
+#else
+#define EWRAM
+#endif
 
 // ---------- hardware ----------
 #define IO16(a) (*(volatile u16 *)(0x04000000u + (a)))
@@ -15,8 +22,11 @@ typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s
 #define VCOUNT  IO16(0x06)
 #define BG0CNT  IO16(0x08)
 #define BG1CNT  IO16(0x0A)
+#define BG2CNT  IO16(0x0C)
 #define BG0HOFS IO16(0x10)
 #define BG0VOFS IO16(0x12)
+#define BG2HOFS IO16(0x18)
+#define BG2VOFS IO16(0x1A)
 #define BLDCNT  IO16(0x50)
 #define BLDY    IO16(0x54)
 #define KEYS    IO16(0x130)
@@ -48,6 +58,8 @@ typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s
 #define TILE32  ((volatile u32 *)0x06000000)
 #define BGMAP0  ((volatile u16 *)0x0600E000)
 #define BGMAP1  ((volatile u16 *)0x0600E800)
+#define BGMAP2  ((volatile u16 *)0x0600F000)   // decor layer (food, nest mounds, trails), screenblock 30
+#define TILE2   ((volatile u32 *)0x06008000)   // charblock 2: terrain + decor tiles (the ANT EYE only uses its first 10 tiles)
 #define OBJT32  ((volatile u32 *)0x06010000)
 #define BGPAL   ((volatile u16 *)0x05000000)
 #define OBJPAL  ((volatile u16 *)0x05000200)
@@ -71,20 +83,28 @@ __attribute__((used)) static const char sram_tag[] = "SRAM_V113";   // tells emu
 #define W 32
 #define H 32
 #define VW 30           // visible world tiles
-#define VH 18           // bottom 2 rows are the HUD
+#define VH 17           // bottom 3 rows are the HUD
 #define MAXA 48         // 24 ants per colony
 #define QHP 5
 #define MANA_MAX 20
 #define MANA_PER_FOOD 1
 #define OFFER_FOOD 2
 #define OFFER_MANA 4
-#define FT 4            // font tiles 4..43
-#define BT 44           // terrain tiles 44..49, mana bar 50 (full) 51 (empty)
+#define FT 4            // font tiles 4..56 (53 glyphs, see font8.h)
+#define NGLYPH 53
+#define BT 770          // old 2bpp terrain tiles 770..775 (title ground), AP bar 776 (full) 777 (empty)
 #define BAR_F (BT + 6)
 #define BAR_E (BT + 7)
 
-typedef struct { u8 x, y, team, alive, carry, sol; } Ant;
+typedef struct { u8 x, y, team, alive, carry, sol, ox, oy, age, fl; } Ant;   // ox/oy/age: last cell + slices since the step (smooth walking), fl = faces left
 static u8 hgt[H][W], food[H][W], ph[H][W];
+EWRAM static u8 dn[2][H][W];          // dn[t] = walking distance to team t's nest (255 = cannot get there)
+static u8 pdirty = 1, mapt, nfood;                                // pdirty: land changed, redo the paths; mapt = map type
+static u8 pfx[8], pfy[8], npatch;                                 // food patches (berry bushes regrow food around them)
+static u8 shk, qfl[2], alt, alx, aly, jmp, hrow;                  // screen shake, queen hit flash, alert timer + place, SELECT jump step, decor refresh row
+#define MAPN 4
+static const char *const MNAME[MAPN] = {"MEADOW", "RIVER", "LAKES", "CANYON"};
+static const char *const MDESC[MAPN] = {"GENTLE HILLS AND PONDS", "FIND THE FORDS", "WALK AROUND THE WATER", "CLIFFS AND RAMPS"};
 static Ant ant[MAXA];
 static u8 nestx[2], nesty[2], stock[2], qhp[2], ncnt[2], hatched[2];
 static u8 cx, cy, mana, over, camx, camy, sandbox, cheat, spd = 4, sf, appr, diff, slice;
@@ -101,8 +121,9 @@ static const char *const DNAME[3] = {"EASY", "NORM", "HARD"};
 // roguelike perks (ported from the GBC build): after an election that is not a coup, take one of two random perks with A or B
 static u8 perk, pend, pa, pb;                    // perk = owned bit mask, pend = ticks left to choose, pa/pb = the two offered
 static u8 fcost = 8, hc0 = 3, hc1 = 3, tm = 31, dm = 31, qmax0 = 5;   // flood cost, food per ant (you / red), mana trickle mask, popularity-drain mask, your queen HP cap
-static char pbuf[20];
-static const char PN[] = "FLOOD 4FASTEGGANA UP CALM   QUEENUPSLOWRED";
+static const char PN[] = "FLOOD 4FASTEGGAP UP  CALM   QUEENUPSLOWRED";
+static const char *const PD1[6] = {"FLOODS COST 4 AP", "NEW ANTS COST", "AP REFILLS", "POPULARITY DROPS", "YOUR QUEEN GETS", "RED ANTS COST"};
+static const char *const PD2[6] = {"INSTEAD OF 8", "ONLY 2 FOOD", "TWICE AS FAST", "SLOWER: LESS DISASTERS", "ONE MORE HEART", "ONE MORE FOOD"};
 static u8 tut, tev, tutor, lcx, lcy;             // tutorial: lesson (0 = off), events done, from-title flag, last cursor
 static u8 wins[3]; static u16 best[3], hiscore[3];           // records (SRAM), best = seconds, 0 = none
 
@@ -143,20 +164,21 @@ static void put_tile(volatile u32 *d, const u8 *s, const u8 *rm) {   // GBC 2bpp
   }
 }
 static void fill_tile(volatile u32 *d, u32 v) { u8 y; for (y = 0; y < 8; y++) d[y] = v; }
-// 3x5 font, one octal digit per row. order: space, 0-9, A-Z, ':', '!', '/'
-static const u16 FONT[40] = {
+// 3x5 font (big title letters, picture text), one octal digit per row. order: space, 0-9, A-Z, : ! / . - + ? < > then icons # @ % & ^ ~ $
+static const u16 FONT[NGLYPH] = {
   0,
   075557,026227,071747,071717,055711,074717,074757,071122,075757,075717,
   025755,065656,034443,065556,074647,074644,034553,055755,072227,011152,
   055655,044447,057755,065555,025552,065644,025563,065655,034216,072222,
   055557,055552,055775,055255,055222,071247,
-  002020,022202,011244};
-static void mk_glyph(volatile u32 *d, u16 g) {       // background colour 1, ink colour 3
-  u8 y, x, lo; u32 row;
+  002020,022202,011244,
+  000002,000700,002720,071202,012421,042124,   // . - + ? < >
+  057720,025752,013760,013641,075057,025312,055770};   // # @ % & ^ ~ $  (HUD icons, rough 3x5 versions)
+static void mk_glyph(volatile u32 *d, const u8 *g) {  // 8x8 text glyph (font8.h): background colour 1, ink colour 3
+  u8 y, x; u32 row;
   for (y = 0; y < 8; y++) {
-    lo = (y >= 1 && y <= 5) ? (u8)(((g >> (3 * (5 - y))) & 7) << 3) : 0;
     row = 0;
-    for (x = 0; x < 8; x++) row |= (u32)(((lo >> (7 - x)) & 1) ? 3 : 1) << (4 * x);
+    for (x = 0; x < 8; x++) row |= (u32)(((g[y] >> (7 - x)) & 1) ? 3 : 1) << (4 * x);
     d[y] = row;
   }
 }
@@ -166,6 +188,7 @@ static u8 gi(char c) {
   if (c == ':') return 37;
   if (c == '!') return 38;
   if (c == '/') return 39;
+  { static const char EX[] = ".-+?<>#@%&^~$"; u8 i; for (i = 0; EX[i]; i++) if (c == EX[i]) return (u8)(40 + i); }
   return 0;
 }
 // BG1 palette banks: 0 terrain, 1 white text on black, 2 gold, 3 night sky, 4 dark gold
@@ -177,11 +200,12 @@ static void ov_fill(u16 t, u8 pal, u8 y0, u8 y1) { u8 x, y; for (y = y0; y <= y1
 static void ov_clear(void) { ov_fill(0, 0, 0, 31); }          // fully transparent overlay
 
 static void say(const char *m) { msg = m; msgt = 12; }
+static u8 blen2(const char *s) { u8 n = 0; while (s[n]) n++; return n; }
 
 // ---------- game speed (pause menu: SPEED; R / SEL+B toggles NORMAL <-> VERY FAST; FRAME ADVANCE: R steps one game tick) ----------
 // 0 PAUSED (world frozen, you can still edit), 1 FRAME ADVANCE*, 2 VERY SLOW, 3 SLOW, 4 NORMAL, 5 FAST, 6 VERY FAST, 7 LIGH ANT NING*   (* = unlocked by 10 wins)
 static const char *const SPNAME[8] = {"PAUSED", "FRAME ADVANCE", "VERY SLOW", "SLOW", "NORMAL", "FAST", "VERY FAST", "LIGH ANT NING"};
-static const char *const SPTAG[8] = {"STOP", "STEP", "1/4", "1/2", "", "X2", "X4", "X8"};
+static const char *const SPTAG[8] = {"II", ">I", "1/4", "1/2", "", "X2", "X4", "X8"};
 static const u8 SPN[8] = {0, 0, 1, 1, 1, 2, 4, 8};          // ant slices per frame (8 slices = 1 game tick = 8 frames at NORMAL)
 static const u8 SPM[8] = {0, 0, 3, 1, 0, 0, 0, 0};          // run only when (frame & mask) == 0: VERY SLOW every 4th frame, SLOW every 2nd
 static u8 spd_ok(void) { return (u8)((u16)wins[0] + wins[1] + wins[2] >= 10); }
@@ -191,46 +215,60 @@ static void spd_next(s8 dir) {                          // step through the spee
 }
 static void spd_toggle(void) { spd = spd == 4 ? 6 : 4; say(spd == 6 ? "FAST FORWARD ON" : "NORMAL SPEED"); }
 
-// ---------- HUD (BG1 rows 18-19) ----------
-// row 18: MP nn [bar] F nn  T m:ss        row 19: Q a/b  A nn  R nn  P nn  FF  D NORM   (a hint replaces row 19)
+// ---------- HUD (BG1 rows 17-19) ----------
+// row 17: YOU hearts  ant-count   speed   RED hearts  ant-count
+// row 18: AP + bar   food   popularity   time
+// row 19: a message, or what is under the cursor and what A / B would do there
+// text palette banks: 1 white, 2 gold, 8 red, 13 green, 14 cyan, 15 dim grey (all on black)
+static u8 psx(u8 x, u8 y, const char *s, u8 p) { while (*s && x < 30) pc(x++, y, *s++, p); return x; }
+static void cur_info(void) {
+  static const char *const LN[4] = {"WATER", "SAND 1", "GRASS 2", "HILL 3"};
+  u8 h = hgt[cy][cx], x;
+  if (cx == nestx[0] && cy == nesty[0]) { ps(0, 19, "YOUR NEST: KEEP THE QUEEN SAFE", 1); return; }
+  if (cx == nestx[1] && cy == nesty[1]) { ps(0, 19, "RED NEST: YOUR SOLDIERS GO HERE", 8); return; }
+  x = psx(0, 19, LN[h], 2);
+  if (food[cy][cx] && h) psx((u8)(x + 1), 19, "+FOOD", 13);
+  if (!mana && !cheat && !sandbox) { ps(19, 19, "NO AP: WAIT", 14); return; }
+  if (h == 0) ps(19, 19, "A: FILL IN", 1);
+  else if (h == 3) ps(19, 19, "B: DIG DOWN", 1);
+  else ps(19, 19, "A:UP B:DOWN", 1);
+}
 static void hud(void) {
-  u8 i, x; u32 s = (u32)gt * 2 / 15;
-  ov_fill(1, 1, 18, 19);
-  ps(0, 18, "AP", 2); pn(3, 18, mana, 1);
-  for (i = 0; i < 10; i++) BGMAP1[18 * 32 + 6 + i] = (u16)((mana > 2 * i ? BAR_F : BAR_E) | (1 << 12));
-  ps(18, 18, "F", 2); pn(19, 18, stock[0], 1);
-  ps(23, 18, "T", 2); pn(24, 18, (u8)(s / 60 > 99 ? 99 : s / 60), 1); pc(26, 18, ':', 1); pz(27, 18, (u8)(s % 60), 1);
-  if (msgt) {
-    x = 0; for (const char *m = msg; *m && x < 30; m++) pc(x++, 19, *m, 1);
-    msgt--; return;
-  }
-  ps(0, 19, "Q", 2); pc(1, 19, '0' + qhp[0], 1); pc(2, 19, '/', 1); pc(3, 19, '0' + qhp[1], 1);
-  ps(6, 19, "A", 2); pn(7, 19, ncnt[0], 1); ps(10, 19, "R", 2); pn(11, 19, ncnt[1], 1);
-  ps(14, 19, "P", 2); pn(15, 19, appr, 1);
-  if (spd != 4) ps(19, 19, SPTAG[spd], 2);
-  ps(23, 19, "D", 2); ps(25, 19, DNAME[diff], 1);
+  u8 i; u32 s = (u32)gt * 2 / 15;
+  ov_fill(1, 1, 17, 19);
+  ps(0, 17, "YOU", 1); for (i = 0; i < qmax0; i++) pc((u8)(4 + i), 17, '#', i < qhp[0] ? 8 : 15);
+  pc(11, 17, '@', 1); pn(12, 17, ncnt[0], 1);
+  if (spd != 4) ps(14, 17, SPTAG[spd], 2);
+  ps(18, 17, "RED", 8); for (i = 0; i < QHP; i++) pc((u8)(22 + i), 17, '#', i < qhp[1] ? 8 : 15);
+  pc(27, 17, '@', 8); pn(28, 17, ncnt[1], 8);
+  pc(0, 18, '&', 14); pn(1, 18, mana, 14);
+  for (i = 0; i < 10; i++) BGMAP1[18 * 32 + 3 + i] = (u16)((mana > 2 * i ? BAR_F : BAR_E) | (14 << 12));
+  pc(14, 18, '%', 13); pn(15, 18, stock[0], 13);
+  pc(18, 18, '^', 2); pn(19, 18, appr, 2);
+  pc(22, 18, '~', 1); pn(23, 18, (u8)(s / 60 > 99 ? 99 : s / 60), 1); pc(25, 18, ':', 1); pz(26, 18, (u8)(s % 60), 1);
+  if (msgt) { psx(0, 19, msg, 2); msgt--; return; }
+  cur_info();
 }
 
 // ---------- help card ----------
 static const char HELP[] =
-  "#CONTROLS\n"
-  "A B    RAISE / LOWER LAND 1AP\n"
-  "L      FLOOD 3X3 (8 AP)\n"
-  "SEL A  ANTBEZZLE 2 FOOD > 4 AP\n"
-  "R      FAST FORWARD\n"
-  "START  PAUSE / RESUME\n"
+  "#BUTTONS\n"
+  "D PAD    MOVE THE CURSOR\n"
+  "A  B     RAISE / LOWER LAND 1 AP\n"
+  "L        FLOOD 3X3 AREA 8 AP\n"
+  "R        FAST FORWARD ON/OFF\n"
+  "SELECT   JUMP: HOME ARMY ENEMY\n"
+  "SEL+A    TRADE 2 FOOD: 4 AP\n"
+  "SEL+START  ANT EYE VIEW\n"
+  "START    PAUSE MENU\n"
   "\n"
   "#GOAL\n"
   "KILL THE RED QUEEN BEFORE\n"
-  "THEY KILL YOURS\n"
+  "THE RED ANTS KILL YOURS\n"
   "\n"
-  "#HOW\n"
-  "ANTS CANT CLIMB OR SWIM\n"
-  "ANA: TRICKLE, FOOD HOME,\n"
-  "ANTLECTION AID (P 50 UP)\n"
-  "P UNDER 25 = COUP\n"
-  "NO COUP: PERK A OR B\n"
-  "FLOODS AND QUAKES STRIKE\n";
+  "#TIPS\n"
+  "ANTS STEP UP OR DOWN 1 LEVEL\n"
+  "DARK EDGES ARE CLIFFS: NO WAY\n";
 static void help_show(void) {
   const char *s = HELP; u8 y = 1, x, g;
   hide_all(); vsync(); oam_flush();
@@ -272,6 +310,7 @@ static void sfx_spawn(void) { ch2(N_C6, 0x81); }
 static void sfx_fight(void) { noise(0x81, 0x33); }
 static void sfx_hit(void)   { noise(0xC2, 0x44); }
 static void sfx_qdead(void) { noise(0xF7, 0x77); }
+static void sfx_alarm(void) { ch1(0x00, N_C6, 0xC2); }
 static void jingle(const u16 *n, u8 len) { tune_p = n; ji = 0; jt = 0; jl = len; }
 
 static const u16 NOTE[64] = {
@@ -429,12 +468,66 @@ static void save_load(void) {
   } else { for (i = 0; i < 3; i++) { wins[i] = 0; best[i] = 0; hiscore[i] = 0; } save_write(); }
 }
 
+static const s16 SINT[256] = {                        // sin(a), 256 = 1.0, a in 1/256 turns, 0 = east, clockwise (y points down)
+  0,6,13,19,25,31,38,44,50,56,62,68,74,80,86,92,
+  98,104,109,115,121,126,132,137,142,147,152,157,162,167,172,177,
+  181,185,190,194,198,202,206,209,213,216,220,223,226,229,231,234,
+  237,239,241,243,245,247,248,250,251,252,253,254,255,255,256,256,
+  256,256,256,255,255,254,253,252,251,250,248,247,245,243,241,239,
+  237,234,231,229,226,223,220,216,213,209,206,202,198,194,190,185,
+  181,177,172,167,162,157,152,147,142,137,132,126,121,115,109,104,
+  98,92,86,80,74,68,62,56,50,44,38,31,25,19,13,6,
+  0,-6,-13,-19,-25,-31,-38,-44,-50,-56,-62,-68,-74,-80,-86,-92,
+  -98,-104,-109,-115,-121,-126,-132,-137,-142,-147,-152,-157,-162,-167,-172,-177,
+  -181,-185,-190,-194,-198,-202,-206,-209,-213,-216,-220,-223,-226,-229,-231,-234,
+  -237,-239,-241,-243,-245,-247,-248,-250,-251,-252,-253,-254,-255,-255,-256,-256,
+  -256,-256,-256,-255,-255,-254,-253,-252,-251,-250,-248,-247,-245,-243,-241,-239,
+  -237,-234,-231,-229,-226,-223,-220,-216,-213,-209,-206,-202,-198,-194,-190,-185,
+  -181,-177,-172,-167,-162,-157,-152,-147,-142,-137,-132,-126,-121,-115,-109,-104,
+  -98,-92,-86,-80,-74,-68,-62,-56,-50,-44,-38,-31,-25,-19,-13,-6,
+};
 // ---------- world ----------
+// Terrain is drawn on BG0 with auto-tiles (charblock 2, palette bank 11): every cell picks one of 81 tiles per level from how its
+// four neighbours compare. Lower by 1 = a soft step (ants can walk it), lower by 2+ = a dark cliff (ants cannot). Water gets foam
+// where it meets land. BG2 (screenblock 30, palette bank 12) is the decor layer on top: food, the nest mounds and ant trails.
+#define TB  16                                    // terrain tiles 16..339 (level * 81 + code)
+#define DEC 340                                   // decor: +0/+1 food, +2/+3 trail, +4..+12 nest mound (3x3)
+EWRAM static u16 bq[W * H];                       // BFS queue
+EWRAM static s16 fld[H][W];                       // map generator scratch
+static u8 dist(u8 a, u8 b) { return a > b ? a - b : b - a; }
 static u8 is_nest(u8 x, u8 y) { return (x == nestx[0] && y == nesty[0]) || (x == nestx[1] && y == nesty[1]); }
+static u8 near_nest(u8 x, u8 y) { return (dist(x, nestx[0]) <= 1 && dist(y, nesty[0]) <= 1) || (dist(x, nestx[1]) <= 1 && dist(y, nesty[1]) <= 1); }
+static void draw_dec(u8 x, u8 y) {
+  u16 t = 0; u8 i, p;
+  for (i = 0; i < 2; i++)
+    if (dist(x, nestx[i]) <= 1 && dist(y, nesty[i]) <= 1) t = (u16)(DEC + 4 + (y + 1 - nesty[i]) * 3 + (x + 1 - nestx[i]));
+  if (!t) {
+    p = ph[y][x];
+    if (food[y][x] && hgt[y][x]) t = (u16)(DEC + ((x ^ y) & 1));
+    else if (p > 150) t = DEC + 3;
+    else if (p > 50) t = DEC + 2;
+  }
+  BGMAP2[y * 32 + x] = t ? (u16)(t | (12 << 12)) : 0;
+}
+static u8 sstate(u8 h, s8 x, s8 y) {              // how one side of a cell at level h looks: 0 plain, 1 step / shore, 2 cliff
+  u8 n;
+  if (x < 0 || y < 0 || x >= W || y >= H) return 0;
+  n = hgt[y][x];
+  if (h == 0) return n > 0;
+  if (n >= h) return 0;
+  return (h - n >= 2) ? 2 : 1;
+}
 static void draw_cell(u8 x, u8 y) {
-  u8 t = hgt[y][x];
-  if (is_nest(x, y)) t = 4; else if (food[y][x] && t) t = 5;
-  BGMAP0[y * 32 + x] = (u16)(BT + t);
+  u8 h = hgt[y][x];
+  u16 c = (u16)(sstate(h, x, y - 1) + 3 * sstate(h, x + 1, y) + 9 * sstate(h, x, y + 1) + 27 * sstate(h, x - 1, y));
+  BGMAP0[y * 32 + x] = (u16)((TB + h * 81 + c) | (11 << 12));
+  draw_dec(x, y);
+}
+static void draw_around(u8 x, u8 y) {             // a height changed: the cell and its 4 neighbours change their edges
+  u8 k; s8 a, b;
+  draw_cell(x, y);
+  for (k = 0; k < 4; k++) { a = (s8)x + DX[k]; b = (s8)y + DY[k]; if (a >= 0 && b >= 0 && a < W && b < H) draw_cell((u8)a, (u8)b); }
+  pdirty = 1;
 }
 static u8 can_go(u8 x, u8 y, s8 dx, s8 dy) {
   s8 a = (s8)x + dx, b = (s8)y + dy, d;
@@ -443,40 +536,61 @@ static u8 can_go(u8 x, u8 y, s8 dx, s8 dy) {
   d = (s8)hgt[b][a] - (s8)hgt[y][x];
   return d >= -1 && d <= 1;
 }
+static void bfs(u8 t) {                           // dn[t]: steps from every cell to team t's nest, walking like an ant
+  u16 hd = 0, tl = 0, c; u8 x, y, k, nx, ny, v;
+  for (y = 0; y < H; y++) for (x = 0; x < W; x++) dn[t][y][x] = 255;
+  dn[t][nesty[t]][nestx[t]] = 0; bq[tl++] = (u16)(nesty[t] * 32 + nestx[t]);
+  while (hd < tl) {
+    c = bq[hd++]; x = (u8)(c & 31); y = (u8)(c >> 5); v = dn[t][y][x]; v = v < 253 ? v + 1 : 254;
+    for (k = 0; k < 4; k++) if (can_go(x, y, DX[k], DY[k])) {
+      nx = (u8)(x + DX[k]); ny = (u8)(y + DY[k]);
+      if (dn[t][ny][nx] == 255) { dn[t][ny][nx] = v; bq[tl++] = (u16)(ny * 32 + nx); }
+    }
+  }
+}
+// ----- little pop-up effects (sprites 51..58): +1 food, splash, puff, heart -----
+#define FX_PLUS 9
+#define FX_SPLASH 10
+#define FX_PUFF 11
+#define FX_HEART 12
+typedef struct { s16 x, y; u8 t, tile; } Fx;
+static Fx fx[8]; static u8 fxn;
+static void fx_add(u8 x, u8 y, u8 tile) { Fx *f = &fx[fxn++ & 7]; f->x = (s16)(x * 8); f->y = (s16)(y * 8); f->t = 30; f->tile = tile; }
+static void alert(u8 x, u8 y, const char *m) {   // something bad happened to you: remember where, SELECT jumps there
+  if (!alt) { say(m); sfx_alarm(); }
+  alt = 240; alx = x; aly = y;
+}
 static u8 spawn(u8 team) {
   u8 i, n = 0;
   for (i = 0; i < MAXA; i++) if (ant[i].alive && ant[i].team == team) n++;
   if (n >= MAXA / 2) return 0;
   for (i = 0; i < MAXA; i++) if (!ant[i].alive) {
-    ant[i].x = nestx[team]; ant[i].y = nesty[team]; ant[i].team = team; ant[i].alive = 1; ant[i].carry = 0;
-    ant[i].sol = ((hatched[team]++ & 3) == 0);
+    Ant *a = &ant[i];
+    a->x = a->ox = nestx[team]; a->y = a->oy = nesty[team]; a->team = team; a->alive = 1; a->carry = 0; a->age = 8; a->fl = team;
+    a->sol = ((hatched[team]++ & 3) == 0);
     return 1;
   }
   return 0;
 }
-static u8 dist(u8 a, u8 b) { return a > b ? a - b : b - a; }
 static void count(u8 *c) { u8 i; c[0] = c[1] = 0; for (i = 0; i < MAXA; i++) if (ant[i].alive) c[ant[i].team]++; }
 
 static void apr(s8 d) { s16 v = (s16)appr + d; appr = v < 0 ? 0 : v > 99 ? 99 : (u8)v; }
-static void die(Ant *a) { a->alive = 0; if (a->team == 0) apr(-2); }
+static void die(Ant *a, u8 drown) { a->alive = 0; if (a->team == 0) apr(-2); fx_add(a->x, a->y, drown ? FX_SPLASH : FX_PUFF); }
 static void set_rules(void) {
   fcost = 8; hc0 = 3; hc1 = RCOST[diff]; tm = TRK[diff]; dm = 31; qmax0 = QHP;
   if (perk & 1) fcost = 4;                       // FLOOD 4
   if (perk & 2) hc0 = 2;                         // FASTEGG
-  if (perk & 4) tm >>= 1;                        // MANA UP
+  if (perk & 4) tm >>= 1;                        // AP UP
   if (perk & 8) dm = (u8)((dm << 1) | 1);        // CALM: popularity sinks slower, disasters rarer
   if (perk & 16) qmax0 = QHP + 1;                // QUEENUP
   if (perk & 32) hc1++;                          // SLOWRED
 }
-static void offer(void) {                        // two different perks you do not own yet
-  u8 i;
+static void offer(void) {                        // two different perks you do not own yet; the play loop shows the perk card
   if (perk == 63) return;
   do pa = (u8)(rnd() & 7); while (pa > 5 || ((perk >> pa) & 1));
   pb = pa;
   do pb = pb > 4 ? 0 : pb + 1; while ((perk >> pb) & 1);
-  pbuf[0] = 'A'; pbuf[1] = ':'; pbuf[9] = ' '; pbuf[10] = 'B'; pbuf[11] = ':';
-  for (i = 0; i < 7; i++) { pbuf[2 + i] = PN[pa * 7 + i]; pbuf[12 + i] = PN[pb * 7 + i]; }
-  pbuf[19] = 0; pend = 80;                       // about 10 s to choose
+  pend = 1;
 }
 static void pick(u8 i) {
   perk |= (u8)(1 << i); pend = 0; set_rules();
@@ -488,60 +602,85 @@ static void hit(u8 px, u8 py, u8 q) {            // 3x3 patch: every tile sinks 
   for (y = (s8)py - 1; y <= (s8)py + 1; y++) for (x = (s8)px - 1; x <= (s8)px + 1; x++)
     if (x >= 0 && y >= 0 && x < W && y < H && !is_nest(x, y)) {
       if (q && (rnd() & 1)) { if (hgt[y][x] < 3) hgt[y][x]++; } else if (hgt[y][x]) hgt[y][x]--;
-      draw_cell(x, y);
+      if (!hgt[y][x]) food[y][x] = 0;
     }
+  for (y = (s8)py - 2; y <= (s8)py + 2; y++) for (x = (s8)px - 2; x <= (s8)px + 2; x++)
+    if (x >= 0 && y >= 0 && x < W && y < H) draw_cell(x, y);
+  pdirty = 1; shk = 16;
 }
 static u8 dmask_dis(void) { u8 b = diff == 0 ? 127 : diff == 1 ? 63 : 31; return (perk & 8) ? (u8)((b << 1) | 1) : b; }
 static void disaster(void) {                     // hits both colonies alike, anywhere on the map
-  u8 q = (u8)(rnd() & 1);
-  hit((u8)(rnd() & (W - 1)), (u8)(rnd() & (H - 1)), q);
-  sfx_flood(); say(q ? "EARTHQUAKE!" : "FLASH FLOOD!");
+  u8 q = (u8)(rnd() & 1), x = (u8)(rnd() & (W - 1)), y = (u8)(rnd() & (H - 1));
+  hit(x, y, q);
+  sfx_flood(); alx = x; aly = y; alt = 120; say(q ? "EARTHQUAKE! SELECT: LOOK" : "FLASH FLOOD! SELECT: LOOK");
 }
 static void election(void) {
   u8 ok = appr >= 25;                            // anything but a coup earns a perk offer
-  if (appr >= 50) { mana = (mana + 8 > MANA_MAX) ? MANA_MAX : mana + 8; sfx_mana(); say("ANTLECTION WON! AID"); }
+  if (appr >= 50) { mana = (mana + 8 > MANA_MAX) ? MANA_MAX : mana + 8; sfx_mana(); say("ANTLECTION WON! +8 AP"); }
   else if (appr >= 25) { sfx_deny(); say("ANTLECTION: NO BONUS"); }
-  else { stock[0] >>= 1; mana = 0; appr = 40; sfx_qdead(); say("COUP! COFFERS LOOTED"); }
+  else { stock[0] >>= 1; mana = 0; appr = 40; sfx_qdead(); say("COUP! FOOD AND AP LOST"); }
   if (ok && !tut && !sandbox) offer();
 }
 static void step_ant(Ant *a) {
-  u8 d, t = a->team, e = t ^ 1, found = 0, bd = 0, tx, ty, de;
+  u8 d, t = a->team, e = t ^ 1, found = 0, bd = 0, tx, ty, dh, de, px = a->ox, py = a->oy;
   s16 sc, best_sc = -32000;
   u8 soldier = !a->carry && qhp[e] && ncnt[t] >= 8 && a->sol;
-  if (!a->carry && food[a->y][a->x]) { food[a->y][a->x] = 0; a->carry = 1; draw_cell(a->x, a->y); }
+  if (!a->carry && food[a->y][a->x]) { food[a->y][a->x] = 0; a->carry = 1; draw_dec(a->x, a->y); }
   if (a->carry) { u8 p = ph[a->y][a->x]; ph[a->y][a->x] = p > 215 ? 255 : p + 40; }
   for (d = 0; d < 4; d++) {
     if (!can_go(a->x, a->y, DX[d], DY[d])) continue;
-    tx = a->x + DX[d]; ty = a->y + DY[d];
-    if (a->carry) sc = -10 * (s16)(dist(tx, nestx[t]) + dist(ty, nesty[t])) + (rnd() & 15);
-    else if (soldier) { de = dist(tx, nestx[e]) + dist(ty, nesty[e]); sc = -14 * (s16)de + (rnd() & 31); }
-    else sc = ph[ty][tx] + (food[ty][tx] ? 120 : 0) + (rnd() & 31);
+    tx = a->x + DX[d]; ty = a->y + DY[d]; dh = dn[t][ty][tx]; de = dn[e][ty][tx];
+    if (a->carry) sc = dh != 255 ? -12 * (s16)dh + (rnd() & 7) : -10 * (s16)(dist(tx, nestx[t]) + dist(ty, nesty[t])) + (rnd() & 15);
+    else if (soldier) sc = de != 255 ? -14 * (s16)de + (rnd() & 7) : -14 * (s16)(dist(tx, nestx[e]) + dist(ty, nesty[e])) + (rnd() & 31);
+    else {                                       // worker: follow trails and food, drift away from home, do not turn straight back
+      sc = ph[ty][tx] + (food[ty][tx] ? 120 : 0) + (rnd() & 31) + (dh != 255 ? (dh < 12 ? dh : 12) * 2 : 0);
+      if (tx == px && ty == py) sc -= 24;
+    }
     if (sc > best_sc) { best_sc = sc; bd = d; found = 1; }
   }
-  if (found) { a->x += DX[bd]; a->y += DY[bd]; }
+  a->ox = a->x; a->oy = a->y;
+  if (found) { a->x += DX[bd]; a->y += DY[bd]; a->age = 0; if (DX[bd]) a->fl = DX[bd] < 0; }
   if (a->carry && a->x == nestx[t] && a->y == nesty[t]) {
     a->carry = 0; if (stock[t] < 99) stock[t]++;
-    if (t == 0) { mana = (mana + MANA_PER_FOOD > MANA_MAX) ? MANA_MAX : mana + MANA_PER_FOOD; apr(1); sfx_food(); }
+    if (t == 0) { mana = (mana + MANA_PER_FOOD > MANA_MAX) ? MANA_MAX : mana + MANA_PER_FOOD; apr(1); sfx_food(); fx_add(a->x, a->y, FX_PLUS); }
   }
   if (!a->carry && qhp[e] && a->x == nestx[e] && a->y == nesty[e]) {
-    if (a->sol) { if (rnd() & 1) { qhp[e]--; if (e == 0) apr(-3); if (qhp[e]) sfx_hit(); else sfx_qdead(); } }
-    else if (stock[e]) { stock[e]--; a->carry = 1; sfx_fight(); }
+    if (a->sol) {
+      if (rnd() & 1) {
+        qhp[e]--; qfl[e] = 10; fx_add(a->x, a->y, FX_HEART);
+        if (e == 0) { apr(-3); alert(a->x, a->y, "QUEEN ATTACKED! PRESS SELECT"); }
+        if (qhp[e]) sfx_hit(); else sfx_qdead();
+      }
+    }
+    else if (stock[e]) { stock[e]--; a->carry = 1; sfx_fight(); if (e == 0) alert(a->x, a->y, "FOOD STOLEN! PRESS SELECT"); }
+  }
+}
+static void grow_food(void) {                    // food regrows, mostly around the berry patches
+  u8 i; s8 x, y;
+  for (nfood = 0, y = 0; y < H; y++) for (x = 0; x < W; x++) nfood += food[y][x];
+  for (i = 0; i < 2 && nfood < 50; i++) {
+    if (npatch && (rnd() & 3)) { u8 k = (u8)(rnd() % npatch); x = (s8)(pfx[k] + (s8)(rnd() % 5) - 2); y = (s8)(pfy[k] + (s8)(rnd() % 5) - 2); }
+    else { x = (s8)(rnd() & (W - 1)); y = (s8)(rnd() & (H - 1)); }
+    if (x < 0 || y < 0 || x >= W || y >= H) continue;
+    if (hgt[y][x] && !food[y][x] && !near_nest(x, y)) { food[y][x] = 1; nfood++; draw_dec(x, y); }
   }
 }
 static void tick_slice(void) {                    // 1/8 of the ants per call; every 8th call runs the colony-level work
   u8 i, j, x, y, cst;
+  for (i = 0; i < MAXA; i++) if (ant[i].age < 8) ant[i].age++;
   for (i = slice; i < MAXA; i += 8) {
     if (!ant[i].alive) continue;
-    if (hgt[ant[i].y][ant[i].x] == 0) { die(&ant[i]); continue; }
+    if (hgt[ant[i].y][ant[i].x] == 0) { die(&ant[i], 1); continue; }
     step_ant(&ant[i]);
   }
   for (i = slice; i < MAXA; i += 8)
     if (ant[i].alive) for (j = i + 1; j < MAXA; j++)
       if (ant[j].alive && ant[i].team != ant[j].team && ant[i].x == ant[j].x && ant[i].y == ant[j].y)
-        { if (rnd() & 1) die(&ant[i]); else die(&ant[j]); sfx_fight(); if (!ant[i].alive) break; }
+        { if (rnd() & 1) die(&ant[i], 0); else die(&ant[j], 0); sfx_fight(); if (!ant[i].alive) break; }
   if ((gt & 3) == 0) for (y = slice << 2; y < (u8)((slice << 2) + 4); y++) for (x = 0; x < W; x++) if (ph[y][x]) ph[y][x]--;
   if (++slice < 8) return;
   slice = 0; gt++;
+  if (pdirty) { bfs(0); bfs(1); pdirty = 0; }
   count(ncnt);
   for (i = 0; i < 2; i++) {
     if (!qhp[i]) continue;
@@ -551,21 +690,25 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
     if ((gt & 127) == 0 && qhp[i] < (i ? QHP : qmax0)) qhp[i]++;
   }
   if ((gt & dm) == 0) apr(!stock[0] && ncnt[0] ? -2 : -1);
-  if (pend) pend--;
   if (!tut && !sandbox && gt > 90 && (gt & dmask_dis()) == 0 && !(rnd() & 3)) disaster();   // rarer on EASY / with CALM
   if (++etk >= 450) { etk = 0; election(); }
-  if ((gt & 7) == 0) for (i = 0; i < 2; i++) {
-    x = rnd() & (W - 1); y = rnd() & (H - 1);
-    if (hgt[y][x] && !food[y][x] && !is_nest(x, y)) { food[y][x] = 1; draw_cell(x, y); }
-  }
+  if ((gt & 7) == 0) grow_food();
   if ((gt & tm) == 0 && mana < MANA_MAX) mana++;
 }
-static void bump(u8 cx0, u8 cy0, u8 v, u8 r) {
-  s8 x, y;
-  for (y = (s8)cy0 - r; y <= (s8)cy0 + r; y++) for (x = (s8)cx0 - r; x <= (s8)cx0 + r; x++)
-    if (x >= 0 && y >= 0 && x < W && y < H) hgt[y][x] = v;
+
+// ---------- map generator: 4 kinds of land, always a walking path between the two nests ----------
+static void blob(u8 n, u8 r0, u8 r1, s16 amp) {   // n round bumps (amp > 0) or dents (amp < 0) of radius r0..r1
+  u8 k; s8 x, y, cx0, cy0, r; s16 d, rr;
+  for (k = 0; k < n; k++) {
+    cx0 = (s8)(rnd() & (W - 1)); cy0 = (s8)(rnd() & (H - 1)); r = (s8)(r0 + rnd() % (r1 - r0 + 1)); rr = (s16)(r * r);
+    for (y = cy0 - r; y <= cy0 + r; y++) for (x = cx0 - r; x <= cx0 + r; x++) {
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      d = (s16)((x - cx0) * (x - cx0) + (y - cy0) * (y - cy0));
+      if (d < rr) fld[y][x] += (s16)((s32)amp * (rr - d) / rr);
+    }
+  }
 }
-static void smooth(void) {
+static void smooth(void) {                        // neighbouring land never differs by more than 1 (no cliffs)
   u8 pass, x, y, a, b;
   for (pass = 0; pass < 3; pass++) for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
     a = hgt[y][x]; if (!a) continue;
@@ -574,8 +717,80 @@ static void smooth(void) {
     if (y + 1 < H) { b = hgt[y + 1][x]; if (b) { if (a > b + 1) hgt[y][x] = b + 1; else if (b > a + 1) hgt[y + 1][x] = a + 1; } }
   }
 }
+static void beach(void) {                         // land touching water becomes sand
+  u8 x, y, k; s8 a, b;
+  for (y = 0; y < H; y++) for (x = 0; x < W; x++) if (hgt[y][x] >= 2)
+    for (k = 0; k < 4; k++) { a = (s8)x + DX[k]; b = (s8)y + DY[k]; if (a >= 0 && b >= 0 && a < W && b < H && !hgt[b][a]) { fld[y][x] = -999; break; } }
+  for (y = 0; y < H; y++) for (x = 0; x < W; x++) if (fld[y][x] == -999) hgt[y][x] = 1;
+}
+static void path(u8 x, u8 y, u8 tx, u8 ty) {      // walk from (x,y) to (tx,ty), shaping each next cell so an ant can follow
+  u8 h, n, guard = 0;
+  while ((x != tx || y != ty) && guard++ < 120) {
+    h = hgt[y][x];
+    if (x != tx && (y == ty || (rnd() & 1))) x = x < tx ? x + 1 : x - 1; else y = y < ty ? y + 1 : y - 1;
+    n = hgt[y][x];
+    if (n == 0) n = 1;
+    if (n > h + 1) n = h + 1;
+    if (h > 1 && n < h - 1) n = h - 1;
+    hgt[y][x] = n;
+  }
+}
+static void flat_nests(void) {
+  u8 i; s8 x, y;
+  for (i = 0; i < 2; i++) for (y = (s8)nesty[i] - 2; y <= (s8)nesty[i] + 2; y++) for (x = (s8)nestx[i] - 2; x <= (s8)nestx[i] + 2; x++)
+    if (x >= 0 && y >= 0 && x < W && y < H) hgt[y][x] = (dist(x, nestx[i]) <= 1 && dist(y, nesty[i]) <= 1) ? 2 : (hgt[y][x] ? hgt[y][x] : 1);
+}
+static void gen_world(void) {
+  u8 x, y, k, i, t = mapt; s16 v; s8 a, b;
+  for (y = 0; y < H; y++) for (x = 0; x < W; x++) { fld[y][x] = 0; food[y][x] = 0; ph[y][x] = 0; }
+  nestx[0] = (u8)(3 + (rnd() & 1)); nesty[0] = (u8)(26 + (rnd() & 1)); nestx[1] = (u8)(27 + (rnd() & 1)); nesty[1] = (u8)(4 + (rnd() & 1));
+  if (t == 0) { blob(14, 3, 6, 70); blob(9, 2, 3, -70); }                     // MEADOW
+  else if (t == 1) { blob(12, 3, 6, 70); blob(3, 2, 3, -60); }                // RIVER (the river comes below)
+  else if (t == 2) { blob(10, 3, 6, 70); blob(1, 6, 7, -200); blob(3, 3, 4, -160); }   // LAKES
+  else { blob(16, 3, 6, 90); blob(10, 2, 5, -70); }                          // CANYON
+  if (t == 2) for (y = 11; y < 21; y++) for (x = 11; x < 21; x++)              // LAKES: one big lake in the middle
+    if ((x - 16) * (x - 16) + (y - 16) * (y - 16) < 22 + (rnd() & 7)) fld[y][x] -= 200;
+  for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    v = fld[y][x];
+    if (t == 3) hgt[y][x] = v < -60 ? 0 : v < 15 ? 1 : v < 55 ? 2 : 3;
+    else hgt[y][x] = v <= -25 ? 0 : v < 0 ? 1 : v < 50 ? 2 : 3;
+  }
+  if (t == 1) {                                   // RIVER: wiggles from the top-left corner to the bottom-right, between the nests
+    u8 ph0 = (u8)rnd(), f0 = (u8)(8 + rnd() % 5), f1 = (u8)(19 + rnd() % 5);
+    for (x = 0; x < W; x++) {
+      v = (s16)x + (SINT[(x * 12 + ph0) & 255] * 3 >> 8);
+      for (k = 0; k < 4; k++) { b = (s8)(v - 1 + k); if (b >= 0 && b < H) hgt[b][x] = (x == f0 || x == f0 + 1 || x == f1 || x == f1 + 1) ? 1 : 0; }
+    }
+  }
+  flat_nests();
+  if (t != 3) { beach(); smooth(); }
+  flat_nests();
+  bfs(0);
+  if (t == 3) {                                   // CANYON: two winding ramps through the cliffs, via random midpoints
+    for (k = 0; k < 2; k++) { x = (u8)(8 + rnd() % 16); y = (u8)(8 + rnd() % 16); path(nestx[0], nesty[0], x, y); path(x, y, nestx[1], nesty[1]); }
+  } else if (dn[0][nesty[1]][nestx[1]] == 255) path(nestx[0], nesty[0], nestx[1], nesty[1]);
+  // berry patches: one near each nest, the rest anywhere on land
+  npatch = 0;
+  for (i = 0; i < 2; i++) {
+    for (k = 0; k < 20; k++) {
+      a = (s8)(nestx[i] + (i ? -1 : 1) * (s8)(3 + rnd() % 3)); b = (s8)(nesty[i] + (i ? 1 : -1) * (s8)(2 + rnd() % 3));
+      if (a >= 0 && b >= 0 && a < W && b < H && hgt[b][a]) break;
+    }
+    pfx[npatch] = (u8)a; pfy[npatch] = (u8)b; npatch++;
+  }
+  for (k = 0; k < 60 && npatch < 8; k++) {
+    x = (u8)(rnd() & (W - 1)); y = (u8)(rnd() & (H - 1));
+    if (hgt[y][x] && dist(x, nestx[0]) + dist(y, nesty[0]) > 6 && dist(x, nestx[1]) + dist(y, nesty[1]) > 6) { pfx[npatch] = x; pfy[npatch] = y; npatch++; }
+  }
+  for (i = 0; i < npatch; i++) for (k = 0; k < 9; k++) {
+    a = (s8)(pfx[i] + (s8)(rnd() % 5) - 2); b = (s8)(pfy[i] + (s8)(rnd() % 5) - 2);
+    if (a >= 0 && b >= 0 && a < W && b < H && hgt[b][a] && !near_nest(a, b)) food[b][a] = 1;
+  }
+  pdirty = 1;
+}
 
 // ---------- camera + sprites ----------
+static s8 shx;                                     // screen shake offset this frame
 static void follow(void) {
   u8 t;
   if (cx < camx + 3) camx = cx > 3 ? cx - 3 : 0;
@@ -583,75 +798,105 @@ static void follow(void) {
   if (cy < camy + 3) camy = cy > 3 ? cy - 3 : 0;
   else if (cy + 3 >= camy + VH) { t = cy + 4 - VH; camy = t > H - VH ? H - VH : t; }
 }
-static void scroll_step(void) {
-  s16 tx = (s16)camx * 8, ty = (s16)camy * 8;
-  if (scx < tx) { scx += 4; if (scx > tx) scx = tx; } else if (scx > tx) { scx -= 4; if (scx < tx) scx = tx; }
-  if (scy < ty) { scy += 4; if (scy > ty) scy = ty; } else if (scy > ty) { scy -= 4; if (scy < ty) scy = ty; }
+static void scroll_step(void) {                    // glide to the camera target, faster when it is far away (SELECT jumps)
+  s16 tx = (s16)camx * 8, ty = (s16)camy * 8, d;
+  d = tx - scx; d = d > 0 ? 4 + d / 6 : d < 0 ? -4 + d / 6 : 0; scx += d; if ((d > 0 && scx > tx) || (d < 0 && scx < tx)) scx = tx;
+  d = ty - scy; d = d > 0 ? 4 + d / 6 : d < 0 ? -4 + d / 6 : 0; scy += d; if ((d > 0 && scy > ty) || (d < 0 && scy < ty)) scy = ty;
 }
-static void place(u8 s, u8 tile, u8 pal, u8 x, u8 y) {
-  int sx = (int)x * 8 - scx, sy = (int)y * 8 - scy;
-  if (sx > -8 && sx < 240 && sy > -8 && sy < 144) spr(s, sx, sy, tile, pal, 1, 0); else spr_hide(s);
+static void place_px(u8 s, u8 tile, u8 pal, int px, int py, u8 flip) {
+  int sx = px - scx - shx, sy = py - scy;
+  if (sx > -8 && sx < 240 && sy > -8 && sy < VH * 8) spr(s, sx, sy, tile, pal, 1, flip); else spr_hide(s);
 }
+static void place16(u8 s, u8 tile, u8 pal, int px, int py, u8 flip) {   // 16x16 sprite centred on a cell
+  int sx = px - 4 - scx - shx, sy = py - 4 - scy;
+  if (sx > -16 && sx < 240 && sy > -16 && sy < VH * 8) { spr(s, sx, sy, tile, pal, 1, flip); oam[s * 4 + 1] |= 0x4000; } else spr_hide(s);
+}
+static u16 frc;                                    // frame counter (animation)
 static void draw_sprites(void) {
-  u8 i;
-  for (i = 0; i < MAXA; i++) { if (ant[i].alive) place(i, 0, ant[i].team, ant[i].x, ant[i].y); else spr_hide(i); }
-  for (i = 0; i < 2; i++) { if (qhp[i]) place(MAXA + i, 2, i, nestx[i], nesty[i]); else spr_hide(MAXA + i); }
-  place(MAXA + 2, 1, 2, cx, cy);
+  u8 i, tl; Ant *a; Fx *f;
+  for (i = 0; i < MAXA; i++) {
+    a = &ant[i];
+    if (!a->alive) { spr_hide(i); continue; }
+    tl = a->carry ? 5 : a->sol ? 7 : 3;
+    if (a->age < 8 && ((frc >> 2) + i) & 1) tl++;
+    place_px(i, tl, a->team, a->ox * 8 + (a->x - a->ox) * a->age, a->oy * 8 + (a->y - a->oy) * a->age, a->fl);
+  }
+  for (i = 0; i < 2; i++) {
+    if (qhp[i]) place16(MAXA + i, 16, qfl[i] ? 4 : i, nestx[i] * 8, nesty[i] * 8 - ((frc >> 4) & 1), i); else spr_hide(MAXA + i);
+    if (qfl[i]) qfl[i]--;
+  }
+  place16(MAXA + 2, 20, (is_nest(cx, cy) || (!mana && !cheat && !sandbox)) ? 5 : 2, cx * 8, cy * 8, 0);
+  for (i = 0; i < 8; i++) {
+    f = &fx[i];
+    if (!f->t) { spr_hide(MAXA + 3 + i); continue; }
+    f->t--; if (f->tile != FX_PUFF && (f->t & 1)) f->y--;
+    place_px(MAXA + 3 + i, f->tile, 3, f->x, f->y, 0);
+  }
 }
 
 // ---------- new game ----------
 static void newgame(void) {
   u8 i, k, x, y;
   DISPCNT = 0x80; BLDY = 16;
-  for (y = 0; y < H; y++) for (x = 0; x < W; x++) { hgt[y][x] = 1; food[y][x] = 0; ph[y][x] = 0; }
-  for (k = 0; k < 28; k++) { x = rnd() & (W - 1); y = rnd() & (H - 1); bump(x, y, 2, 1); hgt[y][x] = 3; }
-  for (k = 0; k < 9; k++) {
-    x = rnd() & (W - 1); y = rnd() & (H - 1);
-    hgt[y][x] = 0;
-    if (x + 1 < W) hgt[y][x + 1] = 0;
-    if (y + 1 < H) hgt[y + 1][x] = 0;
-    if (x + 1 < W && y + 1 < H) hgt[y + 1][x + 1] = 0;
-  }
-  nestx[0] = 4; nesty[0] = 26; nestx[1] = 27; nesty[1] = 5;
-  bump(nestx[0], nesty[0], 1, 1); bump(nestx[1], nesty[1], 1, 1);
-  smooth();
-  for (k = 0; k < 36; k++) { x = rnd() & (W - 1); y = rnd() & (H - 1); if (hgt[y][x] && !is_nest(x, y)) food[y][x] = 1; }
+  gen_world();
   for (i = 0; i < MAXA; i++) ant[i].alive = 0;
-  stock[0] = stock[1] = 0; qhp[0] = qhp[1] = QHP; hatched[0] = hatched[1] = 0;
+  for (i = 0; i < 8; i++) fx[i].t = 0;
+  stock[0] = stock[1] = 0; qhp[0] = qhp[1] = QHP; hatched[0] = hatched[1] = 0; qfl[0] = qfl[1] = 0;
   for (k = 0; k < 3; k++) { spawn(0); spawn(1); }
   count(ncnt);
-  perk = 0; pend = 0; set_rules(); spd = 4; sf = 0; appr = 50; etk = 0; slice = 0; cheat = 0; cx = nestx[0]; cy = nesty[0] - 2; mana = 10; gt = 0; over = 0; msgt = 0;
-  camx = 0; camy = H - VH; scx = 0; scy = (s16)camy * 8;
+  perk = 0; pend = 0; set_rules(); spd = 4; sf = 0; appr = 50; etk = 0; slice = 0; cheat = 0; cx = nestx[0] + 2; cy = nesty[0] - 2; mana = 10; gt = 0; over = 0; msgt = 0;
+  shk = 0; shx = 0; alt = 0; jmp = 0;
+  camx = 0; camy = H - VH; follow(); scx = (s16)camx * 8; scy = (s16)camy * 8;
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) draw_cell(x, y);
+  bfs(0); bfs(1); pdirty = 0;
   ov_clear(); hud();
-  say(sandbox ? "SANDBOX: NO LIMITS" : "A/B LAND  START MENU");
-  BG0HOFS = (u16)scx; BG0VOFS = (u16)scy;
+  say(sandbox ? "SANDBOX: NO LIMITS" : "START: MENU   SELECT: JUMP");
+  BG0HOFS = BG2HOFS = (u16)scx; BG0VOFS = BG2VOFS = (u16)scy;
+  BG2CNT = 1 | (2 << 2) | (30 << 8);
   hide_all(); draw_sprites(); oam_flush();
-  DISPCNT = 0x1340;
+  DISPCNT = 0x1740;
   music_start();
   fade(16, 0);
 }
 
 static void raise_land(void) {
-  if (mana && hgt[cy][cx] < 3 && !is_nest(cx, cy)) { hgt[cy][cx]++; mana--; draw_cell(cx, cy); sfx_raise(); tev |= 2; return; }
-  sfx_deny(); say(is_nest(cx, cy) ? "NEST CANT BE EDITED" : hgt[cy][cx] >= 3 ? "ALREADY HIGHEST" : "NEED ANA");
+  if (mana && hgt[cy][cx] < 3 && !is_nest(cx, cy)) { hgt[cy][cx]++; mana--; draw_around(cx, cy); sfx_raise(); tev |= 2; return; }
+  sfx_deny(); say(is_nest(cx, cy) ? "NESTS CANT BE CHANGED" : hgt[cy][cx] >= 3 ? "ALREADY HIGHEST: B LOWERS" : "NO AP: WAIT OR FIND FOOD");
 }
 static void lower_land(void) {
-  if (mana && hgt[cy][cx] > 0 && !is_nest(cx, cy)) { hgt[cy][cx]--; mana--; draw_cell(cx, cy); sfx_lower(); tev |= 4; return; }
-  sfx_deny(); say(is_nest(cx, cy) ? "NEST CANT BE EDITED" : hgt[cy][cx] == 0 ? "ALREADY WATER" : "NEED ANA");
+  if (mana && hgt[cy][cx] > 0 && !is_nest(cx, cy)) {
+    hgt[cy][cx]--; mana--; if (!hgt[cy][cx]) food[cy][cx] = 0;
+    draw_around(cx, cy); sfx_lower(); tev |= 4; return;
+  }
+  sfx_deny(); say(is_nest(cx, cy) ? "NESTS CANT BE CHANGED" : hgt[cy][cx] == 0 ? "ALREADY WATER: A FILLS" : "NO AP: WAIT OR FIND FOOD");
 }
 static void offering(void) {
-  if (stock[0] < OFFER_FOOD) { sfx_deny(); say("NEED 2 FOOD"); return; }
-  if (mana >= MANA_MAX) { sfx_deny(); say("ANA IS FULL"); return; }
+  if (stock[0] < OFFER_FOOD) { sfx_deny(); say("NEED 2 FOOD IN THE NEST"); return; }
+  if (mana >= MANA_MAX) { sfx_deny(); say("AP IS ALREADY FULL"); return; }
   stock[0] -= OFFER_FOOD; mana = (mana + OFFER_MANA > MANA_MAX) ? MANA_MAX : mana + OFFER_MANA;
-  apr(-5); sfx_mana(); say("ANTBEZZLED! P DOWN");
+  apr(-5); sfx_mana(); say("TRADED 2 FOOD: +4 AP");
 }
 static void flood(void) {
   s8 x, y;
-  if (mana < fcost) { sfx_deny(); say(fcost == 4 ? "FLOOD NEEDS 4 ANA" : "FLOOD NEEDS 8 ANA"); return; }
-  mana -= fcost; sfx_flood(); tev |= 8;
+  if (mana < fcost) { sfx_deny(); say(fcost == 4 ? "FLOOD NEEDS 4 AP" : "FLOOD NEEDS 8 AP"); return; }
+  mana -= fcost; sfx_flood(); tev |= 8; shk = 10;
   for (y = (s8)cy - 1; y <= (s8)cy + 1; y++) for (x = (s8)cx - 1; x <= (s8)cx + 1; x++)
-    if (x >= 0 && y >= 0 && x < W && y < H && hgt[y][x] && !is_nest(x, y)) { hgt[y][x]--; draw_cell(x, y); }
+    if (x >= 0 && y >= 0 && x < W && y < H && hgt[y][x] && !is_nest(x, y)) { hgt[y][x]--; if (!hgt[y][x]) food[y][x] = 0; }
+  for (y = (s8)cy - 2; y <= (s8)cy + 2; y++) for (x = (s8)cx - 2; x <= (s8)cx + 2; x++)
+    if (x >= 0 && y >= 0 && x < W && y < H) draw_cell(x, y);
+  pdirty = 1;
+}
+static void jump(void) {                           // SELECT: alert spot, else HOME -> ARMY -> RED NEST
+  u8 i, b = 255, d, bi = MAXA;
+  if (alt) { cx = alx; cy = aly; alt = 0; say("HERE!"); sfx_spawn(); return; }
+  jmp = (u8)((jmp + 1) % 3);
+  if (jmp == 1) {
+    for (i = 0; i < MAXA; i++) if (ant[i].alive && !ant[i].team) { d = dn[1][ant[i].y][ant[i].x]; if (d < b) { b = d; bi = i; } }
+    if (bi == MAXA) jmp = 2; else { cx = ant[bi].x; cy = ant[bi].y; say("YOUR ARMY: CLOSEST TO RED"); }
+  }
+  if (jmp == 2) { cx = nestx[1]; cy = nesty[1]; say("THE RED NEST"); }
+  if (jmp == 0) { cx = nestx[0]; cy = nesty[0]; say("YOUR NEST"); }
+  sfx_spawn();
 }
 
 // ---------- title ----------
@@ -664,20 +909,23 @@ static void logo_line(const char *s, u8 x0, u8 y0) {   // blocky 3D lettering fr
         if ((g >> (3 * (4 - gy))) & (4 >> gx)) BGMAP1[(y0 + gy + k) * 32 + x0 + i * 4 + gx + k] = (u16)(2 | ((k ? 4 : 2) << 12));
     }
 }
+static u8 tsel;                                    // title: 0 = LEVEL row, 1 = MAP row
 static void title_dyn(void) {
-  u8 x; u16 b = best[diff];
-  ov_fill(1, 3, 15, 15); ov_fill(1, 3, 2, 2);
-  ps(10, 15, "<      >", 3 + 0); ps(12, 15, DNAME[diff], 2);
-  if (wins[diff]) { ps(5, 2, "WINS", 2); pn(10, 2, wins[diff], 3); ps(14, 2, "BEST", 2); pn(19, 2, (u8)(b / 60 > 99 ? 99 : b / 60), 3); pc(21, 2, ':', 3); pz(22, 2, (u8)(b % 60), 3); }
-  else ps(8, 2, "NO WINS YET", 3);
-  for (x = 0; x < 30; x++) if (BGMAP1[15 * 32 + x] == (u16)((FT + gi('<')) | (3 << 12))) BGMAP1[15 * 32 + x] = 1 | (3 << 12);
+  u16 b = best[diff];
+  ov_fill(1, 3, 15, 17); ov_fill(1, 3, 2, 9);
+  ps(3, 15, tsel == 0 ? ">" : " ", 9); ps(5, 15, "LEVEL", tsel == 0 ? 9 : 3); ps(12, 15, "<", 10); ps(14, 15, DNAME[diff], 9); ps(21, 15, ">", 10);
+  ps(3, 16, tsel == 1 ? ">" : " ", 9); ps(5, 16, "MAP", tsel == 1 ? 9 : 3);   ps(12, 16, "<", 10); ps(14, 16, MNAME[mapt], 9); ps(21, 16, ">", 10);
+  ps((u8)(15 - (blen2(MDESC[mapt]) + 1) / 2), 17, MDESC[mapt], 10);
+  if (wins[diff]) { ps(5, 2, "WINS", 9); pn(10, 2, wins[diff], 3); ps(14, 2, "BEST", 9); pn(19, 2, (u8)(b / 60 > 99 ? 99 : b / 60), 3); pc(21, 2, ':', 3); pz(22, 2, (u8)(b % 60), 3); }
+  else ps(9, 2, "NO WINS YET", 3);
+  logo_line("EMPIRE", 3, 3); logo_line("ANTS", 7, 9);
 }
 static void title_scene(void) {
   u8 x, k;
   ov_fill(1, 3, 0, 19);
   for (k = 0; k < 30; k++) BGMAP1[((rnd() % 13) + 1) * 32 + rnd() % 30] = (u16)(3 | (3 << 12));
   for (x = 0; x < 32; x++) { BGMAP1[18 * 32 + x] = (u16)(BT + 2); BGMAP1[19 * 32 + x] = (u16)(BT + 1); }
-  ps(7, 1, "THE RULER OF YOU", 2); ps(7, 0, "A: LEARN TO PLAY", 2);
+  ps(7, 0, "THE RULER OF YOU", 9);
   logo_line("EMPIRE", 3, 3); logo_line("ANTS", 7, 9);
   title_dyn();
 }
@@ -695,15 +943,16 @@ static void title(void) {
     vsync(); oam_flush();
     fr++; rs ^= fr + (u32)VCOUNT * 2654435761u; if (!rs) rs = 1;
     k = joy(); p = k & ~prev; prev = k;
-    if (p & (J_L | J_RIGHT)) { diff = diff == 2 ? 0 : diff + 1; title_dyn(); }
-    if (p & (J_R | J_LEFT))  { diff = diff == 0 ? 2 : diff - 1; title_dyn(); }
+    if (p & (J_UP | J_DOWN)) { tsel ^= 1; sfx_food(); title_dyn(); }
+    if (p & (J_RIGHT | J_R)) { if (tsel) mapt = (u8)((mapt + 1) % MAPN); else diff = diff == 2 ? 0 : diff + 1; sfx_food(); title_dyn(); }
+    if (p & (J_LEFT | J_L))  { if (tsel) mapt = (u8)((mapt + MAPN - 1) % MAPN); else diff = diff == 0 ? 2 : diff - 1; sfx_food(); title_dyn(); }
     if (p & J_A) { tutor = 1; sandbox = 0; break; }          // A alone = guided tutorial
     if (p & J_START) { tutor = 0; sandbox = (k & J_SEL) ? 1 : 0; break; }
     bl = (fr & 63) < 44;
-    if (bl != on) { on = bl; ps(9, 16, on ? "PRESS START" : "           ", 2); }
+    if (bl != on) { on = bl; ov_fill(1, 3, 1, 1); if (on) ps(3, 1, "START: PLAY   A: LEARN HOW", 9); }
     for (i = 0; i < 5; i++) {                      // 3 black ants march right, 2 red ants left, along the grass
       if (!(fr & 1)) { if (i < 3) { if (++wx[i] >= 248) wx[i] = 0; } else wx[i] = wx[i] ? wx[i] - 1 : 247; }
-      spr(i, (int)wx[i] - 8, 136, (u8)(3 + (((fr >> 3) + i) & 1)), i < 3 ? 0 : 1, 0, 0);
+      spr(i, (int)wx[i] - 8, 141, (u8)(3 + (((fr >> 3) + i) & 1)), i < 3 ? 0 : 1, 0, i >= 3);
     }
   }
   fade(0, 16);
@@ -745,24 +994,6 @@ static void title(void) {
 #define IWRAM
 #endif
 typedef struct { u32 ab, cd; s32 x, y; } M7;          // PA|PB<<16, PC|PD<<16, BG2X, BG2Y = registers 0x04000020..2F
-static const s16 SINT[256] = {                        // sin(a), 256 = 1.0, a in 1/256 turns, 0 = east, clockwise (y points down)
-  0,6,13,19,25,31,38,44,50,56,62,68,74,80,86,92,
-  98,104,109,115,121,126,132,137,142,147,152,157,162,167,172,177,
-  181,185,190,194,198,202,206,209,213,216,220,223,226,229,231,234,
-  237,239,241,243,245,247,248,250,251,252,253,254,255,255,256,256,
-  256,256,256,255,255,254,253,252,251,250,248,247,245,243,241,239,
-  237,234,231,229,226,223,220,216,213,209,206,202,198,194,190,185,
-  181,177,172,167,162,157,152,147,142,137,132,126,121,115,109,104,
-  98,92,86,80,74,68,62,56,50,44,38,31,25,19,13,6,
-  0,-6,-13,-19,-25,-31,-38,-44,-50,-56,-62,-68,-74,-80,-86,-92,
-  -98,-104,-109,-115,-121,-126,-132,-137,-142,-147,-152,-157,-162,-167,-172,-177,
-  -181,-185,-190,-194,-198,-202,-206,-209,-213,-216,-220,-223,-226,-229,-231,-234,
-  -237,-239,-241,-243,-245,-247,-248,-250,-251,-252,-253,-254,-255,-255,-256,-256,
-  -256,-256,-256,-255,-255,-254,-253,-252,-251,-250,-248,-247,-245,-243,-241,-239,
-  -237,-234,-231,-229,-226,-223,-220,-216,-213,-209,-206,-202,-198,-194,-190,-185,
-  -181,-177,-172,-167,-162,-157,-152,-147,-142,-137,-132,-126,-121,-115,-109,-104,
-  -98,-92,-86,-80,-74,-68,-62,-56,-50,-44,-38,-31,-25,-19,-13,-6,
-};
 static const u8 BBH[VN + 1] = {0, 40, 32, 21, 16, 12, 10, 9, 8, 7, 6, 5, 5, 4, 4, 4, 3, 3, 3, 3, 3, 2, 2, 2, 2};
 static const char *const COMPASS[8] = {"EAST", "SOUTH EAST", "SOUTH", "SOUTH WEST", "WEST", "NORTH WEST", "NORTH", "NORTH EAST"};
 static s8 OFF[7][VN + 1];
@@ -1000,7 +1231,7 @@ static void eye(void) {                              // time stands still while 
   vsync();
   DMAR(0, 8) = 0; DMAR(1, 8) = 0;
   occ_set(0);
-  DISPCNT = 0x1340; BLDCNT = 0xFF; IO16(0x0C) = 0;
+  BG2CNT = 1 | (2 << 2) | (30 << 8); DISPCNT = 0x1740; BLDCNT = 0xFF;   // back to the decor layer on BG2
   ov_clear(); hud();
   while (joy()) vsync();
 }
@@ -1011,8 +1242,8 @@ static void eye(void) {                              // time stands still while 
 static const u8 TEV[TN] = {0, 1, 2, 4, 0, 8, 16, 0, 0, 0};          // event bit that completes each lesson (0 = read only)
 static const char *const THINT[TN] = {0, "TRY: MOVE THE CURSOR", "TRY: PRESS A TO RAISE", "TRY: PRESS B TO LOWER", 0,
   "PRESS L TO FLOOD", "SEL+START: ANT EYE", 0, 0, 0};
-static const char *const TTITLE[TN] = {"WELCOME ANTPEROR!", "THE CURSOR", "RAISE LAND", "LOWER LAND", "ANA", "FLOOD", "ANT EYE", "THE COLONY", "POPULARITY", "READY TO RULE!"};
-// Lesson text: 7 lines of up to 28 letters (the font has A-Z 0-9 : ! / only). *asterisks* switch gold highlighting on and off.
+static const char *const TTITLE[TN] = {"WELCOME ANTPEROR!", "THE CURSOR", "RAISE LAND", "LOWER LAND", "ANT POWER", "FLOOD", "ANT EYE", "THE COLONY", "POPULARITY", "READY TO RULE!"};
+// Lesson text: 7 lines of up to 28 letters (the font has A-Z 0-9 : ! / . - + ? only). *asterisks* switch gold highlighting on and off.
 static const char *const TBODY[TN] = {
   "YOU RULE THE *BLACK ANTS* OF\n"
   "EMPIRE ANTS BUT YOU CANT\n"
@@ -1029,27 +1260,28 @@ static const char *const TBODY[TN] = {
   "REPEAT: MAP SCROLLS AT EDGE\n"
   "*NOW TRY IT!*",
   "*A* RAISES THE CURSOR TILE\n"
-  "BY ONE LEVEL: COST *1 ANA*\n"
-  "\n"
-  "ANTS CANT CLIMB MORE THAN\n"
-  "*1 STEP*: BUILD RAMPS AND\n"
-  "STAIRS! NESTS CANT BE EDITED",
+  "BY ONE LEVEL: COST *1 AP*\n"
+  "ANTS ONLY STEP *1 LEVEL*:\n"
+  "SOFT EDGES = STEPS, OK\n"
+  "*DARK EDGES = CLIFFS*: NO WAY\n"
+  "BUILD RAMPS TO CONNECT LAND\n"
+  "NESTS CANT BE CHANGED",
   "*B* LOWERS THE TILE BY ONE\n"
-  "LEVEL: COST *1 ANA*\n"
+  "LEVEL: COST *1 AP*\n"
   "\n"
   "LEVEL 0 IS *WATER*: ANTS CANT\n"
   "WALK OR LIVE THERE: DIG\n"
   "MOATS TO STOP RED ANTS AND\n"
   "RAISE LAND TO BRIDGE GAPS",
-  "*AP* IS YOUR ANA: EVERY EDIT\n"
-  "COSTS AP: EARN MORE FROM:\n"
-  "*A SLOW TRICKLE*\n"
-  "*FOOD CARRIED HOME*\n"
-  "*ANTLECTION AID*\n"
+  "*AP* IS ANT POWER: EVERY\n"
+  "EDIT COSTS AP: GET MORE BY:\n"
+  "*WAITING* A LITTLE\n"
+  "*FOOD* YOUR ANTS BRING HOME\n"
+  "*ANTLECTION* WINS\n"
   "\n"
-  "*SEL A* ANTBEZZLES: P DROPS 5",
+  "*SEL+A* TRADES 2 FOOD: 4 AP",
   "*L* LOWERS A 3X3 AREA BY ONE\n"
-  "LEVEL: COST *8 ANA*\n"
+  "LEVEL: COST *8 AP*\n"
   "\n"
   "ANTS ON TILES THAT HIT LEVEL\n"
   "0 *DROWN*: GREAT AGAINST RED\n"
@@ -1069,19 +1301,19 @@ static const char *const TBODY[TN] = {
   "WITH 8 ANTS THEY MARCH ON\n"
   "THE RED NEST\n"
   "ANTS FOLLOW *TRAILS*!",
-  "*P* IS POPULARITY: FOOD AND\n"
-  "NEW ANTS RAISE IT: DEAD ANTS\n"
-  "AND HUNGER CUT IT\n"
+  "*SMILE* IS POPULARITY: FOOD\n"
+  "AND NEW ANTS RAISE IT: DEAD\n"
+  "ANTS AND HUNGER CUT IT\n"
   "\n"
   "ANTLECTION EVERY MINUTE:\n"
-  "*P 50 UP*: 8 AP AID\n"
-  "*P UNDER 25*: COUP! AP LOST",
+  "*50 UP*: +8 AP AND A PERK\n"
+  "*UNDER 25*: COUP! AP LOST",
   "KILL THE *RED QUEEN* TO WIN:\n"
   "LOSE YOURS AND ITS OVER\n"
   "\n"
+  "*SELECT* JUMPS: HOME ARMY RED\n"
   "*START* PAUSE MENU\n"
   "*R* FAST FORWARD\n"
-  "\n"
   "*LONG LIVE THE QUEEN!*",
 };
 
@@ -1130,11 +1362,6 @@ static void card_init(void) {
 
 // ----- the picture band. Each card draws its static background ONCE into bgbuf (EWRAM). Every frame tut_anim copies it to sbuf,
 // paints the moving parts on top, and band_put() DMAs the result into the band tiles during VBlank: smooth, no tearing -----
-#ifdef __arm__
-#define EWRAM __attribute__((section(".ewram")))
-#else
-#define EWRAM
-#endif
 EWRAM static u32 bgbuf[BW * BH * 8], sbuf[BW * BH * 8];
 static u32 *cur = bgbuf;
 static int bclip = BW * 8;
@@ -1555,7 +1782,7 @@ static void pm_draw(void) {                            // everything except the 
     BGMAP1[32 + x] = (u16)((BIGF + g * 2) | (9 << 12)); BGMAP1[64 + x] = (u16)((BIGF + g * 2 + 1) | (9 << 12));
   }
   pm_rule(3); pm_rule(10); pm_rule(17);
-  ps(1, 4, "ANA", 9);     pn(6, 4, mana, 3);          ps(16, 4, "FOOD", 9);   pn(23, 4, stock[0], 3);
+  ps(1, 4, "AP", 9);      pn(6, 4, mana, 3);          ps(16, 4, "FOOD", 9);   pn(23, 4, stock[0], 3);
   ps(1, 5, "ANTS", 9);     pn(6, 5, ncnt[0], 3);       ps(16, 5, "FOES", 9);   pn(23, 5, ncnt[1], 3);
   ps(1, 6, "POPULAR", 9);  pn(9, 6, appr, 3);          ps(16, 6, "QUEENS", 9);
   pc(23, 6, (char)('0' + qhp[0]), 3); pc(24, 6, '/', 3); pc(25, 6, (char)('0' + qhp[1]), 3);
@@ -1636,9 +1863,39 @@ static u16 calc_score(u32 secs) {                 // 300/600/900 by level + spee
   return (u16)(sc + ncnt[0] * 5 + appr + qhp[0] * 10);
 }
 static void pd(u8 x, u8 y, u16 v, u8 p) { u8 i; for (i = 4; i--; v /= 10) pc(x + i, y, (char)('0' + v % 10), p); }
+static void big(u8 y, const char *t) {             // centred 2x gold title (letters, digits, : ! / only)
+  u8 n = blen2(t), x, g, i;
+  for (i = 0; i < n; i++) {
+    g = gi(t[i]); x = (u8)((30 - n) / 2 + i);
+    BGMAP1[y * 32 + x] = (u16)((BIGF + g * 2) | (9 << 12)); BGMAP1[(y + 1) * 32 + x] = (u16)((BIGF + g * 2 + 1) | (9 << 12));
+  }
+}
+static void wait_keys(u16 m) { u16 k; while (joy()) vsync(); do { vsync(); k = joy(); } while (!(k & m)); }
+// ---------- PERK CARD: after a good antlection the game stops and you pick one of two perks ----------
+static void perk_card(void) {
+  u16 k; u8 i, c;
+  hide_all(); vsync(); oam_flush();
+  ov_fill(1, 3, 0, 19);
+  ps(1, 0, "THE COLONY LOVES YOU", 10);
+  big(1, "PICK A PERK");
+  pm_rule(3); pm_rule(16);
+  for (i = 0; i < 2; i++) {
+    c = i ? pb : pa;
+    ps(2, (u8)(5 + i * 5), i ? "B" : "A", 9); ps(4, (u8)(5 + i * 5), "PRESS", 10);
+    for (k = 0; k < 7; k++) pc((u8)(10 + k), (u8)(5 + i * 5), PN[c * 7 + k], 9);
+    ps(4, (u8)(6 + i * 5), PD1[c], 3); ps(4, (u8)(7 + i * 5), PD2[c], 3);
+  }
+  ps(1, 18, "PRESS A OR B TO CHOOSE", 9);
+  while (joy()) vsync();
+  do { vsync(); k = joy(); } while (!(k & (J_A | J_B)));
+  pick((k & J_A) ? pa : pb);
+  while (joy()) vsync();
+  ov_clear(); hud();
+}
 static void end_card(void) {
   u32 s = (u32)gt * 2 / 15; u8 nb = 0, nh = 0; u16 sc = 0;
-  ov_fill(1, 1, 18, 19);
+  hide_all(); oam_flush();
+  ov_fill(1, 3, 0, 19);
   if (over == 1) {
     if (!sandbox && !cheat) {
       if (wins[diff] < 99) wins[diff]++;
@@ -1647,25 +1904,35 @@ static void end_card(void) {
       save_write();
     }
     if (!sc) sc = calc_score(s);
-    ps(0, 18, "YOU WIN!", 2); ps(10, 18, "TIME", 2);
-    pn(15, 18, (u8)(s / 60 > 99 ? 99 : s / 60), 1); pc(17, 18, ':', 1); pz(18, 18, (u8)(s % 60), 1);
-    if (nb) ps(21, 18, "NEW BEST!", 2);
-  } else ps(0, 18, "COLONY LOST!", 2);
-  if (over == 1) { ps(13, 19, "SCORE", 2); pd(19, 19, sc, 1); if (nh) ps(24, 19, "HIGH!", 2); }
-  ps(0, 19, "PRESS START", 1);
+    big(2, "VICTORY!"); ps(5, 5, "THE RED QUEEN HAS FALLEN", 3);
+  } else { big(2, "DEFEAT"); ps(5, 5, "YOUR QUEEN HAS FALLEN", 3); }
+  pm_rule(7);
+  ps(5, 9, "TIME", 9);   pn(16, 9, (u8)(s / 60 > 99 ? 99 : s / 60), 3); pc(18, 9, ':', 3); pz(19, 9, (u8)(s % 60), 3); if (nb) ps(22, 9, "BEST!", 9);
+  ps(5, 10, "ANTS LEFT", 9); pn(16, 10, ncnt[0], 3);
+  ps(5, 11, "MAP", 9); ps(16, 11, MNAME[mapt], 3);
+  ps(5, 12, "LEVEL", 9); ps(16, 12, DNAME[diff], 3);
+  if (over == 1) { ps(5, 13, "SCORE", 9); pd(16, 13, sc, 3); if (nh) ps(22, 13, "HIGH!", 9); }
+  pm_rule(15);
+  ps(7, 17, "PRESS START", 9);
 }
 static void play(void) {
-  u16 k, prev, p, last = 0; u8 dirs, rep = 0, fire, t = 4, ki = 0, selused = 0, selprev = 0, n;
+  u16 k, prev, p, last = 0; u8 dirs, rep = 0, fire, t = 4, ki = 0, selused = 0, selprev = 0, n, mx, my;
   while (joy()) vsync();
   prev = 0;
   if (tutor) { tut = 1; tut_enter(); prev = joy(); }
   while (!over) {
-    vsync();
-    BG0HOFS = (u16)scx; BG0VOFS = (u16)scy; oam_flush();
+    vsync(); frc++;
+    shx = shk ? ((shk & 2) ? 2 : -2) : 0; if (shk) shk--;
+    BG0HOFS = BG2HOFS = (u16)(scx + shx); BG0VOFS = BG2VOFS = (u16)scy; oam_flush();
+    BGPAL[176 + 3] = (frc & 32) ? RGB(14,22,31) : RGB(10,18,30); BGPAL[176 + 14] = (frc & 32) ? RGB(10,18,30) : RGB(14,22,31);   // water shimmer
+    OBJPAL[32 + 3] = RGB(31, 26 + ((frc >> 2) & 3), (frc & 16) ? 4 : 12);                   // the cursor pulses
+    for (n = 0; n < 2; n++) { for (mx = 0; mx < W; mx++) draw_dec(mx, hrow); hrow = (u8)((hrow + 1) & (H - 1)); }   // trails fade in / out
+    if (alt) alt--;
     k = joy(); p = k & ~prev; prev = k;
+    if (pend && !tut) { perk_card(); prev = joy(); continue; }
     if ((p & J_START) && (k & J_SEL)) { selused = 1; eye(); prev = joy(); continue; }   // SELECT+START: ant eye
     if (p & J_START) { pause_menu(); hud(); prev = joy(); continue; }
-    dirs = (u8)(k & 15);
+    dirs = (u8)(k & 15); mx = cx; my = cy;
     if (dirs != last) { rep = 0; last = dirs; }
     if (dirs) {
       fire = (rep == 0) || (rep >= 10 && (rep % 3) == 1);
@@ -1681,14 +1948,15 @@ static void play(void) {
       if (p == CHEAT[ki]) { if (++ki == 10) { ki = 0; cheat = 1; sfx_mana(); say("CHEAT ON! INFINITE"); } }
       else ki = (p == CHEAT[0]) ? 1 : 0;
     }
-    if (k & J_SEL) {                                 // SELECT: modifier. SEL+A embezzle, SEL+B fast forward, alone (on release) flood
+    if (k & J_SEL) {                                 // SELECT: modifier. SEL+A trade food, SEL+B fast forward, alone (on release) jump
       if (p & J_SEL) selused = 0;
       if (p & J_A) { offering(); selused = 1; }
       if (p & J_B) { spd_toggle(); selused = 1; }
+      if (dirs) selused = 1;
     } else {
-      if (selprev && !selused) flood();
-      if (pend && !msgt && (p & (J_A | J_B))) pick((p & J_A) ? pa : pb);   // offer on the HUD: A / B take a perk
-      else { if (p & J_A) raise_land(); if (p & J_B) lower_land(); }
+      if (selprev && !selused) jump();
+      if (p & J_A) raise_land();
+      if (p & J_B) lower_land();
     }
     selprev = (u8)(k & J_SEL);
     if (p & J_L) flood();                            // GBA shoulder shortcuts
@@ -1701,27 +1969,27 @@ static void play(void) {
     follow(); scroll_step();
     n = SPN[spd]; if (n && (sf++ & SPM[spd])) n = 0;     // PAUSED / FRAME ADVANCE: none; slow speeds skip frames
     for (; n; n--) tick_slice();
-    if (++t >= 8) {
+    if (++t >= 8 || p) {
       t = 0; count(ncnt);
       if (tut && !msgt && THINT[tut - 1]) { msg = THINT[tut - 1]; msgt = 1; }   // keep the lesson goal on the HUD
-      else if (pend && !msgt) { msg = pbuf; msgt = 1; }                          // keep the perk offer on the HUD
       hud();
-    }
+    } else if ((mx != cx || my != cy) && !msgt) { ov_fill(1, 1, 19, 19); cur_info(); }
     if (!qhp[1]) over = 1; else if (!qhp[0]) over = 2;
     draw_sprites();
   }
   music_stop();
   if (over == 3) { fade(0, 16); return; }              // quit from the pause menu: straight back to the title
+  for (n = 0; n < 60; n++) { vsync(); frc++; draw_sprites(); oam_flush(); }   // a moment to see the queen fall
   end_card();
   if (over == 1) jingle(WIN_TUNE, 6); else jingle(LOSE_TUNE, 4);
   vsync(); oam_flush();
-  while (1) { vsync(); if (joy() & J_START) break; }
+  wait_keys(J_START);
   while (joy()) vsync();
   fade(0, 16);
 }
 
 static void gfx_init(void) {                          // palettes, tiles, maps, layers (everything main() needs before the first screen)
-  u8 i, x, y; static const u8 BARRM[4] = {1, 2, 2, 3};
+  u8 i, x, y; u16 k; static const u8 BARRM[4] = {1, 2, 2, 3};
   for (i = 0; i < 255; i++) { BGPAL[i] = 0; OBJPAL[i] = 0; }
   SNDX = 0x80; SNDH = 0x0002; SNDL = 0xFF77;          // PSG on, 100% DMG volume, all channels both sides
   BLDCNT = 0xFF; BLDY = 16;
@@ -1731,19 +1999,35 @@ static void gfx_init(void) {                          // palettes, tiles, maps, 
   BGPAL[33] = RGB(0,0,0); BGPAL[34] = RGB(22,12,3);  BGPAL[35] = RGB(31,27,8);
   BGPAL[49] = RGB(1,1,5); BGPAL[50] = RGB(11,11,22); BGPAL[51] = RGB(31,29,22);
   BGPAL[67] = RGB(14,8,2);
-  OBJPAL[1] = RGB(2,2,2);  OBJPAL[2] = RGB(14,14,14); OBJPAL[3] = RGB(31,31,31);
-  OBJPAL[17] = RGB(26,3,3); OBJPAL[18] = RGB(31,12,8); OBJPAL[19] = RGB(31,31,31);
-  OBJPAL[33] = RGB(31,31,0); OBJPAL[34] = RGB(31,20,0); OBJPAL[35] = RGB(31,31,31);
   // tiles: 0 blank, 1 solid colour 1, 2 solid colour 3, 3 star, 4.. font, 44.. terrain + mana bar
   fill_tile(TILE32, 0); fill_tile(TILE32 + 8, 0x11111111u); fill_tile(TILE32 + 16, 0x33333333u);
   fill_tile(TILE32 + 24, 0x11111111u); TILE32[24 + 3] = 0x11131111u;
-  for (i = 0; i < 40; i++) mk_glyph(TILE32 + (FT + i) * 8, FONT[i]);
-  for (i = 0; i < 8; i++) put_tile(TILE32 + (BT + i) * 8, BGT + i * 16, i >= 6 ? BARRM : 0);
-  for (i = 0; i < 5; i++) put_tile(OBJT32 + i * 8, SPT + i * 16, 0);
-  for (y = 0; y < 32; y++) for (x = 0; x < 32; x++) { BGMAP0[y * 32 + x] = BT; BGMAP1[y * 32 + x] = 0; }
+  for (i = 0; i < NGLYPH; i++) mk_glyph(TILE32 + (FT + i) * 8, FONT8[i]);
+  for (i = 0; i < 6; i++) put_tile(TILE32 + (BT + i) * 8, BGT + i * 16, 0);         // old terrain: the title's grass and sand
+  (void)BARRM;
+  for (y = 0; y < 8; y++) {                                                            // AP bar segments (palette bank 14)
+    TILE32[BAR_F * 8 + y] = (y == 0 || y == 7) ? 0x11111111u : (y == 1 || y == 6) ? 0x12222221u : 0x13333331u;
+    TILE32[BAR_E * 8 + y] = (y == 0 || y == 7) ? 0x11111111u : (y == 1 || y == 6) ? 0x12222221u : 0x12111121u;
+  }
+  for (i = 0; i < 16; i++) TILE2[i] = 0;                                               // charblock 2 tile 0/1: transparent
+  for (k = 0; k < 4 * 81 * 8; k++) TILE2[TB * 8 + k] = TERR[k];                        // terrain auto-tiles
+  for (k = 0; k < 13 * 8; k++) TILE2[DEC * 8 + k] = DECO[k];                           // food, trails, nest mound
+  for (k = 0; k < 24 * 8; k++) OBJT32[k] = SPRT[k];                                    // sprites
+  for (i = 0; i < 16; i++) {
+    BGPAL[176 + i] = PAL_TERR[i]; BGPAL[192 + i] = PAL_DEC[i];
+    OBJPAL[i] = PAL_ANT0[i]; OBJPAL[16 + i] = PAL_ANT1[i]; OBJPAL[48 + i] = PAL_FX[i]; OBJPAL[64 + i] = RGB(31, 31, 31);
+  }
+  OBJPAL[33] = RGB(2,2,2); OBJPAL[35] = RGB(31,28,4);                                  // bank 2: yellow cursor
+  OBJPAL[81] = RGB(2,2,2); OBJPAL[83] = RGB(31,6,4);                                   // bank 5: red cursor (cannot edit here)
+  BGPAL[129] = 0; BGPAL[131] = RGB(31,7,7);                                            // text bank 8: red
+  BGPAL[209] = 0; BGPAL[211] = RGB(10,28,8);                                           // text bank 13: green
+  BGPAL[225] = 0; BGPAL[226] = RGB(5,9,12); BGPAL[227] = RGB(10,26,31);                // text bank 14: cyan (+ bar)
+  BGPAL[241] = 0; BGPAL[243] = RGB(9,9,11);                                            // text bank 15: dim
+  for (y = 0; y < 32; y++) for (x = 0; x < 32; x++) { BGMAP0[y * 32 + x] = TB | (11 << 12); BGMAP1[y * 32 + x] = 0; BGMAP2[y * 32 + x] = 0; }
   BGPAL[81] = RGB(10,18,28); view_init();
   card_init();
-  BG0CNT = 2 | (28 << 8);                             // priority 2, charblock 0, screenblock 28
+  BG0CNT = 2 | (2 << 2) | (28 << 8);                  // terrain: priority 2, charblock 2, screenblock 28
+  BG2CNT = 1 | (2 << 2) | (30 << 8);                  // decor: priority 1, charblock 2, screenblock 30
   BG1CNT = 0 | (29 << 8);                             // priority 0
   hide_all(); oam_flush();
 }
