@@ -192,6 +192,8 @@ static const Opt OPTS[NOPT] = {
 static u8 opt[NOPT];
 #define O(i) (opt[i])
 static u8 qbase = 5, nosfx;                       // queen hearts (from the options), sounds off
+void *memcpy(void *d, const void *s, unsigned n) { u8 *a = d; const u8 *b = s; while (n--) *a++ = *b++; return d; }
+void *memset(void *d, int c, unsigned n) { u8 *a = d; while (n--) *a++ = (u8)c; return d; }
 static u32 rnd(void) { if (genm) return mrnd() >> 8; rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; return rs >> 8; }
 
 // ---------- input / timing ----------
@@ -308,6 +310,7 @@ static void ui_title(void) {
 static void ov_clear(void) { ov_fill(0, 0, 0, 31); ui_game(); }   // text layer cleared, back to the game look
 
 static void options_screen(void), pm_rule(u8 y), big(u8 y, const char *t);
+static u8 emp_unlocked(void);
 static const u8 CDLY[3] = {16, 10, 6}, CRAT[3] = {5, 3, 2};   // cursor repeat: delay and rate (slow / normal / fast)
 static u8 timeup;
 static void say(const char *m) { msg = m; msgt = 12; }
@@ -623,13 +626,17 @@ static const s16 SINT[256] = {                        // sin(a), 256 = 1.0, a in
 #define TB  16                                    // terrain tiles 16..339 (level * 81 + code)
 #define DEC 340                                   // decor: +0/+1 food, +2/+3 trail, +4..+12 nest mound (3x3)
 EWRAM static u16 bq[MAXW * MAXH];                 // BFS queue (cell = y << 7 | x)
-EWRAM static s16 fld[MAXH][MAXW];                 // map generator scratch
+EWRAM static union { s16 f[MAXH][MAXW]; u8 b[240 * 160]; } gen_scratch;   // map generator scratch / battle picture
+#define fld (gen_scratch.f)
 static u8 dist(u8 a, u8 b) { return a > b ? a - b : b - a; }
 static u8 is_nest(u8 x, u8 y) { return (x == nestx[0] && y == nesty[0]) || (x == nestx[1] && y == nesty[1]); }
 static u8 near_nest(u8 x, u8 y) { return (dist(x, nestx[0]) <= 1 && dist(y, nesty[0]) <= 1) || (dist(x, nestx[1]) <= 1 && dist(y, nesty[1]) <= 1); }
+static u8 emode;                                   // 1 while playing EMPIRE MODE
+static void emp_dec(u8 x, u8 y);
 static u8 wx0, wy0;                               // the 32x32-cell window of the world that BG0 / BG2 currently hold
 static u8 inwin(u8 x, u8 y) { return (u8)(x - wx0) < 32 && (u8)(y - wy0) < 32; }
 static void draw_dec(u8 x, u8 y) {
+  if (emode) { emp_dec(x, y); return; }
   u16 t = 0; u8 i, p;
   for (i = 0; i < 2; i++)
     if (dist(x, nestx[i]) <= 1 && dist(y, nesty[i]) <= 1) t = (u16)(DEC + 4 + (y + 1 - nesty[i]) * 3 + (x + 1 - nestx[i]));
@@ -1171,7 +1178,7 @@ static void title_dyn(void) {
 static void title_scene(void) {
   u8 x, k;
   ov_fill(1, 3, 0, 19); ui_title(); (void)x; (void)k;
-  ps(0, 0, "\4 OPTIONS", 10); ps(13, 0, "THE RULER OF YOU", 9);
+  ps(0, 0, "\4 OPTIONS", 10); ps(19, 0, "\3 EMPIRE", emp_unlocked() ? 9 : 15);
   title_dyn();
 }
 static u8 wx[5];
@@ -1205,6 +1212,12 @@ static u8 title(void) {                            // returns 0 = play, 1 = open
       else th = (u8)(th + dd * 8 < 32 ? 96 : th + dd * 8 > 96 ? 32 : th + dd * 8);
       sfx_food(); title_dyn();
     }
+    if (p) {                                        // the Konami code unlocks EMPIRE MODE
+      static const u16 KON[10] = {J_UP, J_UP, J_DOWN, J_DOWN, J_LEFT, J_RIGHT, J_LEFT, J_RIGHT, J_B, J_A}; static u8 kk;
+      if (p == KON[kk]) { if (++kk == 10) { kk = 0; SRAM[62] = 'U'; sfx_mana(); jingle(WIN_TUNE, 6); title_scene(); ov_fill(1, 3, 14, 14); ps(3, 14, "EMPIRE MODE UNLOCKED! \3", 9); continue; } }
+      else kk = (u8)(p == KON[0]);
+    }
+    if (p & J_L) { if (emp_unlocked()) { edit = 2; break; } ov_fill(1, 3, 14, 14); ps(1, 14, "WIN ONE GAME TO UNLOCK \3", 8); sfx_deny(); }
     if (p & J_A) { tutor = 1; sandbox = 0; break; }          // A alone = guided tutorial
     if (p & J_START) { selused = 1; tutor = 0; sandbox = (k & J_SEL) ? 1 : 0; if (mapt == MMY && !has_my) { edit = 1; sandbox = 0; } break; }
     if (p & J_SEL) selused = 0;
@@ -1212,7 +1225,7 @@ static u8 title(void) {                            // returns 0 = play, 1 = open
     if (selprev && !(k & J_SEL) && !selused) { edit = 1; break; }   // SELECT tapped alone: open the map editor
     selprev = (u8)(k & J_SEL);
     bl = (fr & 63) < 44;
-    if (bl != on) { on = bl; ov_fill(1, 3, 1, 1); if (on) ps(2, 1, "\5 PLAY  \1 LEARN  \6 MAP EDITOR", 9); }
+    if (bl != on) { on = bl; ov_fill(1, 3, 1, 1); if (on) ps(2, 1, "\5 PLAY  \1 LEARN  \6 EDITOR", 9); }
     for (i = 0; i < 5; i++) {                      // 3 black ants march right, 2 red ants left, along the grass
       if (!(fr & 1)) { if (i < 3) { if (++wx[i] >= 248) wx[i] = 0; } else wx[i] = wx[i] ? wx[i] - 1 : 247; }
       spr(i, (int)wx[i] - 8, 148, (u8)(3 + (((fr >> 3) + i) & 1)), i < 3 ? 0 : 1, 0, i >= 3);
@@ -2641,13 +2654,20 @@ static u8 editor(void) {                            // returns 1 = play MY MAP n
   return 0;
 }
 
+#include "empire.c"
+
 int main(void) {
   DISPCNT = 0x80;
   IO16(0x204) = 0x4317;                               // WAITCNT: faster cartridge reads + prefetch (standard on GBA games)
   logo_play();                                        // Danny Steel boot logo (START skips)
   IO16(0x0C) = IO16(0x0E) = 0; IO16(0x14) = IO16(0x16) = 0; IO16(0x48) = IO16(0x4A) = 0;   // undo the logo's BG2/3, BG1 scroll, windows
   gfx_init();
-  save_load(); opts_load(); opts_apply();
+  save_load(); opts_load(); opts_apply(); vram_reload(); opts_apply();
   diff = 1;
-  for (;;) { if (title()) { if (editor()) { newgame(); play(); } continue; } newgame(); play(); }
+  for (;;) {
+    u8 r = title();
+    if (r == 2) { empire_main(); continue; }
+    if (r == 1) { if (editor()) { newgame(); play(); } continue; }
+    newgame(); play();
+  }
 }

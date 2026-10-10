@@ -7,8 +7,8 @@
 #define BT_M 2                                     // major: big, slow, hits hard
 typedef struct { s16 x, y; u16 tg; u8 hp, side, type, cd; } BAnt;
 EWRAM static BAnt ba[BMAX];
-EWRAM static u16 bal[2][BMAX];                     // alive lists per side
-EWRAM static u8 bbg[240 * 160];                    // the battlefield picture (corpses get painted into it)
+EWRAM static u16 bal[2][BMAX / 2];                     // alive lists per side
+#define bbg (gen_scratch.b)                          // the battlefield picture (shares memory with the map generator)
 static u16 bn[2], bcount;
 typedef struct { s16 x, y, tx, ty; u8 t; } BShot;
 static BShot bsh[24]; static u8 bshn;
@@ -29,7 +29,7 @@ IWRAM static void vplot(volatile u16 *pg, int x, int y, u8 c) {   // one 8bpp pi
   p = pg + ((y * 240 + x) >> 1); v = *p;
   *p = (x & 1) ? (u16)((v & 0x00FF) | (c << 8)) : (u16)((v & 0xFF00) | c);
 }
-static void btext(u8 *buf, int x, int y, const char *s, u8 c) {   // font8 text into the picture, with a shadow
+static void bbtext(u8 *buf, int x, int y, const char *s, u8 c) {   // font8 text into the picture, with a shadow
   u8 gx, gy, g;
   for (; *s; s++, x += 8) {
     g = gi(*s);
@@ -37,7 +37,7 @@ static void btext(u8 *buf, int x, int y, const char *s, u8 c) {   // font8 text 
   }
 }
 static void bnum(char *b, u16 v) { u8 i = 0, j; char t[6]; do { t[i++] = (char)('0' + v % 10); v /= 10; } while (v && i < 5); for (j = 0; j < i; j++) b[j] = t[i - 1 - j]; b[i] = 0; }
-static void bground(u8 terr, u8 towers) {          // grass / sand / hill / rock look, with tufts and pebbles; towers on your side
+static void bbground(u8 terr, u8 towers) {          // grass / sand / hill / rock look, with tufts and pebbles; towers on your side
   static const u16 GC[4][4] = {{RGB(5,10,20), RGB(6,12,23), RGB(9,15,25), RGB(4,8,16)}, {RGB(26,22,13), RGB(23,19,10), RGB(28,25,16), RGB(20,16,8)},
                                {RGB(8,19,6), RGB(6,15,5), RGB(11,23,8), RGB(5,12,4)}, {RGB(18,13,8), RGB(15,10,6), RGB(22,17,11), RGB(12,8,5)}};
   u16 i; int x, y; u32 h = 12345u;
@@ -55,8 +55,8 @@ static void bspawn(u8 side, u16 nw, u16 ns, u16 nm) {   // lines up an army: maj
     BAnt *a = &ba[bcount];
     t = k < nm ? BT_M : k < nm + nw ? BT_W : BT_S;
     r = rnd();
-    x0 = side ? 200 : 40;
-    a->x = (s16)((x0 - dir * (s16)((k / 40) * 4) + (s16)(r & 7) - 3) << 4);
+    x0 = side ? 168 : 72;                          // each army in ranks, the back ranks further from the middle
+    a->x = (s16)((x0 + dir * -1 * (s16)((k / 40) * 4) + (s16)(r & 3) - 1) << 4);
     a->y = (s16)((22 + (k % 40) * 3 + (s16)((r >> 4) & 3)) << 4);
     a->side = side; a->type = t; a->tg = 0xFFFF; a->cd = (u8)(r >> 8 & 15);
     a->hp = t == BT_M ? (u8)(9 + eshell * (side == 0) * 3) : t == BT_S ? 2 : (u8)(3 + eshell * (side == 0));
@@ -115,9 +115,9 @@ static u16 bside_count(u8 s, u8 type) { u16 j, n = 0; for (j = 0; j < bn[s]; j++
 static void bhud(u8 *dst) {                        // top line: YOU 312   287 RED
   char b[8]; u16 k;
   for (k = 0; k < 240 * 12; k++) dst[k] = BC_SH;
-  btext(dst, 2, 2, "YOU", BC_TXT); bnum(b, bn[0]); btext(dst, 34, 2, b, BC_GOLD);
-  bnum(b, bn[1]); btext(dst, 150, 2, b, BC_GOLD); btext(dst, 190, 2, ebat_name, BC_TXT);
-  btext(dst, 98, 2, "VS", BC_TXT);
+  bbtext(dst, 2, 2, "YOU", BC_TXT); bnum(b, bn[0]); bbtext(dst, 34, 2, b, BC_GOLD);
+  bnum(b, bn[1]); bbtext(dst, 150, 2, b, BC_GOLD); bbtext(dst, 190, 2, ebat_name, BC_TXT);
+  bbtext(dst, 98, 2, "VS", BC_TXT);
 }
 // Runs a battle. In: both armies (warriors, spitters, majors), the terrain, your towers nearby, whether to watch.
 // Out: survivors written back. Returns 1 if you won.
@@ -136,19 +136,18 @@ static u8 battle(u16 *aw, u16 *as, u16 *am, u16 *ew, u16 *es, u16 *em, u8 terr, 
     for (k = 0; k < 256; k++) palsave[k] = BGPAL[k];
     fade(0, 16);
     hide_all(); oam_flush();
-    bground(terr, towers);
+    bbground(terr, towers);
     BGPAL[0] = 0; BGPAL[BC_ME] = OBJPAL[2]; BGPAL[BC_ME + 1] = OBJPAL[3];
     BGPAL[BC_EN] = OBJPAL[ebat_pal * 16 + 2]; BGPAL[BC_EN + 1] = OBJPAL[ebat_pal * 16 + 3];
     BGPAL[BC_DEAD] = RGB(6, 3, 2); BGPAL[BC_ACID] = RGB(14, 31, 6); BGPAL[BC_TXT] = RGB(31, 31, 31); BGPAL[BC_SH] = RGB(2, 1, 0);
     BGPAL[BC_TOWER] = RGB(17, 17, 19); BGPAL[BC_GOLD] = RGB(31, 26, 6);
     DISPCNT = 0x0404 | 0x80;
     bhud(bbg);
-    btext(bbg, 88, 70, "BATTLE!", BC_GOLD);
+    bbtext(bbg, 88, 70, "BATTLE!", BC_GOLD);
     for (k = 0; k < 2; k++) { pg = (volatile u16 *)(0x06000000 + k * 0xA000); DMAR(3, 0) = (u32)bbg; DMAR(3, 4) = (u32)pg; DMAR(3, 8) = DMA_ON | DMA_W32 | (240 * 160 / 4); }
     DISPCNT = 0x0404; fade(16, 0);
     for (k = 0; k < 45; k++) vsync();
-    for (k = 70; k < 80; k++) for (sv = 80; sv < 160; sv++) bbg[k * 240 + sv] = BC_G0;   // clear "BATTLE!"
-    for (k = 0; k < 240 * 160; k++) if (bbg[k] == BC_GOLD || bbg[k] == BC_SH) { if (k >= 240 * 12) bbg[k] = BC_G0; }
+    bbground(terr, towers); bhud(bbg);             // a clean field again (without the BATTLE! sign)
     while (bn[0] && bn[1] && fr < 3600) {
       pg = (volatile u16 *)(0x06000000 + ((fr & 1) ? 0 : 0xA000));   // draw the hidden page
       bstep(par); par ^= 1;
@@ -171,8 +170,8 @@ static u8 battle(u16 *aw, u16 *as, u16 *am, u16 *ew, u16 *es, u16 *em, u8 terr, 
     bcompact();
     won = bn[1] == 0 || bn[0] > bn[1];
     bhud(bbg);
-    btext(bbg, won ? 84 : 92, 66, won ? "VICTORY!" : "DEFEAT", BC_GOLD);
-    btext(bbg, 62, 84, "PRESS A", BC_TXT);
+    bbtext(bbg, won ? 84 : 92, 66, won ? "VICTORY!" : "DEFEAT", BC_GOLD);
+    bbtext(bbg, 62, 84, "PRESS A", BC_TXT);
     pg = (volatile u16 *)(0x06000000 + ((fr & 1) ? 0 : 0xA000));
     DMAR(3, 0) = (u32)bbg; DMAR(3, 4) = (u32)pg; DMAR(3, 8) = DMA_ON | DMA_W32 | (240 * 160 / 4);
     bdraw(pg); vsync(); DISPCNT = (u16)(0x0404 | ((fr & 1) ? 0 : 0x10));

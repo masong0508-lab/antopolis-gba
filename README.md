@@ -61,3 +61,18 @@ B: CURSOR HERE  START: LEAVE
 - The title is an ant farm: tunnels in the soil, the ants march through the bottom tunnel.
 - Text has a soft shadow and no box behind it; menus point with a little ant; dividers are twigs with a leaf.
 - OPTIONS > MENU STYLE: SOIL, CLAY, MOSS or NIGHT.
+
+## EMPIRE MODE (title: L) - unlock it by winning one classic game, or with the Konami code on the title
+Civilization + Age of Empires + Tropico + SimCity, played on the normal map screen.
+- BUILD (\1 on your land): 28 buildings in tabs (L / R): farms, aphid ranches, granaries, chambers, nurseries, dirt pits, amber mines,
+  markets, trade posts, vaults, archives, academies, barracks, armories, spitter nests, towers, walls, spike pits, healers, temples,
+  gardens, dance halls, statues, palaces, embassies, outposts, bridges, and the GREAT MOUND wonder. Land tools: pile up, dig down.
+- ZONES (SimCity): paint homes / farms / work zones; the colony builds there by itself when it needs to (H F W lights on the HUD).
+- RESEARCH (Civ): 12 techs, 4 ages (Dirt, Leaf, Amber, Crystal). Borders grow around your buildings; outposts push them out.
+- RULE (Tropico): farmers, builders, warriors and mystics each want different things. 8 edicts (feast, overtime, martial law,
+  spore festival, conscription, rig election, tax break, propaganda). A vote every 3 minutes; lose it and a coup takes half your stores.
+- WAR (Age of Empires): barracks train warriors, spitters and majors into the nest guard. At the nest: FORM AN ARMY. \1 on an army:
+  march to a place, attack the nearest rival, go home, hold. Armies fight on the map; press L to zoom in to a pixel battle with up to
+  500 ants a side. Towers, spitter nests, walls and spike pits defend. Rivals grow and send bigger and bigger armies.
+- STORY: 7 chapters with Counselor Chitin. FREE PLAY: 0-3 rivals (calm / normal / brutal), any map and size from the title.
+  Win by conquest, the Great Mound, or prosperity (50 ants and 70 happiness at a vote). SAVE AND QUIT / CONTINUE in free play.

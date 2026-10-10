@@ -313,6 +313,12 @@ PE(["c......c", "........", "..c..c..", "........", "........", "..c..c..", "...
 ]
 
 
+# buildings stand on a packed-dirt plot so they show up on any ground
+for i, t in enumerate(EMP):
+    if i in (13, 14, 15, 33, 34, 35): continue
+    for y in range(8):
+        for x in range(8):
+            if t[y][x] == 0: t[y][x] = 10 if (x in (0, 7) or y in (0, 7)) else 11
 # ---------------- EMPIRE MODE army banner 16x16 (three soldiers under a flag), OBJ tiles 88..91 ----------------
 AR = [[0] * 16 for _ in range(16)]
 def blit(dst, src, ox, oy):
