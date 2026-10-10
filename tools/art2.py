@@ -7,7 +7,7 @@ def rgb(r, g, b): return (r, g, b)
 TERR_PAL = [rgb(0,0,0), rgb(3,8,20), rgb(6,13,26), rgb(14,22,31), rgb(28,24,14), rgb(23,19,10), rgb(9,20,7), rgb(6,14,5),
             rgb(18,13,8), rgb(24,19,13), rgb(26,29,31), rgb(3,2,2), rgb(31,30,22), rgb(11,8,5), rgb(10,18,30), rgb(13,25,9)]
 DEC_PAL = [rgb(0,0,0), rgb(3,2,1), rgb(31,25,6), rgb(31,31,18), rgb(5,20,4), rgb(29,5,8), rgb(15,9,4), rgb(22,15,8),
-           rgb(1,1,1), rgb(31,24,12), rgb(10,6,3), rgb(26,19,11), rgb(0,0,0), rgb(0,0,0), rgb(0,0,0), rgb(0,0,0)]
+           rgb(1,1,1), rgb(31,24,12), rgb(10,6,3), rgb(26,19,11), rgb(8,14,28), rgb(29,29,30), rgb(16,16,18), rgb(18,8,24)]
 ANT_PAL = [  # bank 0 black ants, bank 1 red ants: 1 outline 2 body 3 shine 4 accent 5 gold 6 wing 7 green
   [rgb(0,0,0), rgb(1,1,2), rgb(6,6,8), rgb(16,16,19), rgb(14,15,22), rgb(31,26,6), rgb(29,30,31), rgb(8,22,6)] + [rgb(0,0,0)]*8,
   [rgb(0,0,0), rgb(11,1,1), rgb(27,5,3), rgb(31,17,12), rgb(31,22,6), rgb(31,26,6), rgb(31,28,26), rgb(8,22,6)] + [rgb(0,0,0)]*8]
@@ -269,6 +269,64 @@ UI_THEMES = [
   [rgb(3,6,2), rgb(5,9,3), rgb(8,12,5), rgb(15,16,12), rgb(3,4,1), rgb(8,11,3), rgb(14,18,6), rgb(1,2,1), rgb(2,4,2), rgb(8,18,4), rgb(13,25,7), rgb(6,9,4)],
   [rgb(2,3,7), rgb(4,5,10), rgb(6,8,14), rgb(13,14,18), rgb(2,2,5), rgb(6,7,14), rgb(11,13,22), rgb(1,1,2), rgb(3,3,6), rgb(4,10,8), rgb(7,15,12), rgb(6,6,10)]]
 
+
+# ---------------- EMPIRE MODE building tiles (decor layer, decor palette; 1 outline 2 gold 3 light 4 leaf 5 red 6 mound 7 mound light
+#                  8 black 9 trail 10 dark brown 11 tan 12 blue 13 white 14 stone 15 purple) ----------------
+def PE(rows): return parse(rows)
+EMP = [
+PE(["........", "..1111..", ".166761.", "16677761", "16688661", "16688661", ".111111.", "........"]),   # 0 your nest (big mound + door)
+PE(["........", ".4..4.4.", "434.434.", ".4...4..", "aaaaaaaa", "6a6a6a6a", "aaaaaaaa", "........"]),   # 1 fungus farm (mushrooms in rows)
+PE(["........", "..1111..", ".1aaaa1.", "1a8888a1", "1a8888a1", ".1aaaa1.", "..1111..", "........"]),   # 2 dirt pit
+PE(["........", "...11...", "..1771..", ".177771.", "1788887.", "1787787.", "1777777.", "11111111"]),   # 3 chambers (housing)
+PE(["..1.....", ".151....", ".1551...", ".1511...", "e1e1e1e1", "eeeeeeee", "e1ee1eee", "eeeeeeee"]),   # 4 barracks (flag + stone)
+PE(["..eeee..", "..e88e..", "..eeee..", "...ee...", "...ee...", "..eeee..", ".eeeeee.", "........"]),   # 5 tower
+PE(["........", ".1111111", ".1dbdbd1", ".1bdbdb1", ".1dbdbd1", ".1111111", "..b..b..", "........"]),   # 6 archive (scent library)
+PE(["..5555..", ".555555.", "1......1", "1.2.3.21", "1.3.2.31", "11111111", ".1....1.", "........"]),   # 7 market (awning + goods)
+PE(["...f....", "..fff...", ".f.f.f..", "...f....", "..fff...", ".fffff..", "fffffff.", "........"]),   # 8 spore temple
+PE(["........", ".eeeee..", "e.2..ee.", "e.22.e..", "ee.2.ee.", ".e.ee...", "..e.....", "........"]),   # 9 amber mine
+PE(["....5...", "....55..", "....555.", "....1...", "....1...", "...777..", "..77777.", "........"]),   # 10 outpost (flag on a mound)
+PE(["...22...", "..2332..", ".272272.", "27777772", "77777777", "76666667", "66666666", "........"]),   # 11 great mound (finished)
+PE(["........", "...e....", "..e.e...", ".e...e..", "e.....e.", "e.1.1.e.", "eeeeeee.", "........"]),   # 12 scaffold (wonder in progress)
+PE(["........", "........", "..1.1...", ".1a1a1..", "1aaaaa1.", "........", "........", "........"]),   # 13 rubble
+PE(["2.......", "........", "........", "........", "........", "........", "........", ".......2"]),   # 14 territory corner marks
+PE(["........", "..5..5..", "...55...", "...55...", "..5..5..", "........", "........", "........"]),   # 15 enemy claim mark
+PE(["........", ".1..1...", "1b11b1..", "1bbbb1.4", ".1bb1.44", "..11..4.", "4..44...", ".44....."]),   # 16 aphid ranch
+PE(["..1111..", ".1bbbb1.", "1bbbbbb1", "1b2b2bb1", "1bbbbbb1", "1bb22bb1", "11111111", "........"]),   # 17 granary
+PE(["eeeeeeee", "e1ee1ee1", "eeeeeeee", "1ee1ee1e", "eeeeeeee", "e1ee1ee1", "eeeeeeee", "........"]),   # 18 wall
+PE(["........", "........", ".e.e.e..", "eeeeeee.", "a8a8a8a.", "aaaaaaa.", "........", "........"]),   # 19 spike pit
+PE(["........", "..7777..", ".7d77d7.", "7777777.", "7d7777d.", "7777777.", ".11111..", "........"]),   # 20 nursery (eggs)
+PE(["........", "...55...", "...55...", ".555555.", ".555555.", "...55...", "...55...", "........"]),   # 21 healer
+PE(["...e....", "..eee...", "...e....", "1..e..1.", "1e.e.e1.", ".1eee1..", "..111...", "........"]),   # 22 armory
+PE(["....f...", "...fff..", "..f3f...", "...f....", "..fff...", ".eeeee..", "eeeeeee.", "........"]),   # 23 spitter nest
+PE(["........", ".5.4.5..", "454.454.", ".4.4.4..", "4.444.4.", "..444...", "aaaaaaa.", "........"]),   # 24 garden
+PE(["...2....", "..2.2...", ".2...2..", "2222222.", "2.d.d.2.", "2.d.d.2.", "2222222.", "........"]),   # 25 dance hall
+PE(["...2....", "..222...", "...2....", "..222...", ".2.2.2..", "...2....", "..eee...", ".eeeee.."]),   # 26 statue
+PE(["...c....", "..ccc...", ".c.c.c..", "ccccccc.", "c1c1c1c.", "ccccccc.", "c1c1c1c.", "ccccccc."]),   # 27 academy
+PE(["........", ".111111.", "1222222.", "12111121", "12122121", "12111121", "1222222.", ".111111."]),   # 28 amber vault
+PE(["...2....", "..222...", ".22222..", "2222222.", "2d2d2d2.", "2d2d2d2.", "2222222.", "2222222."]),   # 29 palace
+PE(["...d....", "...dd...", "...ddd..", "...1....", "..ccc...", ".ccccc..", "cc1c1cc.", "........"]),   # 30 embassy
+PE(["aaaaaaaa", "b.b.b.b.", "aaaaaaaa", "........", "........", "aaaaaaaa", "b.b.b.b.", "aaaaaaaa"]),   # 31 bridge
+PE(["........", "..5555..", ".5.2.35.", "5555555.", "1......1", "1.2.3.21", "11111111", "........"]),   # 32 trade post
+PE(["7......7", "........", "..7..7..", "........", "........", "..7..7..", "........", "7......7"]),   # 33 housing zone dots
+PE(["4......4", "........", "..4..4..", "........", "........", "..4..4..", "........", "4......4"]),   # 34 farm zone dots
+PE(["c......c", "........", "..c..c..", "........", "........", "..c..c..", "........", "c......c"]),   # 35 work zone dots
+]
+
+
+# ---------------- EMPIRE MODE army banner 16x16 (three soldiers under a flag), OBJ tiles 88..91 ----------------
+AR = [[0] * 16 for _ in range(16)]
+def blit(dst, src, ox, oy):
+    for y in range(8):
+        for x in range(8):
+            if src[y][x] and 0 <= ox + x < 16 and 0 <= oy + y < 16: dst[oy + y][ox + x] = src[y][x]
+for y in range(0, 15): AR[y][1] = 1
+for y in range(0, 5):
+    for x in range(2, 8 - (y == 0 or y == 4)): AR[y][x] = 5
+for y in (0, 4):
+    for x in range(2, 7): AR[y][x] = 1
+blit(AR, SOL_A, 7, 3); blit(AR, SOL_B, 2, 8); blit(AR, SOL_A, 8, 8)
+ARMY = [[[AR[ty * 8 + y][tx * 8 + x] for x in range(8)] for y in range(8)] for ty in range(2) for tx in range(2)]
+
 def pack(t): return [sum(t[y][x] << (4 * x) for x in range(8)) for y in range(8)]
 def emit(name, tiles):
     out = ["static const u32 %s[%d] = {" % (name, len(tiles) * 8)]
@@ -290,6 +348,8 @@ with open(sys.argv[1], "w") as f:
     f.write("#define PANO_N %d\n" % len(PANO_TILES))
     f.write("static const u16 PANOM[256] = {" + ",".join(str(v & 0xFFFF) for v in PANO_MAP) + "};\n")
     f.write(emit_pal("PAL_PANO", PANO_PAL) + "\n")
+    f.write("// ARMT: EMPIRE MODE army banner 16x16 (OBJ tiles 88..91, ant palettes)\n" + emit("ARMT", ARMY) + "\n")
+    f.write("// EMPT: EMPIRE MODE building tiles (decor palette), loaded at charblock 2 tile 512+\n" + emit("EMPT", EMP) + "\n")
     f.write("// UIT: termite UI tiles: 0-3 soil, 4-11 bark frame (nw n ne w e sw s se), 12-13 grass fringe, 14-29 tunnels (mask n1 e2 s4 w8), 30 root, 31 soil\n")
     f.write(emit("UIT", UI) + "\n")
     f.write("static const u16 UIPAL[4][12] = {" + ",".join("{" + ",".join(str(r | g << 5 | b << 10) for r, g, b in th) + "}" for th in UI_THEMES) + "};\n")

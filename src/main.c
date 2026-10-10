@@ -95,8 +95,8 @@ __attribute__((used)) static const char sram_tag[] = "SRAM_V113";   // tells emu
 #define MANA_PER_FOOD 1
 #define OFFER_FOOD 2
 #define OFFER_MANA 4
-#define FT 4            // font tiles 4..56 (53 glyphs, see font8.h)
-#define NGLYPH 53
+#define FT 4            // font tiles 4..61 (58 glyphs, see font8.h)
+#define NGLYPH 58
 #define BT 770          // old 2bpp terrain tiles 770..775 (title ground), AP bar 776 (full) 777 (empty)
 #define BAR_F (BT + 6)
 #define BAR_E (BT + 7)
@@ -238,7 +238,8 @@ static const u16 FONT[NGLYPH] = {
   055557,055552,055775,055255,055222,071247,
   002020,022202,011244,
   000002,000700,002720,071202,012421,042124,   // . - + ? < >
-  057720,025752,013760,013641,075057,025312,055770};   // # @ % & ^ ~ $  (HUD icons, rough 3x5 versions)
+  057720,025752,013760,013641,075057,025312,055770,   // # @ % & ^ ~ $  (HUD icons, rough 3x5 versions)
+  027760,025252,027555,075757,012425};                 // [ ] { } =  (dirt, amber, house, book, sword)
 static void mk_glyph(volatile u32 *d, const u8 *g) {  // 8x8 text glyph (font8.h): ink colour 3, soft shadow colour 1, see-through
   u8 y, x, c; u32 row;
   for (y = 0; y < 8; y++) {
@@ -256,7 +257,7 @@ static u8 gi(char c) {
   if (c == ':') return 37;
   if (c == '!') return 38;
   if (c == '/') return 39;
-  { static const char EX[] = ".-+?<>#@%&^~$"; u8 i; for (i = 0; EX[i]; i++) if (c == EX[i]) return (u8)(40 + i); }
+  { static const char EX[] = ".-+?<>#@%&^~$[]{}="; u8 i; for (i = 0; EX[i]; i++) if (c == EX[i]) return (u8)(40 + i); }
   return 0;
 }
 // BG1 palette banks: 0 terrain, 1 white text on black, 2 gold, 3 night sky, 4 dark gold
