@@ -55,3 +55,9 @@ B: CURSOR HERE  START: LEAVE
 - SOUND: music, sounds
 - ANT EYE: walking speed, sky (day / sunset / night)
 - Every option has a two-line explanation. SELECT on the options screen puts everything back to normal.
+
+## Termite look
+- Menus are dug-out soil chambers with bark edges; the HUD is the dirt under the map with grass hanging into it.
+- The title is an ant farm: tunnels in the soil, the ants march through the bottom tunnel.
+- Text has a soft shadow and no box behind it; menus point with a little ant; dividers are twigs with a leaf.
+- OPTIONS > MENU STYLE: SOIL, CLAY, MOSS or NIGHT.

@@ -24,6 +24,7 @@ typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s
 #define BG0CNT  IO16(0x08)
 #define BG1CNT  IO16(0x0A)
 #define BG2CNT  IO16(0x0C)
+#define BG3CNT_ IO16(0x0E)
 #define BG0HOFS IO16(0x10)
 #define BG0VOFS IO16(0x12)
 #define BG2HOFS IO16(0x18)
@@ -59,6 +60,7 @@ typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s
 #define TILE32  ((volatile u32 *)0x06000000)
 #define BGMAP0  ((volatile u16 *)0x0600E000)
 #define BGMAP1  ((volatile u16 *)0x0600E800)
+#define BGMAP3  ((volatile u16 *)0x0600F800)   // termite UI layer (soil, frames, tunnels), screenblock 31
 #define BGMAP2  ((volatile u16 *)0x0600F000)   // decor layer (food, nest mounds, trails), screenblock 30
 #define TILE2   ((volatile u32 *)0x06008000)   // charblock 2: terrain + decor tiles (the ANT EYE only uses its first 10 tiles)
 #define OBJT32  ((volatile u32 *)0x06010000)
@@ -180,7 +182,7 @@ static const Opt OPTS[NOPT] = {
   {"ANT TRAILS",    "SHOW|HIDE",                0, "THE DOTS YOUR ANTS LEAVE", "ON THE GROUND"},
   {"SCREEN SHAKE",  "ON|OFF",                   0, "SHAKE ON FLOODS AND", "EARTHQUAKES"},
   {"POP UPS",       "ON|OFF",                   0, "LITTLE +1  SPLASH AND", "HEART PICTURES"},
-  {"PANEL COLOR",   "NAVY|BLACK|FOREST|PLUM",   0, "THE COLOR BEHIND ALL", "TEXT AND MENUS"},
+  {"MENU STYLE",    "SOIL|CLAY|MOSS|NIGHT",     0, "THE DIRT BEHIND MENUS", "AND UNDER THE MAP"},
   {"YOUR ANTS",     "BLACK|BLUE|GREEN|PURPLE",  0, "THE COLOR OF YOUR ANTS", "AND YOUR QUEEN"},
   {"MUSIC",         "ON|OFF",                   0, "THE SONGS", ""},
   {"SOUNDS",        "ON|OFF",                   0, "BEEPS  CRUNCHES AND", "SPLASHES"},
@@ -237,11 +239,14 @@ static const u16 FONT[NGLYPH] = {
   002020,022202,011244,
   000002,000700,002720,071202,012421,042124,   // . - + ? < >
   057720,025752,013760,013641,075057,025312,055770};   // # @ % & ^ ~ $  (HUD icons, rough 3x5 versions)
-static void mk_glyph(volatile u32 *d, const u8 *g) {  // 8x8 text glyph (font8.h): background colour 1, ink colour 3
-  u8 y, x; u32 row;
+static void mk_glyph(volatile u32 *d, const u8 *g) {  // 8x8 text glyph (font8.h): ink colour 3, soft shadow colour 1, see-through
+  u8 y, x, c; u32 row;
   for (y = 0; y < 8; y++) {
     row = 0;
-    for (x = 0; x < 8; x++) row |= (u32)(((g[y] >> (7 - x)) & 1) ? 3 : 1) << (4 * x);
+    for (x = 0; x < 8; x++) {
+      c = ((g[y] >> (7 - x)) & 1) ? 3 : (x && y && ((g[y - 1] >> (8 - x)) & 1)) ? 1 : 0;
+      row |= (u32)c << (4 * x);
+    }
     d[y] = row;
   }
 }
@@ -264,7 +269,42 @@ static void ps(u8 x, u8 y, const char *s, u8 p) { while (*s) pc(x++, y, *s++, p)
 static void pn(u8 x, u8 y, u8 n, u8 p) { if (n > 99) n = 99; pc(x, y, n > 9 ? '0' + n / 10 : ' ', p); pc(x + 1, y, '0' + n % 10, p); }
 static void pz(u8 x, u8 y, u8 n, u8 p) { if (n > 99) n = 99; pc(x, y, '0' + n / 10, p); pc(x + 1, y, '0' + n % 10, p); }
 static void ov_fill(u16 t, u8 pal, u8 y0, u8 y1) { u8 x, y; for (y = y0; y <= y1; y++) for (x = 0; x < 32; x++) BGMAP1[y * 32 + x] = (u16)(t | (pal << 12)); }
-static void ov_clear(void) { ov_fill(0, 0, 0, 31); }          // fully transparent overlay
+// ---------- termite UI layer (BG3): soil chambers behind every menu, the dirt under the map for the HUD, the ant-farm title ----------
+#define UIB 800                                    // UI tiles 800..831 (see UIT in art2.h)
+static u16 uisoil(u8 x, u8 y) { return (u16)(UIB + ((x * 7 + y * 13 + (x * y)) & 3)); }
+static void ui_full(void) {                        // a dug-out chamber: soil with a bark edge all round
+  u8 x, y; u16 t;
+  for (y = 0; y < 20; y++) for (x = 0; x < 32; x++) {
+    t = uisoil(x, y);
+    if (x < 30) {
+      if (y == 0) t = x == 0 ? UIB + 4 : x == 29 ? UIB + 6 : UIB + 5;
+      else if (y == 19) t = x == 0 ? UIB + 9 : x == 29 ? UIB + 11 : UIB + 10;
+      else if (x == 0) t = UIB + 7; else if (x == 29) t = UIB + 8;
+    }
+    BGMAP3[y * 32 + x] = t;
+  }
+}
+static void ui_game(void) {                        // the map above, the dirt (HUD) below with grass hanging into it
+  u8 x, y;
+  for (y = 0; y < 20; y++) for (x = 0; x < 32; x++)
+    BGMAP3[y * 32 + x] = y < 17 ? 0 : y == 17 ? (u16)(UIB + 12 + ((x * 5) & 1)) : uisoil(x, y);
+}
+static u8 tun_at(u8 x, u8 y) {                     // the title's ant farm: which cells are tunnels
+  if (y >= 18) return 1;                           // the long tunnel along the bottom (the ants walk here)
+  if ((x == 1 || x == 28) && y >= 1) return 1;     // two shafts down the sides
+  return 0;
+}
+static void ui_title(void) {
+  u8 x, y, m;
+  for (y = 0; y < 20; y++) for (x = 0; x < 32; x++) {
+    if (x < 30 && tun_at(x, y)) {
+      m = (u8)((y > 0 && tun_at(x, y - 1)) | ((x < 29 && tun_at(x + 1, y)) << 1) | ((y < 19 && tun_at(x, y + 1)) << 2) | ((x > 0 && tun_at(x - 1, y)) << 3));
+      if (y == 19) m |= 4; if (x == 0 && y >= 18) m |= 8; if (x == 29 && y >= 18) m |= 2;
+      BGMAP3[y * 32 + x] = (u16)(UIB + 14 + m);
+    } else BGMAP3[y * 32 + x] = ((x * 11 + y * 5) % 17 == 0) ? UIB + 30 : uisoil(x, y);
+  }
+}
+static void ov_clear(void) { ov_fill(0, 0, 0, 31); ui_game(); }   // text layer cleared, back to the game look
 
 static void options_screen(void), pm_rule(u8 y), big(u8 y, const char *t);
 static const u8 CDLY[3] = {16, 10, 6}, CRAT[3] = {5, 3, 2};   // cursor repeat: delay and rate (slow / normal / fast)
@@ -343,7 +383,7 @@ static const char HELP[] =
 static void help_show(void) {
   const char *s = HELP; u8 y = 1, x, g;
   hide_all(); vsync(); oam_flush();
-  ov_fill(1, 1, 0, 19);
+  ov_fill(1, 1, 0, 19); ui_full();
   while (*s) {
     g = 0; if (*s == '#') { g = 1; s++; }
     x = 0; while (*s && *s != '\n') pc(x++, y, *s++, g ? 2 : 1);
@@ -1031,10 +1071,10 @@ static void draw_sprites(void) {
 static void newgame(void) {
   u8 i, k;
   DISPCNT = 0x80; BLDY = 0;
-  ov_fill(1, 1, 0, 19);
+  ov_fill(1, 1, 0, 19); ui_full();
   ps(5, 8, "BUILDING THE WORLD...", 2);
   ps((u8)(15 - (blen2(mname(mapt)) + 1) / 2), 10, mname(mapt), 1);
-  vsync(); DISPCNT = 0x0200;                        // only the text layer while the map is made
+  vsync(); DISPCNT = 0x0A00;                        // only the text + soil layers while the map is made
   gen_world();
   DISPCNT = 0x80; BLDY = 16;
   for (i = 0; i < MAXA; i++) ant[i].alive = 0;
@@ -1052,7 +1092,7 @@ static void newgame(void) {
   BG0HOFS = BG2HOFS = (u16)scx; BG0VOFS = BG2VOFS = (u16)scy;
   BG2CNT = 1 | (2 << 2) | (30 << 8);
   hide_all(); draw_sprites(); oam_flush();
-  DISPCNT = 0x1740;
+  DISPCNT = 0x1F40;
   music_start();
   fade(16, 0);
 }
@@ -1129,9 +1169,7 @@ static void title_dyn(void) {
 }
 static void title_scene(void) {
   u8 x, k;
-  ov_fill(1, 3, 0, 19);
-  for (k = 0; k < 30; k++) BGMAP1[((rnd() % 12) + 1) * 32 + rnd() % 30] = (u16)(3 | (3 << 12));
-  for (x = 0; x < 32; x++) { BGMAP1[18 * 32 + x] = (u16)(BT + 2); BGMAP1[19 * 32 + x] = (u16)(BT + 1); }
+  ov_fill(1, 3, 0, 19); ui_title(); (void)x; (void)k;
   ps(0, 0, "\4 OPTIONS", 10); ps(13, 0, "THE RULER OF YOU", 9);
   title_dyn();
 }
@@ -1142,7 +1180,7 @@ static u8 title(void) {                            // returns 0 = play, 1 = open
   ov_clear(); title_scene();
   wx[0] = 14; wx[1] = 62; wx[2] = 112; wx[3] = 200; wx[4] = 150;
   hide_all(); oam_flush();
-  DISPCNT = 0x1340;
+  DISPCNT = 0x1B40;
   tm_start();                                      // the title has its own stereo theme
   fade(16, 0);
   for (;;) {
@@ -1304,6 +1342,7 @@ static void pano_init(void) {                          // skyline on BG0: tiles 
   u16 i; volatile u16 *m = (volatile u16 *)0x0600D800;
   for (i = 0; i < PANO_N * 8; i++) TILE32[64 * 8 + i] = PANO[i];
   for (i = 0; i < 1024; i++) m[i] = i < 256 && PANOM[i] != 0xFFFF ? (u16)((64 + PANOM[i]) | (5 << 12)) : 0;
+  for (i = 16 * 32; i < 20 * 32; i++) m[i] = i < 17 * 32 ? (u16)(UIB + 12 + ((i * 5) & 1)) : uisoil((u8)(i & 31), (u8)(i >> 5));   // dirt under the view
   for (i = 0; i < 16; i++) {                            // the skyline, tinted for sunset / night
     u16 v = PAL_PANO[i]; u8 r = v & 31, g = (v >> 5) & 31, b = (v >> 10) & 31;
     if (O(O_SKY) == 1) { r = (u8)(r + 6 > 31 ? 31 : r + 6); b = (u8)(b * 2 / 3); }
@@ -1499,7 +1538,7 @@ static void eye(void) {                              // time stands still while 
   occ_set(0);
   hide_all(); oam_flush();
   BGPAL[0] = sky;
-  BG0CNT = 2 | (2 << 2) | (28 << 8); BG2CNT = 1 | (2 << 2) | (30 << 8); DISPCNT = 0x1740; BLDCNT = 0xFF;   // back to terrain + decor
+  BG0CNT = 2 | (2 << 2) | (28 << 8); BG2CNT = 1 | (2 << 2) | (30 << 8); DISPCNT = 0x1F40; BLDCNT = 0xFF;   // back to terrain + decor
   ov_clear(); hud();
   while (joy()) vsync();
 }
@@ -1604,11 +1643,11 @@ static void card_init(void) {
     RGB(26,3,3), RGB(2,2,2), RGB(14,14,14), RGB(11,11,22), RGB(31,12,8), RGB(31,31,31), RGB(4,14,5), RGB(1,1,5)};
   u8 g, x, y, i, p[16][8], px, py;
   u32 w;
-  BGPAL[145] = RGB(1,1,5); BGPAL[146] = RGB(22,12,3); BGPAL[147] = RGB(31,27,8);       // bank 9: gold on night (titles, highlights, rules)
-  BGPAL[161] = RGB(1,1,5); BGPAL[162] = RGB(8,8,16);  BGPAL[163] = RGB(15,15,26);      // bank 10: dim steel (small labels)
+  BGPAL[145] = RGB(2,1,0); BGPAL[146] = RGB(16,9,3); BGPAL[147] = RGB(31,27,8);       // bank 9: gold on night (titles, highlights, rules)
+  BGPAL[161] = RGB(2,1,0); BGPAL[162] = RGB(12,9,6);  BGPAL[163] = RGB(26,21,14);   // tan      // bank 10: dim steel (small labels)
   for (i = 0; i < 16; i++) BGPAL[112 + i] = PIC[i];                                    // bank 7: the picture palette (see C_*)
   for (g = 0; g < 40; g++) {                                                           // big font: the 3x5 glyph doubled, shadow then face
-    for (y = 0; y < 16; y++) for (x = 0; x < 8; x++) p[y][x] = 1;
+    for (y = 0; y < 16; y++) for (x = 0; x < 8; x++) p[y][x] = 0;
     for (i = 0; i < 2; i++)
       for (y = 0; y < 5; y++) for (x = 0; x < 3; x++)
         if ((FONT[g] >> (3 * (4 - y))) & (4 >> x)) {
@@ -1620,12 +1659,12 @@ static void card_init(void) {
       TILE32[(BIGF + g * 2 + (y >> 3)) * 8 + (y & 7)] = w;
     }
   }
-  tdraw(ORN,     "11111111" "11111111" "11111111" "22222222" "22222222" "11111111" "11111111" "11111111");
-  tdraw(ORN + 1, "11111113" "11111133" "11111333" "22223333" "22223333" "11111333" "11111133" "11111113");
-  tdraw(ORN + 2, "31111111" "33111111" "33311111" "33332222" "33332222" "33311111" "33111111" "31111111");
-  tdraw(ORN + 3, "11111111" "11111111" "11333311" "11333311" "11333311" "11333311" "11111111" "11111111");
-  tdraw(ORN + 4, "11111111" "11111111" "11222211" "11222211" "11222211" "11222211" "11111111" "11111111");
-  tdraw(ORN + 5, "11111111" "13111111" "13311111" "13331111" "13333111" "13331111" "13311111" "13111111");
+  tdraw(ORN,     "00000000" "00000000" "00000000" "22222222" "23222322" "00000200" "00000000" "00000000");   // twig
+  tdraw(ORN + 1, "00000000" "00000003" "00000033" "22223333" "22333332" "00000333" "00000030" "00000000");   // leaf (left half)
+  tdraw(ORN + 2, "00000000" "30000000" "33000000" "33332222" "23332222" "33300000" "03000000" "00000000");   // leaf (right half)
+  tdraw(ORN + 3, "00000000" "00000000" "00333300" "03333330" "03332330" "00333300" "00000000" "00000000");   // seed (done)
+  tdraw(ORN + 4, "00000000" "00000000" "00222200" "02000020" "02000020" "00222200" "00000000" "00000000");   // seed (to do)
+  tdraw(ORN + 5, "00000303" "00000030" "02200333" "22223323" "22223333" "02202330" "02020200" "00000000");   // ant pointer
 }
 
 // ----- the picture band. Each card draws its static background ONCE into bgbuf (EWRAM). Every frame tut_anim copies it to sbuf,
@@ -1991,7 +2030,7 @@ static void tut_type(u8 n) {
 static void tut_draw(u8 i) {
   u8 x, y, g, n, len = 0;
   hide_all();
-  ov_fill(1, 3, 0, 19);
+  ov_fill(1, 3, 0, 19); ui_full();
   if (i == 0) ps(1, 0, "A QUICK TOUR", 10);
   else if (i == TN - 1) ps(1, 0, "ALL DONE", 10);
   else { ps(1, 0, "LESSON", 10); pc(8, 0, (char)('0' + i), 10); pc(9, 0, '/', 10); pc(10, 0, '8', 10); }
@@ -2047,14 +2086,14 @@ static void opt_val(u8 i, char *b) {                // the text of option i's cu
 }
 static const char *opt_group(u8 i) { return i <= O_TIME ? "GAME RULES" : i <= O_ALERTS ? "CONTROLS" : i <= O_ANTCOL ? "LOOK" : i <= O_SFX ? "SOUND" : "ANT EYE"; }
 static void opts_apply(void) {                      // colours, sound and rules follow the options right away
-  static const u16 PANEL[4] = {RGB(2,3,8), RGB(0,0,0), RGB(2,7,3), RGB(7,2,9)};
-  static const u16 NIGHT[4] = {RGB(1,1,5), RGB(0,0,1), RGB(1,4,2), RGB(4,1,5)};
+
   static const u16 ANTC[4][4] = {{RGB(1,1,2), RGB(6,6,8), RGB(16,16,19), RGB(14,15,22)},
     {RGB(1,2,9), RGB(4,9,23), RGB(14,20,31), RGB(10,14,28)}, {RGB(1,6,1), RGB(4,16,4), RGB(14,28,12), RGB(10,20,8)},
     {RGB(6,1,8), RGB(15,5,21), RGB(25,17,31), RGB(19,11,27)}};
-  u16 c = PANEL[O(O_PANEL)], n = NIGHT[O(O_PANEL)]; u8 i;
-  BGPAL[17] = BGPAL[33] = BGPAL[65] = BGPAL[129] = BGPAL[209] = BGPAL[225] = BGPAL[241] = c;
-  BGPAL[49] = BGPAL[145] = BGPAL[161] = n;
+  u8 i; u16 sh = RGB(2, 1, 0);                      // every text shadow: near-black brown
+  BGPAL[17] = BGPAL[33] = BGPAL[49] = BGPAL[65] = BGPAL[129] = BGPAL[145] = BGPAL[161] = BGPAL[209] = BGPAL[225] = BGPAL[241] = sh;
+  for (i = 0; i < 12; i++) BGPAL[4 + i] = UIPAL[O(O_PANEL)][i];   // the soil theme (palette bank 0, colours 4..15)
+  BGPAL[243] = RGB(15, 12, 9);                      // dim text: dry-leaf brown
   for (i = 0; i < 4; i++) OBJPAL[1 + i] = ANTC[O(O_ANTCOL)][i];
   nosfx = O(O_SFX);
   if (O(O_MUSIC) != nomus) { nomus = O(O_MUSIC); if (nomus) { music_stop(); tmu = 0; } }
@@ -2073,7 +2112,7 @@ static void opts_load(void) {
 }
 static void opt_draw(u8 sel, u8 top) {
   u8 i, y; char b[10];
-  ov_fill(1, 3, 0, 19);
+  ov_fill(1, 3, 0, 19); ui_full();
   big(0, "OPTIONS");
   ps(1, 2, opt_group(sel), 9); pn(24, 2, (u8)(sel + 1), 3); pc(26, 2, '/', 10); pn(27, 2, NOPT, 3);
   pm_rule(3);
@@ -2088,7 +2127,7 @@ static void opt_draw(u8 sel, u8 top) {
   if (top + 10 < NOPT) pc(29, 13, '+', 10);
   pm_rule(14);
   ps(1, 15, OPTS[sel].h1, 3); ps(1, 16, OPTS[sel].h2, 3);
-  ps(1, 18, "UP DOWN: PICK  LEFT RIGHT: SET", 10);
+  ps(1, 18, "UP DOWN PICK  LEFT RIGHT SET", 10);
   ps(1, 19, "\5 DONE   \6 ALL BACK TO NORMAL", 10);
 }
 static void options_screen(void) {
@@ -2135,7 +2174,7 @@ static void pm_rule(u8 y) {
 static void pm_time(u8 x, u8 y, u32 sec) { pn(x, y, (u8)(sec / 60), 3); pc(x + 2, y, ':', 3); pz(x + 3, y, (u8)(sec % 60), 3); }
 static void pm_draw(void) {                            // everything except the menu rows
   u8 i, n, x, c = 0, g;
-  ov_fill(1, 3, 0, 19);
+  ov_fill(1, 3, 0, 19); ui_full();
   ps(1, 0, "THE COLONY WAITS", 10); ps(sandbox ? 22 : 24, 0, sandbox ? "SANDBOX" : DNAME[diff], 10);
   for (n = 0; n < 6; n++) {
     g = gi("PAUSED"[n]); x = (u8)(12 + n);
@@ -2238,7 +2277,7 @@ static void wait_keys(u16 m) { u16 k; while (joy()) vsync(); do { vsync(); k = j
 static void perk_card(void) {
   u16 k; u8 i, c;
   hide_all(); vsync(); oam_flush();
-  ov_fill(1, 3, 0, 19);
+  ov_fill(1, 3, 0, 19); ui_full();
   ps(1, 0, "THE COLONY LOVES YOU", 10);
   big(1, "PICK A PERK");
   pm_rule(3); pm_rule(16);
@@ -2258,7 +2297,7 @@ static void perk_card(void) {
 static void end_card(void) {
   u32 s = (u32)gt * 2 / 15; u8 nb = 0, nh = 0; u16 sc = 0;
   hide_all(); oam_flush();
-  ov_fill(1, 3, 0, 19);
+  ov_fill(1, 3, 0, 19); ui_full();
   if (over == 1) {
     if (!sandbox && !cheat) {
       if (wins[diff] < 99) wins[diff]++;
@@ -2371,8 +2410,9 @@ static void gfx_init(void) {                          // palettes, tiles, maps, 
   BGPAL[49] = RGB(1,1,5); BGPAL[50] = RGB(11,11,22); BGPAL[51] = RGB(31,29,22);
   BGPAL[67] = RGB(14,8,2);
   // tiles: 0 blank, 1 solid colour 1, 2 solid colour 3, 3 star, 4.. font, 44.. terrain + mana bar
-  fill_tile(TILE32, 0); fill_tile(TILE32 + 8, 0x11111111u); fill_tile(TILE32 + 16, 0x33333333u);
-  fill_tile(TILE32 + 24, 0x11111111u); TILE32[24 + 3] = 0x11131111u;
+  fill_tile(TILE32, 0); fill_tile(TILE32 + 8, 0); fill_tile(TILE32 + 16, 0x33333333u);   // tile 1 = "blank" (see-through now)
+  fill_tile(TILE32 + 24, 0);
+  for (k = 0; k < 32 * 8; k++) TILE32[UIB * 8 + k] = UIT[k];                          // termite UI tiles
   for (i = 0; i < NGLYPH; i++) mk_glyph(TILE32 + (FT + i) * 8, FONT8[i]);
   for (i = 0; i < 6; i++) put_tile(TILE32 + (BT + i) * 8, BGT + i * 16, 0);         // old terrain: the title's grass and sand
   (void)BARRM;
@@ -2388,7 +2428,7 @@ static void gfx_init(void) {                          // palettes, tiles, maps, 
     for (c = 0; c < 6; c++) for (yy = 0; yy < 8; yy++) {
       w = 0; n = CL[c][1] ? 2 : 1;
       for (xx = 0; xx < 8; xx++) {
-        u8 v = (((n == 2 ? PIL : CIR)[yy] >> (7 - xx)) & 1) ? CC[c] : 1;
+        u8 v = (((n == 2 ? PIL : CIR)[yy] >> (7 - xx)) & 1) ? CC[c] : 0;
         for (g = 0; g < n; g++) {
           s8 lx = (s8)xx - (n == 2 ? (g ? 4 : 0) : 2) - (n == 2 ? 1 : 0), ly = (s8)yy - 2;
           if (lx >= 0 && lx < 3 && ly >= 0 && ly < 5 && ((FONT[gi(CL[c][g])] >> (3 * (4 - ly))) & (4 >> lx))) v = 5;
@@ -2421,6 +2461,8 @@ static void gfx_init(void) {                          // palettes, tiles, maps, 
   card_init();
   BG0CNT = 2 | (2 << 2) | (28 << 8);                  // terrain: priority 2, charblock 2, screenblock 28
   BG2CNT = 1 | (2 << 2) | (30 << 8);                  // decor: priority 1, charblock 2, screenblock 30
+  BG3CNT_ = 0 | (31 << 8);                            // termite UI: priority 0 (under the text), charblock 0, screenblock 31
+  for (k = 0; k < 1024; k++) BGMAP3[k] = 0;
   BG1CNT = 0 | (29 << 8);                             // priority 0
   hide_all(); oam_flush();
 }
@@ -2496,7 +2538,7 @@ static void em_draw(u8 sel, u8 conf) {
   u8 i, y, x, n = 0, ok;
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) n += (u8)(food[y][x] && hgt[y][x] && n < 250);
   bfs(0); ok = dnp[0][nesty[1]][nestx[1]] != NOPATH;
-  ov_fill(1, 3, 0, 19);
+  ov_fill(1, 3, 0, 19); ui_full();
   big(1, "MAP EDITOR");
   pm_rule(3);
   ps(2, 4, "SIZE", 9); pn(11, 4, mw, 3); ps(14, 4, "X", 10); pn(16, 4, mh, 3);
@@ -2557,7 +2599,7 @@ static u8 editor(void) {                            // returns 1 = play MY MAP n
   win_all(); ov_clear(); ed_bar();
   BG0HOFS = BG2HOFS = (u16)scx; BG0VOFS = BG2VOFS = (u16)scy; BG2CNT = 1 | (2 << 2) | (30 << 8);
   hide_all(); place16(MAXA + 2, 20, 2, cx * 8, cy * 8, 0); oam_flush();
-  DISPCNT = 0x1740; BLDY = 16;
+  DISPCNT = 0x1F40; BLDY = 16;
   music_start(); fade(16, 0);
   while (joy()) vsync();
   while (res == 255) {

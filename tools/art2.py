@@ -209,6 +209,66 @@ for ty in range(8):
         if all(v == 0 for r in t for v in r): PANO_MAP.append(-1)
         else: PANO_MAP.append(len(PANO_TILES)); PANO_TILES.append(t)
 
+
+# ---------------- UI: termite-world tiles (BG3, palette bank 0 colours 4..15) ----------------
+# 4 soil dark  5 soil mid  6 soil light  7 pebble  8 bark dark  9 bark mid  10 bark light  11 tunnel  12 tunnel rim
+# 13 grass  14 grass light  15 root
+random.seed(11)
+def soil(seed):
+    r = random.Random(seed); t = [[4] * 8 for _ in range(8)]
+    for _ in range(9): t[r.randrange(8)][r.randrange(8)] = 5
+    for _ in range(3): t[r.randrange(8)][r.randrange(8)] = 6
+    if seed % 2 == 0:
+        px, py = r.randrange(1, 6), r.randrange(1, 6); t[py][px] = 7; t[py][px + 1] = 7; t[py + 1][px] = 5
+    return t
+UI_SOIL = [soil(k) for k in range(4)]
+def framed(sides):   # bark edge on the given sides (n e s w), 3 px: dark outer, mid, light inner line
+    t = soil(7)
+    for i in range(8):
+        for d, c in ((0, 8), (1, 9), (2, 10)):
+            if 'n' in sides: t[d][i] = c
+            if 's' in sides: t[7 - d][i] = c
+            if 'w' in sides: t[i][d] = c
+            if 'e' in sides: t[i][7 - d] = c
+    if 'n' in sides and 'w' in sides: t[0][0] = 0; t[0][1] = 8; t[1][0] = 8
+    if 'n' in sides and 'e' in sides: t[0][7] = 0; t[0][6] = 8; t[1][7] = 8
+    if 's' in sides and 'w' in sides: t[7][0] = 0; t[7][1] = 8; t[6][0] = 8
+    if 's' in sides and 'e' in sides: t[7][7] = 0; t[7][6] = 8; t[6][7] = 8
+    return t
+UI_FRAME = [framed(x) for x in ('nw', 'n', 'ne', 'w', 'e', 'sw', 's', 'se')]
+def fringe(seed):   # top of the HUD: grass blades and roots hanging into soil
+    r = random.Random(seed); t = soil(seed + 20)
+    for x in range(8):
+        h = r.randrange(1, 3)
+        for y in range(h): t[y][x] = 13 if (x + y) % 3 else 14
+    rx = r.randrange(1, 7)
+    for y in range(2, 7): t[y][rx + (y > 4)] = 15
+    return t
+UI_FRINGE = [fringe(1), fringe(2)]
+def tunnel(mask):   # mask bits: 1 n open, 2 e, 4 s, 8 w (neighbour is tunnel too)
+    t = [[11] * 8 for _ in range(8)]
+    for i in range(8):
+        if not mask & 1: t[0][i] = 4; t[1][i] = 12
+        if not mask & 4: t[7][i] = 6; t[6][i] = 12
+        if not mask & 8: t[i][0] = 4; t[i][1] = 12
+        if not mask & 2: t[i][7] = 5; t[i][6] = 12
+    for (cx, cy, m1, m2) in ((0, 0, 1, 8), (7, 0, 1, 2), (0, 7, 4, 8), (7, 7, 4, 2)):
+        if (mask & m1) and (mask & m2): t[cy][cx] = 12
+    return t
+UI_TUN = [tunnel(m) for m in range(16)]
+def root():
+    t = soil(30)
+    for y in range(8): t[y][3 + (y // 3) % 2] = 15
+    t[5][5] = 15; t[6][6] = 15
+    return t
+UI = UI_SOIL + UI_FRAME + UI_FRINGE + UI_TUN + [root(), soil(31)]
+# themes: SOIL, CLAY, MOSS, NIGHT (colours 4..15)
+UI_THEMES = [
+  [rgb(7,4,2), rgb(10,6,3), rgb(13,9,5), rgb(17,15,12), rgb(6,3,1), rgb(14,8,3), rgb(22,14,6), rgb(2,1,1), rgb(5,3,2), rgb(6,15,3), rgb(10,22,5), rgb(12,8,4)],
+  [rgb(11,4,2), rgb(15,6,3), rgb(19,9,5), rgb(22,16,12), rgb(7,2,1), rgb(17,8,3), rgb(25,14,7), rgb(3,1,1), rgb(7,2,1), rgb(7,15,3), rgb(11,22,5), rgb(15,7,3)],
+  [rgb(3,6,2), rgb(5,9,3), rgb(8,12,5), rgb(15,16,12), rgb(3,4,1), rgb(8,11,3), rgb(14,18,6), rgb(1,2,1), rgb(2,4,2), rgb(8,18,4), rgb(13,25,7), rgb(6,9,4)],
+  [rgb(2,3,7), rgb(4,5,10), rgb(6,8,14), rgb(13,14,18), rgb(2,2,5), rgb(6,7,14), rgb(11,13,22), rgb(1,1,2), rgb(3,3,6), rgb(4,10,8), rgb(7,15,12), rgb(6,6,10)]]
+
 def pack(t): return [sum(t[y][x] << (4 * x) for x in range(8)) for y in range(8)]
 def emit(name, tiles):
     out = ["static const u32 %s[%d] = {" % (name, len(tiles) * 8)]
@@ -230,6 +290,9 @@ with open(sys.argv[1], "w") as f:
     f.write("#define PANO_N %d\n" % len(PANO_TILES))
     f.write("static const u16 PANOM[256] = {" + ",".join(str(v & 0xFFFF) for v in PANO_MAP) + "};\n")
     f.write(emit_pal("PAL_PANO", PANO_PAL) + "\n")
+    f.write("// UIT: termite UI tiles: 0-3 soil, 4-11 bark frame (nw n ne w e sw s se), 12-13 grass fringe, 14-29 tunnels (mask n1 e2 s4 w8), 30 root, 31 soil\n")
+    f.write(emit("UIT", UI) + "\n")
+    f.write("static const u16 UIPAL[4][12] = {" + ",".join("{" + ",".join(str(r | g << 5 | b << 10) for r, g, b in th) + "}" for th in UI_THEMES) + "};\n")
     f.write(emit_pal("PAL_TERR", TERR_PAL) + "\n" + emit_pal("PAL_DEC", DEC_PAL) + "\n")
     f.write(emit_pal("PAL_ANT0", ANT_PAL[0]) + "\n" + emit_pal("PAL_ANT1", ANT_PAL[1]) + "\n" + emit_pal("PAL_FX", FX_PAL) + "\n")
 
@@ -263,4 +326,8 @@ if len(sys.argv) > 2:
         for x in range(256):
             if P[y][x]: pv.putpixel((x, y), c8(PANO_PAL[P[y][x]]))
     pv.resize((768, 192), Image.NEAREST).save(sys.argv[2].replace(".png", "_pano.png"))
+    ui = Image.new("RGB", (8 * 32 * 4, 8 * 4))
+    upal = [(0,0,0)] * 4 + UI_THEMES[0]
+    for i, t in enumerate(UI): put(ui, t, i * 32, 0, upal, 4, (200, 0, 200))
+    ui.save(sys.argv[2].replace(".png", "_ui.png"))
     img.save(sys.argv[2])
