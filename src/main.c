@@ -154,6 +154,42 @@ static u32 mrnd(void) {
   t ^= t << 11; v = mst[j]; v = (v ^ (v >> 19)) ^ (t ^ (t >> 8)); mst[mpi] = v; mpi = (u8)(mpi == 9 ? 0 : mpi + 1);
   return v;
 }
+// ---------- OPTIONS (title: R, or the pause menu). Saved on the cartridge. ----------
+enum { O_PRESET, O_ANTS, O_AP, O_REFILL, O_REDN, O_REDATK, O_MYATK, O_HEARTS, O_DIS, O_ELECT, O_PERKS, O_FOOD, O_REGROW, O_TIME,
+       O_GSPD, O_CURSOR, O_HINTS, O_ALERTS, O_TRAILS, O_SHAKE, O_POPS, O_PANEL, O_ANTCOL, O_MUSIC, O_SFX, O_EYESPD, O_SKY, NOPT };
+typedef struct { const char *name, *vals; u8 def; const char *h1, *h2; } Opt;
+static const Opt OPTS[NOPT] = {
+  {"PRESET",        "CUSTOM|KIDS|CLASSIC|HARD", 2, "SETS THE GAME RULES BELOW", "KIDS: GENTLE  HARD: TOUGH"},
+  {"START ANTS",    "3|5|8|12",                 0, "ANTS EACH NEST HAS WHEN", "THE GAME BEGINS"},
+  {"START AP",      "5|10|15|20",               1, "ANT POWER YOU START WITH", "EACH LAND CHANGE COSTS 1"},
+  {"AP REFILL",     "SLOW|NORMAL|FAST",         1, "HOW FAST AP COMES BACK", "ALL BY ITSELF"},
+  {"RED ANTS",      "FEWER|NORMAL|MORE",        1, "HOW EASILY THE RED NEST", "HATCHES NEW ANTS"},
+  {"RED ATTACKS",   "CALM|NORMAL|ANGRY",        1, "RED SOLDIERS MARCH WHEN", "RED HAS 12  8  OR 5 ANTS"},
+  {"MY ARMY GOES",  "EARLY|NORMAL|LATE",        1, "YOUR SOLDIERS MARCH WHEN", "YOU HAVE 5  8  OR 12 ANTS"},
+  {"QUEEN HEARTS",  "3|4|5|6",                  2, "HOW MANY HITS EACH QUEEN", "CAN TAKE"},
+  {"DISASTERS",     "OFF|RARE|NORMAL|OFTEN",    2, "FLOODS AND EARTHQUAKES", "THAT HIT BOTH SIDES"},
+  {"ELECTIONS",     "ON|OFF",                   0, "A POPULARITY VOTE EVERY", "MINUTE  OFF: NO COUPS"},
+  {"PERKS",         "ON|OFF",                   0, "PICK A BONUS AFTER A", "GOOD ELECTION"},
+  {"FOOD",          "LITTLE|NORMAL|LOTS",       1, "HOW MUCH FOOD GROWS ON", "THE BERRY PATCHES"},
+  {"FOOD REGROWS",  "SLOW|NORMAL|FAST",         1, "HOW FAST EATEN FOOD", "COMES BACK"},
+  {"TIME LIMIT",    "OFF|5 MIN|10 MIN|20 MIN",  0, "WHEN TIME IS UP THE SIDE", "WITH MORE ANTS WINS"},
+  {"START SPEED",   "SLOW|NORMAL|FAST",         1, "HOW FAST THE GAME RUNS", "\4 STILL SWITCHES FAST"},
+  {"CURSOR SPEED",  "SLOW|NORMAL|FAST",         1, "HOW FAST THE CURSOR MOVES", "WHEN YOU HOLD THE D PAD"},
+  {"BUTTON HINTS",  "ON|OFF",                   0, "THE BOTTOM LINE THAT SAYS", "WHAT \1 AND \2 WILL DO"},
+  {"ALERTS",        "ON|OFF",                   0, "WARNINGS WHEN YOUR QUEEN", "IS ATTACKED"},
+  {"ANT TRAILS",    "SHOW|HIDE",                0, "THE DOTS YOUR ANTS LEAVE", "ON THE GROUND"},
+  {"SCREEN SHAKE",  "ON|OFF",                   0, "SHAKE ON FLOODS AND", "EARTHQUAKES"},
+  {"POP UPS",       "ON|OFF",                   0, "LITTLE +1  SPLASH AND", "HEART PICTURES"},
+  {"PANEL COLOR",   "NAVY|BLACK|FOREST|PLUM",   0, "THE COLOR BEHIND ALL", "TEXT AND MENUS"},
+  {"YOUR ANTS",     "BLACK|BLUE|GREEN|PURPLE",  0, "THE COLOR OF YOUR ANTS", "AND YOUR QUEEN"},
+  {"MUSIC",         "ON|OFF",                   0, "THE SONGS", ""},
+  {"SOUNDS",        "ON|OFF",                   0, "BEEPS  CRUNCHES AND", "SPLASHES"},
+  {"ANT EYE SPEED", "SLOW|NORMAL|FAST",         1, "WALKING SPEED IN THE", "ANT EYE VIEW"},
+  {"ANT EYE SKY",   "DAY|SUNSET|NIGHT",         0, "THE SKY IN THE ANT EYE", "VIEW"},
+};
+static u8 opt[NOPT];
+#define O(i) (opt[i])
+static u8 qbase = 5, nosfx;                       // queen hearts (from the options), sounds off
 static u32 rnd(void) { if (genm) return mrnd() >> 8; rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; return rs >> 8; }
 
 // ---------- input / timing ----------
@@ -230,6 +266,9 @@ static void pz(u8 x, u8 y, u8 n, u8 p) { if (n > 99) n = 99; pc(x, y, '0' + n / 
 static void ov_fill(u16 t, u8 pal, u8 y0, u8 y1) { u8 x, y; for (y = y0; y <= y1; y++) for (x = 0; x < 32; x++) BGMAP1[y * 32 + x] = (u16)(t | (pal << 12)); }
 static void ov_clear(void) { ov_fill(0, 0, 0, 31); }          // fully transparent overlay
 
+static void options_screen(void), pm_rule(u8 y), big(u8 y, const char *t);
+static const u8 CDLY[3] = {16, 10, 6}, CRAT[3] = {5, 3, 2};   // cursor repeat: delay and rate (slow / normal / fast)
+static u8 timeup;
 static void say(const char *m) { msg = m; msgt = 12; }
 static u8 blen2(const char *s) { u8 n = 0; while (s[n]) n++; return n; }
 
@@ -260,6 +299,7 @@ static void cur_info(void) {
   x = psx(0, 19, LN[h], 2);
   if (food[cy][cx] && h) psx((u8)(x + 1), 19, "+FOOD", 13);
   if (!mana && !cheat && !sandbox) { ps(19, 19, "NO AP: WAIT", 14); return; }
+  if (O(O_HINTS)) return;
   if (h == 0) ps(20, 19, "\1 FILL IN", 1);
   else if (h == 3) ps(20, 19, "\2 DIG DOWN", 1);
   else ps(19, 19, "\1 UP \2 DOWN", 1);
@@ -270,7 +310,7 @@ static void hud(void) {
   ps(0, 17, "YOU", 1); for (i = 0; i < qmax0; i++) pc((u8)(4 + i), 17, '#', i < qhp[0] ? 8 : 15);
   pc(11, 17, '@', 1); pn(12, 17, ncnt[0], 1);
   if (spd != 4) ps(14, 17, SPTAG[spd], 2);
-  ps(18, 17, "RED", 8); for (i = 0; i < QHP; i++) pc((u8)(22 + i), 17, '#', i < qhp[1] ? 8 : 15);
+  ps(17, 17, "RED", 8); for (i = 0; i < qbase; i++) pc((u8)(21 + i), 17, '#', i < qhp[1] ? 8 : 15);
   pc(27, 17, '@', 8); pn(28, 17, ncnt[1], 8);
   pc(0, 18, '&', 14); pn(1, 18, mana, 14);
   for (i = 0; i < 10; i++) BGMAP1[18 * 32 + 3 + i] = (u16)((mana > 2 * i ? BAR_F : BAR_E) | (14 << 12));
@@ -328,9 +368,9 @@ static const u16 WIN_TUNE[6]  = {N_C5, N_E5, N_G5, N_C6, N_G5, N_C6};
 static const u16 LOSE_TUNE[4] = {N_G5, N_E5, N_C5, N_C4};
 static const u16 *tune_p; static u8 jl, ji, jt;
 static u8 h1, h2, hn;
-static void ch1(u8 sweep, u16 f, u8 env) { h1 = 14; NR10 = sweep; NR11 = 0x80; NR12 = env; NR13 = (u8)f; NR14 = (u8)(0x80 | (f >> 8)); }
-static void ch2(u16 f, u8 env) { h2 = 12; NR21 = 0x80; NR22 = env; NR23 = (u8)f; NR24 = (u8)(0x80 | (f >> 8)); }
-static void noise(u8 env, u8 poly) { hn = 16; NR41 = 0; NR42 = env; NR43 = poly; NR44 = 0x80; }
+static void ch1(u8 sweep, u16 f, u8 env) { if (nosfx) return; h1 = 14; NR10 = sweep; NR11 = 0x80; NR12 = env; NR13 = (u8)f; NR14 = (u8)(0x80 | (f >> 8)); }
+static void ch2(u16 f, u8 env) { if (nosfx) return; h2 = 12; NR21 = 0x80; NR22 = env; NR23 = (u8)f; NR24 = (u8)(0x80 | (f >> 8)); }
+static void noise(u8 env, u8 poly) { if (nosfx) return; hn = 16; NR41 = 0; NR42 = env; NR43 = poly; NR44 = 0x80; }
 static void sfx_raise(void) { ch1(0x15, N_C5, 0xA1); }
 static void sfx_lower(void) { ch1(0x1D, N_G4, 0xA1); }
 static void sfx_deny(void)  { ch1(0x00, N_C4, 0x81); }
@@ -555,8 +595,8 @@ static void draw_dec(u8 x, u8 y) {
   if (!t) {
     p = ph[y][x];
     if (food[y][x] && hgt[y][x]) t = (u16)(DEC + ((x ^ y) & 1));
-    else if (p > 150) t = DEC + 3;
-    else if (p > 50) t = DEC + 2;
+    else if (!O(O_TRAILS) && p > 150) t = DEC + 3;
+    else if (!O(O_TRAILS) && p > 50) t = DEC + 2;
   }
   if (inwin(x, y)) BGMAP2[(y & 31) * 32 + (x & 31)] = t ? (u16)(t | (12 << 12)) : 0;
 }
@@ -627,8 +667,9 @@ static void bfs(u8 t) { bfs_start(t); bfs_run(0xFFFF); dnp[t] = bj_d; bj_t = 255
 #define FX_HEART 12
 typedef struct { s16 x, y; u8 t, tile; } Fx;
 static Fx fx[8]; static u8 fxn;
-static void fx_add(u8 x, u8 y, u8 tile) { Fx *f = &fx[fxn++ & 7]; f->x = (s16)(x * 8); f->y = (s16)(y * 8); f->t = 30; f->tile = tile; }
+static void fx_add(u8 x, u8 y, u8 tile) { if (O(O_POPS)) return; { Fx *f = &fx[fxn++ & 7]; f->x = (s16)(x * 8); f->y = (s16)(y * 8); f->t = 30; f->tile = tile; } }
 static void alert(u8 x, u8 y, const char *m) {   // something bad happened to you: remember where, SELECT jumps there
+  if (O(O_ALERTS)) return;
   if (!alt) { say(m); sfx_alarm(); }
   alt = 240; alx = x; aly = y;
 }
@@ -649,12 +690,15 @@ static void count(u8 *c) { u8 i; c[0] = c[1] = 0; for (i = 0; i < MAXA; i++) if 
 static void apr(s8 d) { s16 v = (s16)appr + d; appr = v < 0 ? 0 : v > 99 ? 99 : (u8)v; }
 static void die(Ant *a, u8 drown) { a->alive = 0; if (a->team == 0) apr(-2); fx_add(a->x, a->y, drown ? FX_SPLASH : FX_PUFF); }
 static void set_rules(void) {
-  fcost = 8; hc0 = 3; hc1 = RCOST[diff]; tm = TRK[diff]; dm = 31; qmax0 = QHP;
+  fcost = 8; hc0 = 3; hc1 = RCOST[diff]; tm = TRK[diff]; dm = 31; qbase = (u8)(3 + O(O_HEARTS)); qmax0 = qbase;
+  if (O(O_REFILL) == 0) tm = (u8)((tm << 1) | 1); else if (O(O_REFILL) == 2) tm >>= 1;
+  if (O(O_REDN) == 0) hc1++; else if (O(O_REDN) == 2 && hc1 > 1) hc1--;
   if (perk & 1) fcost = 4;                       // FLOOD 4
   if (perk & 2) hc0 = 2;                         // FASTEGG
   if (perk & 4) tm >>= 1;                        // AP UP
   if (perk & 8) dm = (u8)((dm << 1) | 1);        // CALM: popularity sinks slower, disasters rarer
-  if (perk & 16) qmax0 = QHP + 1;                // QUEENUP
+  if (perk & 16) qmax0 = (u8)(qbase + 1);        // QUEENUP
+  if (qhp[0] > qmax0) qhp[0] = qmax0; if (qhp[1] > qbase) qhp[1] = qbase;
   if (perk & 32) hc1++;                          // SLOWRED
 }
 static void offer(void) {                        // two different perks you do not own yet; the play loop shows the perk card
@@ -680,7 +724,11 @@ static void hit(u8 px, u8 py, u8 q) {            // 3x3 patch: every tile sinks 
     if (x >= 0 && y >= 0 && x < W && y < H) draw_cell(x, y);
   pdirty = 1; shk = 16;
 }
-static u8 dmask_dis(void) { u8 b = diff == 0 ? 127 : diff == 1 ? 63 : 31; return (perk & 8) ? (u8)((b << 1) | 1) : b; }
+static u8 dmask_dis(void) {
+  u8 b = diff == 0 ? 127 : diff == 1 ? 63 : 31;
+  if (O(O_DIS) == 1) b = (u8)((b << 1) | 1); else if (O(O_DIS) == 3) b >>= 1;
+  return (perk & 8) ? (u8)((b << 1) | 1) : b;
+}
 static void disaster(void) {                     // hits both colonies alike, anywhere on the map
   u8 q = (u8)(rnd() & 1), x = (u8)(rnd() % W), y = (u8)(rnd() % H);
   hit(x, y, q);
@@ -691,12 +739,13 @@ static void election(void) {
   if (appr >= 50) { mana = (mana + 8 > MANA_MAX) ? MANA_MAX : mana + 8; sfx_mana(); say("ANTLECTION WON! +8 AP"); }
   else if (appr >= 25) { sfx_deny(); say("ANTLECTION: NO BONUS"); }
   else { stock[0] >>= 1; mana = 0; appr = 40; sfx_qdead(); say("COUP! FOOD AND AP LOST"); }
-  if (ok && !tut && !sandbox) offer();
+  if (ok && !tut && !sandbox && !O(O_PERKS)) offer();
 }
 static void step_ant(Ant *a) {
   u8 d, t = a->team, e = t ^ 1, found = 0, bd = 0, tx, ty, px = a->ox, py = a->oy; u16 dh, de;
   s16 sc, best_sc = -32000;
-  u8 soldier = !a->carry && qhp[e] && ncnt[t] >= 8 && a->sol;
+  static const u8 RTH[3] = {12, 8, 5}, MTH[3] = {5, 8, 12};
+  u8 soldier = !a->carry && qhp[e] && ncnt[t] >= (t ? RTH[O(O_REDATK)] : MTH[O(O_MYATK)]) && a->sol;
   if (!a->carry && food[a->y][a->x]) { food[a->y][a->x] = 0; a->carry = 1; draw_dec(a->x, a->y); }
   if (a->carry) { u8 p = ph[a->y][a->x]; ph[a->y][a->x] = p > 215 ? 255 : p + 40; }
   for (d = 0; d < 4; d++) {
@@ -730,7 +779,7 @@ static void step_ant(Ant *a) {
 static void grow_food(void) {                    // food regrows, mostly around the berry patches
   u8 i; s8 x, y;
   for (nfood = 0, y = 0; y < H; y++) for (x = 0; x < W; x++) nfood += food[y][x];
-  for (i = 0; i < 2 && nfood < 30 + (u16)W * H / 40; i++) {
+  for (i = 0; i < 2 && nfood < (30 + (u16)W * H / 40) * (O(O_FOOD) + 1) / 2; i++) {
     if (npatch && (rnd() & 3)) { u8 k = (u8)(rnd() % npatch); x = (s8)(pfx[k] + (s8)(rnd() % 5) - 2); y = (s8)(pfy[k] + (s8)(rnd() % 5) - 2); }
     else { x = (s8)(rnd() % W); y = (s8)(rnd() % H); }
     if (x < 0 || y < 0 || x >= W || y >= H) continue;
@@ -758,12 +807,12 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
     cst = i ? hc1 : hc0;
     if (stock[i] >= cst && spawn(i)) { stock[i] -= cst; if (i == 0) { sfx_spawn(); apr(1); } }
     else if (ncnt[i] == 0 && (gt & 31) == 0) spawn(i);
-    if ((gt & 127) == 0 && qhp[i] < (i ? QHP : qmax0)) qhp[i]++;
+    if ((gt & 127) == 0 && qhp[i] < (i ? qbase : qmax0)) qhp[i]++;
   }
-  if ((gt & dm) == 0) apr(!stock[0] && ncnt[0] ? -2 : -1);
-  if (!tut && !sandbox && gt > 90 && (gt & dmask_dis()) == 0 && !(rnd() & 3)) disaster();   // rarer on EASY / with CALM
-  if (++etk >= 450) { etk = 0; election(); }
-  if ((gt & 7) == 0) grow_food();
+  if (!O(O_ELECT) && (gt & dm) == 0) apr(!stock[0] && ncnt[0] ? -2 : -1);
+  if (O(O_DIS) && !tut && !sandbox && gt > 90 && (gt & dmask_dis()) == 0 && !(rnd() & 3)) disaster();   // rarer on EASY / with CALM
+  if (!O(O_ELECT) && ++etk >= 450) { etk = 0; election(); }
+  if ((gt & (O(O_REGROW) == 0 ? 15 : O(O_REGROW) == 1 ? 7 : 3)) == 0) grow_food();
   if ((gt & tm) == 0 && mana < MANA_MAX) mana++;
 }
 
@@ -913,7 +962,7 @@ static void gen_world(void) {
       if (hgt[y][x] && dist(x, nestx[0]) + dist(y, nesty[0]) > 6 && dist(x, nestx[1]) + dist(y, nesty[1]) > 6) { pfx[npatch] = x; pfy[npatch] = y; npatch++; }
     }
   }
-  for (i = 0; i < npatch; i++) for (k = 0; k < 9; k++) {
+  for (i = 0; i < npatch; i++) for (k = 0; k < (O(O_FOOD) == 0 ? 5 : O(O_FOOD) == 1 ? 9 : 14); k++) {
     a = (s8)(pfx[i] + (s8)(rnd() % 5) - 2); b = (s8)(pfy[i] + (s8)(rnd() % 5) - 2);
     if (a >= 0 && b >= 0 && a < W && b < H && hgt[b][a] && !near_nest(a, b)) food[b][a] = 1;
   }
@@ -990,10 +1039,10 @@ static void newgame(void) {
   DISPCNT = 0x80; BLDY = 16;
   for (i = 0; i < MAXA; i++) ant[i].alive = 0;
   for (i = 0; i < 8; i++) fx[i].t = 0;
-  stock[0] = stock[1] = 0; qhp[0] = qhp[1] = QHP; hatched[0] = hatched[1] = 0; qfl[0] = qfl[1] = 0;
-  for (k = 0; k < 3; k++) { spawn(0); spawn(1); }
+  set_rules(); stock[0] = stock[1] = 0; qhp[0] = qhp[1] = qbase; hatched[0] = hatched[1] = 0; qfl[0] = qfl[1] = 0;
+  for (k = 0; k < (O(O_ANTS) == 0 ? 3 : O(O_ANTS) == 1 ? 5 : O(O_ANTS) == 2 ? 8 : 12); k++) { spawn(0); spawn(1); }
   count(ncnt);
-  perk = 0; pend = 0; set_rules(); spd = 4; sf = 0; appr = 50; etk = 0; slice = 0; cheat = 0; cx = nestx[0] + 2; cy = nesty[0] - 2; mana = 10; gt = 0; over = 0; msgt = 0;
+  perk = 0; pend = 0; set_rules(); spd = (u8)(3 + O(O_GSPD)); sf = 0; appr = 50; etk = 0; slice = 0; cheat = 0; cx = nestx[0] + 2; cy = nesty[0] - 2; mana = (u8)(5 + 5 * O(O_AP)); gt = 0; over = 0; msgt = 0; timeup = 0;
   shk = 0; shx = 0; alt = 0; jmp = 0;
   camx = 0; camy = H - VH; follow(); scx = (s16)camx * 8; scy = (s16)camy * 8;
   win_all();
@@ -1083,7 +1132,7 @@ static void title_scene(void) {
   ov_fill(1, 3, 0, 19);
   for (k = 0; k < 30; k++) BGMAP1[((rnd() % 12) + 1) * 32 + rnd() % 30] = (u16)(3 | (3 << 12));
   for (x = 0; x < 32; x++) { BGMAP1[18 * 32 + x] = (u16)(BT + 2); BGMAP1[19 * 32 + x] = (u16)(BT + 1); }
-  ps(7, 0, "THE RULER OF YOU", 9);
+  ps(0, 0, "\4 OPTIONS", 10); ps(13, 0, "THE RULER OF YOU", 9);
   title_dyn();
 }
 static u8 wx[5];
@@ -1104,8 +1153,13 @@ static u8 title(void) {                            // returns 0 = play, 1 = open
     if (p) pool_mix(rs);
     if (p & J_DOWN) { tsel = (u8)((tsel + 1) & 3); sfx_food(); title_dyn(); }
     if (p & J_UP)   { tsel = (u8)((tsel + 3) & 3); sfx_food(); title_dyn(); }
-    if (p & (J_RIGHT | J_R | J_LEFT | J_L)) {
-      s8 dd = (p & (J_RIGHT | J_R)) ? 1 : -1;
+    if (p & J_R) {                                  // OPTIONS
+      options_screen(); title_scene(); prev = joy(); on = 255;
+      if (!nomus && !tmu) tm_start();
+      continue;
+    }
+    if (p & (J_RIGHT | J_LEFT)) {
+      s8 dd = (p & J_RIGHT) ? 1 : -1;
       if (tsel == 0) diff = (u8)((diff + 3 + dd) % 3);
       else if (tsel == 1) mapt = (u8)((mapt + MAPN + dd) % MAPN);
       else if (tsel == 2) tw = (u8)(tw + dd * 8 < 32 ? 96 : tw + dd * 8 > 96 ? 32 : tw + dd * 8);
@@ -1237,18 +1291,25 @@ static void floor_map(volatile u16 *m) {              // 64x64 one-byte entries,
     m[y * 32 + x / 2] = e;
   }
 }
-static void sky_init(void) {
-  u8 y, t;
+static void sky_init(void) {                           // DAY / SUNSET / NIGHT
+  static const u8 TOP[3][3] = {{7, 13, 27}, {10, 6, 16}, {1, 1, 5}}, HOR[3][3] = {{23, 25, 31}, {31, 18, 10}, {5, 7, 14}};
+  u8 y, t, k = O(O_SKY), c[3], j;
   for (y = 0; y < 161; y++) {
     t = y < 64 ? y / 4 : 16;                           // 0 at the top .. 16 at the horizon
-    skyg[y] = RGB(7 + t, 13 + (t * 3) / 4, 27 + t / 4 > 31 ? 31 : 27 + t / 4);
+    for (j = 0; j < 3; j++) c[j] = (u8)(TOP[k][j] + (HOR[k][j] - TOP[k][j]) * t / 16);
+    skyg[y] = RGB(c[0], c[1], c[2]);
   }
 }
 static void pano_init(void) {                          // skyline on BG0: tiles 64.. of charblock 0, map in screenblock 27
   u16 i; volatile u16 *m = (volatile u16 *)0x0600D800;
   for (i = 0; i < PANO_N * 8; i++) TILE32[64 * 8 + i] = PANO[i];
   for (i = 0; i < 1024; i++) m[i] = i < 256 && PANOM[i] != 0xFFFF ? (u16)((64 + PANOM[i]) | (5 << 12)) : 0;
-  for (i = 0; i < 16; i++) BGPAL[80 + i] = PAL_PANO[i];
+  for (i = 0; i < 16; i++) {                            // the skyline, tinted for sunset / night
+    u16 v = PAL_PANO[i]; u8 r = v & 31, g = (v >> 5) & 31, b = (v >> 10) & 31;
+    if (O(O_SKY) == 1) { r = (u8)(r + 6 > 31 ? 31 : r + 6); b = (u8)(b * 2 / 3); }
+    else if (O(O_SKY) == 2) { r >>= 2; g >>= 2; b = (u8)(b / 2 + 2); }
+    BGPAL[80 + i] = RGB(r, g, b);
+  }
 }
 static void occ_set(u8 on) {
   u8 i;
@@ -1294,6 +1355,7 @@ static void eye_step(u8 *vx, u8 *vy, s8 dir) {
   dx *= dir; dy *= dir;
   if (can_go(*vx, *vy, dx, dy)) { *vx += dx; *vy += dy; }
 }
+static const u8 EWK[3] = {28, 20, 12}, EGL[3] = {10, 14, 24};   // ant eye: frames per step, glide speed
 static s16 ease(s16 v, s16 t, s16 s) { s16 d = t - v; return d > s ? v + s : d < -s ? v - s : t; }
 static u8 bearing(s16 dx, s16 dy) {                   // angle (0..255, 0 = east, clockwise) that points along (dx, dy)
   u8 a, b = 0; s32 v, bv = -0x7FFFFFFF;
@@ -1411,7 +1473,7 @@ static void eye(void) {                              // time stands still while 
       if (rt < 250) rt++;
     } else if (vang & 7) { vang = (u8)((vang + 4) & 0xF8); chg = 1; }   // let go: settle on the 8-unit grid so walking stays square
     if (wd) {
-      if (rep == 0 || (rep >= 20 && !(rep % 20))) {                    // held = keep walking, one cell every 20 frames
+      if (rep == 0 || (rep >= EWK[O(O_EYESPD)] && !(rep % EWK[O(O_EYESPD)]))) {   // held = keep walking
         u8 ox = vx, oy = vy; eye_step(&vx, &vy, wd);
         if (vx != ox || vy != oy) { chg = 1; sfx_lower(); } else if (!(rep & 15)) sfx_deny();   // bumped into something: a thud
       }
@@ -1422,7 +1484,7 @@ static void eye(void) {                              // time stands still while 
     if (chg) eye_status(vi, vx, vy);
     da = (s16)(((vang - fa + 128) & 255) - 128);      // ease the camera toward the wanted pose
     fa = (s16)((fa + (da > 2 ? 2 : da < -2 ? -2 : da)) & 255);
-    fx = ease(fx, tx, 14); fy = ease(fy, ty, 14);
+    fx = ease(fx, tx, EGL[O(O_EYESPD)]); fy = ease(fy, ty, EGL[O(O_EYESPD)]);
     if (vx - fox < 16 || vx - fox > 47 || vy - foy < 16 || vy - foy > 47) {   // walked far: re-centre the floor map
       fox = (s16)vx - 32; foy = (s16)vy - 32; floor_map((volatile u16 *)0x0600B000);
     }
@@ -1970,13 +2032,101 @@ static void tut_card(u8 i) {
   hide_all(); vsync(); oam_flush();
   ov_clear(); hud();
 }
+
+// ---------- OPTIONS screen ----------
+static const u8 PRESETS[3][O_TIME] = {              // KIDS, CLASSIC, HARD for options 1..13 (index 0 unused)
+  {0, 1, 3, 2, 0, 0, 0, 3, 0, 1, 0, 2, 2},
+  {0, 0, 1, 1, 1, 1, 1, 2, 2, 0, 0, 1, 1},
+  {0, 0, 0, 0, 2, 2, 2, 0, 3, 0, 1, 0, 0}};
+static u8 opt_n(u8 i) { const char *v = OPTS[i].vals; u8 n = 1; while (*v) if (*v++ == '|') n++; return n; }
+static void opt_val(u8 i, char *b) {                // the text of option i's current value
+  const char *v = OPTS[i].vals; u8 k = opt[i], n = 0;
+  while (k && *v) if (*v++ == '|') k--;
+  while (*v && *v != '|' && n < 9) b[n++] = *v++;
+  b[n] = 0;
+}
+static const char *opt_group(u8 i) { return i <= O_TIME ? "GAME RULES" : i <= O_ALERTS ? "CONTROLS" : i <= O_ANTCOL ? "LOOK" : i <= O_SFX ? "SOUND" : "ANT EYE"; }
+static void opts_apply(void) {                      // colours, sound and rules follow the options right away
+  static const u16 PANEL[4] = {RGB(2,3,8), RGB(0,0,0), RGB(2,7,3), RGB(7,2,9)};
+  static const u16 NIGHT[4] = {RGB(1,1,5), RGB(0,0,1), RGB(1,4,2), RGB(4,1,5)};
+  static const u16 ANTC[4][4] = {{RGB(1,1,2), RGB(6,6,8), RGB(16,16,19), RGB(14,15,22)},
+    {RGB(1,2,9), RGB(4,9,23), RGB(14,20,31), RGB(10,14,28)}, {RGB(1,6,1), RGB(4,16,4), RGB(14,28,12), RGB(10,20,8)},
+    {RGB(6,1,8), RGB(15,5,21), RGB(25,17,31), RGB(19,11,27)}};
+  u16 c = PANEL[O(O_PANEL)], n = NIGHT[O(O_PANEL)]; u8 i;
+  BGPAL[17] = BGPAL[33] = BGPAL[65] = BGPAL[129] = BGPAL[209] = BGPAL[225] = BGPAL[241] = c;
+  BGPAL[49] = BGPAL[145] = BGPAL[161] = n;
+  for (i = 0; i < 4; i++) OBJPAL[1 + i] = ANTC[O(O_ANTCOL)][i];
+  nosfx = O(O_SFX);
+  if (O(O_MUSIC) != nomus) { nomus = O(O_MUSIC); if (nomus) { music_stop(); tmu = 0; } }
+  set_rules();
+}
+static void opts_save(void) {
+  u8 i, sum = 0;
+  SRAM[24] = 'O'; SRAM[25] = 'P';
+  for (i = 0; i < NOPT; i++) { SRAM[26 + i] = opt[i]; sum = (u8)(sum + opt[i] + i); }
+  SRAM[60] = sum;
+}
+static void opts_load(void) {
+  u8 i, sum = 0, ok = SRAM[24] == 'O' && SRAM[25] == 'P';
+  for (i = 0; i < NOPT; i++) { opt[i] = SRAM[26 + i]; sum = (u8)(sum + opt[i] + i); if (opt[i] >= opt_n(i)) ok = 0; }
+  if (!ok || sum != SRAM[60]) for (i = 0; i < NOPT; i++) opt[i] = OPTS[i].def;
+}
+static void opt_draw(u8 sel, u8 top) {
+  u8 i, y; char b[10];
+  ov_fill(1, 3, 0, 19);
+  big(0, "OPTIONS");
+  ps(1, 2, opt_group(sel), 9); pn(24, 2, (u8)(sel + 1), 3); pc(26, 2, '/', 10); pn(27, 2, NOPT, 3);
+  pm_rule(3);
+  for (i = 0; i < 10 && top + i < NOPT; i++) {
+    u8 k = (u8)(top + i); y = (u8)(4 + i);
+    if (k == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
+    ps(3, y, OPTS[k].name, k == sel ? 9 : 3);
+    opt_val(k, b);
+    pc(17, y, '<', 10); ps(19, y, b, k == sel ? 9 : 3); pc(28, y, '>', 10);
+  }
+  if (top > 0) pc(29, 4, '-', 10);
+  if (top + 10 < NOPT) pc(29, 13, '+', 10);
+  pm_rule(14);
+  ps(1, 15, OPTS[sel].h1, 3); ps(1, 16, OPTS[sel].h2, 3);
+  ps(1, 18, "UP DOWN: PICK  LEFT RIGHT: SET", 10);
+  ps(1, 19, "\5 DONE   \6 ALL BACK TO NORMAL", 10);
+}
+static void options_screen(void) {
+  u8 sel = 0, top = 0, i, n; u16 k, p, prev = 0, last = 0, rep = 0;
+  hide_all(); vsync(); oam_flush();
+  while (joy()) vsync();
+  opt_draw(sel, top);
+  for (;;) {
+    vsync(); k = joy(); p = k & ~prev; prev = k;
+    if ((k & (J_UP | J_DOWN)) != last) { rep = 0; last = k & (J_UP | J_DOWN); }
+    if (last && ++rep > 14 && !(rep & 3)) p |= last;   // hold UP / DOWN to scroll
+    if (!p) continue;
+    if (p & (J_START | J_B)) break;
+    if (p & J_UP)   { sel = sel ? sel - 1 : NOPT - 1; sfx_food(); }
+    if (p & J_DOWN) { sel = sel == NOPT - 1 ? 0 : sel + 1; sfx_food(); }
+    if (p & (J_LEFT | J_RIGHT | J_A)) {
+      n = opt_n(sel);
+      opt[sel] = (u8)((p & J_LEFT) ? (opt[sel] + n - 1) % n : (opt[sel] + 1) % n);
+      if (sel == O_PRESET && opt[sel]) for (i = 1; i < O_TIME; i++) opt[i] = PRESETS[opt[sel] - 1][i];
+      else if (sel >= 1 && sel < O_TIME) opt[O_PRESET] = 0;
+      opts_apply(); sfx_mana();
+    }
+    if (p & J_SEL) { for (i = 0; i < NOPT; i++) opt[i] = OPTS[i].def; opts_apply(); sfx_flood(); }
+    if (sel < top) top = sel; if (sel >= top + 10) top = (u8)(sel - 9);
+    opt_draw(sel, top);
+  }
+  opts_save();
+  while (joy()) vsync();
+  ov_clear();
+}
+
 // ---------- PAUSE MENU (START): live colony status + a menu (UP DOWN, A; START or B resumes) ----------
-#define PM_N 8
-#define PM_MUS 5
-#define PM_SPD 6
-static const char *const PITEM[PM_N] = {"RESUME", "ANT EYE VIEW", "TRADE FOOD FOR AP", "CONTROLS", "HOW TO PLAY", "MUSIC", "SPEED", "QUIT TO TITLE"};
-static const char *const PHINT[PM_N] = {"BACK TO THE GAME", "SEE THE WORLD AS AN ANT", "2 FOOD BECOMES 4 AP", "BUTTONS AND RULES", "REPLAY THE LESSON CARDS",
-  "MUSIC ON OR OFF", "LEFT RIGHT CHANGES SPEED", "GIVE UP AND LEAVE"};
+#define PM_N 9
+#define PM_MUS 6
+#define PM_SPD 7
+static const char *const PITEM[PM_N] = {"RESUME", "ANT EYE VIEW", "TRADE FOOD FOR AP", "OPTIONS", "CONTROLS", "HOW TO PLAY", "MUSIC", "SPEED", "QUIT TO TITLE"};
+static const char *const PHINT[PM_N] = {"BACK TO THE GAME", "SEE THE WORLD AS AN ANT", "2 FOOD BECOMES 4 AP", "RULES  LOOK  SOUND AND MORE", "BUTTONS AND RULES",
+  "REPLAY THE LESSON CARDS", "MUSIC ON OR OFF", "LEFT RIGHT CHANGES SPEED", "GIVE UP AND LEAVE"};
 static u8 pm_do;                                       // what to do after the menu closes: 1 ant eye, 2 trade
 static void pm_rule(u8 y) {
   u8 x; for (x = 1; x < 29; x++) BGMAP1[y * 32 + x] = (u16)(ORN | (9 << 12));
@@ -1991,7 +2141,7 @@ static void pm_draw(void) {                            // everything except the 
     g = gi("PAUSED"[n]); x = (u8)(12 + n);
     BGMAP1[32 + x] = (u16)((BIGF + g * 2) | (9 << 12)); BGMAP1[64 + x] = (u16)((BIGF + g * 2 + 1) | (9 << 12));
   }
-  pm_rule(3); pm_rule(10);
+  pm_rule(3);
   ps(1, 4, "AP", 9);      pn(6, 4, mana, 3);          ps(16, 4, "FOOD", 9);   pn(23, 4, stock[0], 3);
   ps(1, 5, "ANTS", 9);     pn(6, 5, ncnt[0], 3);       ps(16, 5, "FOES", 9);   pn(23, 5, ncnt[1], 3);
   ps(1, 6, "POPULAR", 9);  pn(9, 6, appr, 3);          ps(16, 6, "QUEENS", 9);
@@ -2008,7 +2158,7 @@ static void pm_draw(void) {                            // everything except the 
 static void pm_menu(u8 sel, u8 conf) {
   u8 i, x, y;
   for (i = 0; i < PM_N; i++) {
-    y = (u8)(11 + i);
+    y = (u8)(10 + i);
     for (x = 1; x < 29; x++) BGMAP1[y * 32 + x] = (u16)(1 | (3 << 12));
     if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
     ps(3, y, (conf && i == sel) ? "SURE? A YES   B NO" : PITEM[i], i == sel ? 9 : 3);
@@ -2039,13 +2189,14 @@ static void pause_menu(void) {
       case 0: run = 0; break;
       case 1: pm_do = 1; run = 0; break;
       case 2: pm_do = 2; run = 0; break;
-      case 3: help_show(); pm_draw(); prev = joy(); break;
-      case 4: {
+      case 3: options_screen(); if (!nomus && !mus_on) music_start(); pm_draw(); prev = joy(); break;
+      case 4: help_show(); pm_draw(); prev = joy(); break;
+      case 5: {
         u8 sv = tut; tview = 1; tut = 1;               // browse the lesson cards without changing the game
         for (i = 0; i < TN && tut; i++) tut_card(i);
         tut = sv; tview = 0; pm_draw(); prev = joy(); break;
       }
-      case PM_MUS: nomus ^= 1; if (nomus) music_stop(); else music_start(); sfx_mana(); break;
+      case PM_MUS: nomus ^= 1; opt[O_MUSIC] = nomus; if (nomus) music_stop(); else music_start(); sfx_mana(); break;
       case PM_SPD: spd_next((p & J_LEFT) ? -1 : 1); sfx_mana(); break;
       default: conf = 1; sfx_deny(); break;
       }
@@ -2116,8 +2267,8 @@ static void end_card(void) {
       save_write();
     }
     if (!sc) sc = calc_score(s);
-    big(2, "VICTORY!"); ps(5, 5, "THE RED QUEEN HAS FALLEN", 3);
-  } else { big(2, "DEFEAT"); ps(5, 5, "YOUR QUEEN HAS FALLEN", 3); }
+    big(2, "VICTORY!"); ps(5, 5, timeup ? "TIME UP: YOUR COLONY WINS" : "THE RED QUEEN HAS FALLEN", 3);
+  } else { big(2, "DEFEAT"); ps(5, 5, timeup ? "TIME UP: THE RED ANTS WIN" : "YOUR QUEEN HAS FALLEN", 3); }
   pm_rule(7);
   ps(5, 9, "TIME", 9);   pn(16, 9, (u8)(s / 60 > 99 ? 99 : s / 60), 3); pc(18, 9, ':', 3); pz(19, 9, (u8)(s % 60), 3); if (nb) ps(22, 9, "BEST!", 9);
   ps(5, 10, "ANTS LEFT", 9); pn(16, 10, ncnt[0], 3);
@@ -2134,7 +2285,7 @@ static void play(void) {
   if (tutor) { tut = 1; tut_enter(); prev = joy(); }
   while (!over) {
     vsync(); frc++;
-    shx = shk ? ((shk & 2) ? 2 : -2) : 0; if (shk) shk--;
+    shx = (shk && !O(O_SHAKE)) ? ((shk & 2) ? 2 : -2) : 0; if (shk) shk--;
     BG0HOFS = BG2HOFS = (u16)(scx + shx); BG0VOFS = BG2VOFS = (u16)scy; oam_flush();
     BGPAL[176 + 3] = (frc & 32) ? RGB(14,22,31) : RGB(10,18,30); BGPAL[176 + 14] = (frc & 32) ? RGB(10,18,30) : RGB(14,22,31);   // water shimmer
     OBJPAL[32 + 3] = RGB(31, 26 + ((frc >> 2) & 3), (frc & 16) ? 4 : 12);                   // the cursor pulses
@@ -2151,7 +2302,7 @@ static void play(void) {
     dirs = (u8)(k & 15); mx = cx; my = cy;
     if (dirs != last) { rep = 0; last = dirs; }
     if (dirs) {
-      fire = (rep == 0) || (rep >= 10 && (rep % 3) == 1);
+      fire = (rep == 0) || (rep >= CDLY[O(O_CURSOR)] && ((rep - CDLY[O(O_CURSOR)]) % CRAT[O(O_CURSOR)]) == 0);
       if (rep < 250) rep++;
       if (fire) {
         if ((dirs & J_LEFT) && cx > 0) cx--;
@@ -2179,9 +2330,9 @@ static void play(void) {
     if (p & J_R) { if (spd == 1) { for (n = 8; n; n--) tick_slice(); sfx_food(); } else spd_toggle(); }
     if (tut && (cx != lcx || cy != lcy)) { tev |= 1; lcx = cx; lcy = cy; }
     if (tut && (tev & TEV[tut - 1])) { sfx_mana(); tut++; tut_enter(); prev = joy(); }
-    if (tut) { qhp[0] = qhp[1] = QHP; if (appr < 50) appr = 50; }          // no game over mid-lesson
+    if (tut) { qhp[0] = qhp[1] = qbase; if (appr < 50) appr = 50; }          // no game over mid-lesson
     if (cheat) { mana = MANA_MAX; stock[0] = 99; appr = 99; }
-    if (sandbox) { mana = MANA_MAX; qhp[0] = qhp[1] = QHP; appr = 99; }
+    if (sandbox) { mana = MANA_MAX; qhp[0] = qhp[1] = qbase; appr = 99; }
     follow(); scroll_step(); win_sync();
     bfs_tick(450);                                   // paths update in the background after the land changes
     n = SPN[spd]; if (n && (sf++ & SPM[spd])) n = 0;     // PAUSED / FRAME ADVANCE: none; slow speeds skip frames
@@ -2192,6 +2343,9 @@ static void play(void) {
       hud();
     } else if ((mx != cx || my != cy) && !msgt) { ov_fill(1, 1, 19, 19); cur_info(); }
     if (!qhp[1]) over = 1; else if (!qhp[0]) over = 2;
+    if (O(O_TIME) && !tut && !sandbox && !over && (u32)gt * 2 / 15 >= (O(O_TIME) == 1 ? 300u : O(O_TIME) == 2 ? 600u : 1200u)) {
+      timeup = 1; over = (u8)(ncnt[0] + qhp[0] * 3 >= ncnt[1] + qhp[1] * 3 ? 1 : 2);   // time is up: more ants (and hearts) wins
+    }
     draw_sprites();
   }
   music_stop();
@@ -2415,7 +2569,7 @@ static u8 editor(void) {                            // returns 1 = play MY MAP n
     dirs = (u8)(k & 15); mx = cx; my = cy;
     if (dirs != last) { rep = 0; last = dirs; }
     if (dirs) {
-      fire = (rep == 0) || (rep >= 10 && (rep % 3) == 1);
+      fire = (rep == 0) || (rep >= CDLY[O(O_CURSOR)] && ((rep - CDLY[O(O_CURSOR)]) % CRAT[O(O_CURSOR)]) == 0);
       if (rep < 250) rep++;
       if (fire) {
         if ((dirs & J_LEFT) && cx > 0) cx--;
@@ -2450,7 +2604,7 @@ int main(void) {
   logo_play();                                        // Danny Steel boot logo (START skips)
   IO16(0x0C) = IO16(0x0E) = 0; IO16(0x14) = IO16(0x16) = 0; IO16(0x48) = IO16(0x4A) = 0;   // undo the logo's BG2/3, BG1 scroll, windows
   gfx_init();
-  save_load();
+  save_load(); opts_load(); opts_apply();
   diff = 1;
   for (;;) { if (title()) { if (editor()) { newgame(); play(); } continue; } newgame(); play(); }
 }

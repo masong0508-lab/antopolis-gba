@@ -46,3 +46,12 @@ B: CURSOR HERE  START: LEAVE
 - Editor menu: keep editing, save and play, save and quit, width / height (32 to 96), clear to grass, quit without saving.
   It also shows the berry count and whether ants can walk from nest to nest.
 - The map is saved on the cartridge (battery save) and shows up as MY MAP on the title screen.
+
+## Options (title: R, or OPTIONS in the pause menu) - 27 settings, saved on the cartridge
+- GAME RULES: preset (KIDS / CLASSIC / HARD / CUSTOM), start ants, start AP, AP refill, red ants, red attacks, my army goes,
+  queen hearts, disasters, elections, perks, food, food regrows, time limit (the side with more ants wins when time is up)
+- CONTROLS: start speed, cursor speed, button hints, alerts
+- LOOK: ant trails, screen shake, pop ups, panel color (navy / black / forest / plum), your ants (black / blue / green / purple)
+- SOUND: music, sounds
+- ANT EYE: walking speed, sky (day / sunset / night)
+- Every option has a two-line explanation. SELECT on the options screen puts everything back to normal.
