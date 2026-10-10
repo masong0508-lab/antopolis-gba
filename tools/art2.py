@@ -169,6 +169,46 @@ def big_food():
 def split32(img): return [[[img[ty * 8 + y][tx * 8 + x] for x in range(8)] for y in range(8)] for ty in range(4) for tx in range(4)]
 BIG = split32(big_ant()) + split32(big_ant(carry=True)) + split32(big_ant(queen=True)) + split32(big_food())
 
+
+# ---------------- ANT EYE panorama: 256x64 px, wraps around; far hills, trees, clouds (BG0 in the eye view, palette bank 5) ----------------
+import math, random
+random.seed(7)
+PANO_PAL = [rgb(0,0,0), rgb(12,18,24), rgb(8,14,17), rgb(5,11,9), rgb(30,31,31), rgb(24,27,30), rgb(16,22,26), rgb(3,8,6)] + [rgb(0,0,0)]*8
+P = [[0] * 256 for _ in range(64)]
+def ridge(base, amp, freqs, seed):
+    out = []
+    for x in range(256):
+        v = base
+        for i, f in enumerate(freqs): v += amp / (i + 1) * math.sin(2 * math.pi * (x * f / 256.0) + seed * (i + 1))
+        out.append(int(v))
+    return out
+far = ridge(44, 7, [2, 5, 9], 1.3); near = ridge(54, 5, [3, 7, 13], 4.1)
+for x in range(256):
+    for y in range(64):
+        if y >= far[x]: P[y][x] = 1 if y > far[x] else 6
+        if y >= near[x]: P[y][x] = 2
+# little trees on the near ridge
+for k in range(14):
+    tx = random.randrange(256); ty = near[tx]; h = random.randrange(5, 9)
+    for y in range(ty - h, ty + 1):
+        w = (y - (ty - h)) // 2
+        for x in range(tx - w, tx + w + 1): P[y % 64][x % 256] = 3 if x != tx - w else 7
+# clouds
+for k in range(6):
+    cx0 = random.randrange(256); cy0 = random.randrange(8, 22); n = random.randrange(3, 6)
+    for j in range(n):
+        bx = cx0 + j * 6 - n * 3; by = cy0 + random.randrange(-2, 2); r = random.randrange(4, 7)
+        for y in range(by - r, by + r + 1):
+            for x in range(bx - r * 2, bx + r * 2 + 1):
+                dx, dy = (x - bx) / (r * 2.0), (y - by) / float(r)
+                if dx * dx + dy * dy <= 1 and 0 <= y < 64: P[y][x % 256] = 5 if y > by + r // 3 else 4
+PANO_TILES = []; PANO_MAP = []
+for ty in range(8):
+    for tx in range(32):
+        t = [[P[ty * 8 + y][tx * 8 + x] for x in range(8)] for y in range(8)]
+        if all(v == 0 for r in t for v in r): PANO_MAP.append(-1)
+        else: PANO_MAP.append(len(PANO_TILES)); PANO_TILES.append(t)
+
 def pack(t): return [sum(t[y][x] << (4 * x) for x in range(8)) for y in range(8)]
 def emit(name, tiles):
     out = ["static const u32 %s[%d] = {" % (name, len(tiles) * 8)]
@@ -186,6 +226,10 @@ with open(sys.argv[1], "w") as f:
     f.write(emit("SPRT", SPR) + "\n")
     f.write("// BIGS: ANT EYE 32x32 sprites (OBJ tiles 24..87): ant, ant carrying food, queen (ant palettes), food pile (decor palette)\n")
     f.write(emit("BIGS", BIG) + "\n")
+    f.write("// PANO: ANT EYE skyline tiles, PANOM: 32x8 map (0xFFFF = empty)\n" + emit("PANO", PANO_TILES) + "\n")
+    f.write("#define PANO_N %d\n" % len(PANO_TILES))
+    f.write("static const u16 PANOM[256] = {" + ",".join(str(v & 0xFFFF) for v in PANO_MAP) + "};\n")
+    f.write(emit_pal("PAL_PANO", PANO_PAL) + "\n")
     f.write(emit_pal("PAL_TERR", TERR_PAL) + "\n" + emit_pal("PAL_DEC", DEC_PAL) + "\n")
     f.write(emit_pal("PAL_ANT0", ANT_PAL[0]) + "\n" + emit_pal("PAL_ANT1", ANT_PAL[1]) + "\n" + emit_pal("PAL_FX", FX_PAL) + "\n")
 
@@ -214,4 +258,9 @@ if len(sys.argv) > 2:
     for k in range(4):
         for i in range(16):
             put(img, BIG[k * 16 + i], 330 + k * 100 + (i % 4) * 24, 180 + (i // 4) * 24, DEC_PAL if k == 3 else ANT_PAL[k == 1], 3, (60, 120, 50))
+    pv = Image.new("RGB", (256, 64), (120, 170, 250))
+    for y in range(64):
+        for x in range(256):
+            if P[y][x]: pv.putpixel((x, y), c8(PANO_PAL[P[y][x]]))
+    pv.resize((768, 192), Image.NEAREST).save(sys.argv[2].replace(".png", "_pano.png"))
     img.save(sys.argv[2])

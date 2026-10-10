@@ -29,4 +29,4 @@ B: CURSOR HERE  START: LEAVE
 - Ants find their way home and to the enemy around water and cliffs (pathfinding), and walk smoothly.
 - SELECT jumps the cursor: alert spot, else HOME > ARMY > RED NEST. Alerts when your queen is hit or food is stolen.
 - Perks are picked on their own card; a VICTORY / DEFEAT screen with stats; pop-ups (+1, splash, puff, heart) and screen shake.
-- ANT EYE rebuilt: real terrain colours with a cell grid, scaled ants / queens / food standing on the floor, a compass bar (crown = home, red ant = red nest), clear AHEAD warnings, and rough ground past the map edge.
+- ANT EYE rebuilt: sky with clouds, hills and trees that turn with you, smooth terrain-coloured ground, scaled ants / queens / food standing on it, a compass bar (crown = home, red ant = red nest), clear AHEAD warnings, slower calmer walking and turning.

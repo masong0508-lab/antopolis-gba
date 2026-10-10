@@ -970,6 +970,8 @@ static void title(void) {
 // Projection (same as the floor): an object D cells ahead and S cells to the right is at x = 120 + 192*S/D, its feet at
 // y = 64 + 31.5/D.
 #define HZ 64                                         // horizon scanline
+#define FMB 16                                        // the world sits 16 cells in from the edge of the 64x64 floor map
+static u16 skyg[161];                                 // per scanline backdrop: sky gradient, then the haze the floor fades into
 #define FY0 65                                        // first Mode-7 scanline (D ~ 21 cells); above it: sky
 #define FY1 128                                       // first scanline of the status rows
 #define TURN 8                                        // angle units: 256 = full turn, so 8 = 11.25 degrees
@@ -981,7 +983,6 @@ static void title(void) {
 #define DMA_W32 0x04000000u
 #define DMA_RLD 0x00600000u                           // dest increment + reload each HBlank
 #define DMA_FIX 0x00400000u
-#define FMB 16                                        // the world sits 16 cells in from the edge of the 64x64 floor map
 #define BIGT 24                                       // OBJ tiles of the big sprites: ant 24, carrying ant 40, queen 56, food 72
 #ifdef __arm__
 #define IWRAM __attribute__((section(".data.iwram"), long_call, noinline))   // hot code runs from IWRAM (ROM is ~6x slower)
@@ -1028,36 +1029,55 @@ static void eye_arm(const M7 *t) {                    // call right after vsync(
   IO16(0x52) = blt[0];
   DMAR(0, 0) = (u32)(t + 1); DMAR(0, 4) = 0x04000020u; DMAR(0, 8) = DMA_ON | DMA_HBL | DMA_REP | DMA_W32 | DMA_RLD | 4;
   DMAR(1, 0) = (u32)(blt + 1); DMAR(1, 4) = 0x04000052u; DMAR(1, 8) = DMA_ON | DMA_HBL | DMA_REP | DMA_FIX | 1;
+  DMAR(2, 8) = 0; BGPAL[0] = skyg[0];
+  DMAR(2, 0) = (u32)(skyg + 1); DMAR(2, 4) = 0x05000000u; DMAR(2, 8) = DMA_ON | DMA_HBL | DMA_REP | DMA_FIX | 1;
 }
-// floor: 8bpp 8x8 tiles. 1 water, 2 sand, 3 grass, 4 hill, 5 nest, 6 rough ground outside the map. Land tiles get a dark line on the top and left edge (the grid).
-static void floor_tiles(volatile u32 *d) {
-  static const u8 BASE[6] = {82, 84, 86, 88, 90, 95}, SPEC[6] = {83, 85, 87, 89, 90, 96}, EDGE[6] = {82, 85, 87, 93, 94, 96};
+// floor: 8bpp 8x8 tiles 180..188 (free space at the end of charblock 2), colours in palette bank 6 (96..110).
+// 180 water, 181/182 sand, 183/184 grass, 185/186 hill (two shades, chequered by cell so you can see yourself move), 187 nest, 188 outside
+#define FT8 180
+static void floor_tiles(void) {
+  static const u8 BASE[9] = {96, 98, 99, 101, 102, 104, 105, 107, 109}, SPEC[9] = {97, 100, 100, 103, 103, 106, 106, 107, 110};
+  volatile u32 *d = TILE32 + 0x2000 + FT8 * 16;
   u8 t, p, k, px, py, hh, c; u32 w;
-  for (p = 0; p < 16; p++) d[p] = 0;
-  for (t = 0; t < 6; t++) for (p = 0; p < 16; p++) {
+  for (t = 0; t < 9; t++) for (p = 0; p < 16; p++) {
     w = 0;
     for (k = 0; k < 4; k++) {
       px = (u8)((p & 1) * 4 + k); py = (u8)(p >> 1);
       hh = (u8)((px * 37 + py * 91 + t * 53) & 15);
       if (t == 0) c = ((py & 3) == 1 && ((px + py) & 7) < 3) ? SPEC[0] : BASE[0];
-      else if (t == 4) c = (px >= 2 && px <= 5 && py >= 3 && py <= 5) ? 91 : (px == 0 || py == 0) ? EDGE[4] : BASE[4];
-      else c = (px == 0 || py == 0) ? EDGE[t] : hh < 3 ? SPEC[t] : BASE[t];
+      else if (t == 7) c = (px >= 2 && px <= 5 && py >= 2 && py <= 5) ? 108 : BASE[7];
+      else c = hh < 2 ? SPEC[t] : BASE[t];
       w |= (u32)c << (k * 8);
     }
-    d[(t + 1) * 16 + p] = w;
+    d[t * 16 + p] = w;
   }
 }
-static void floor_map(volatile u16 *m) {              // 64x64 one-byte entries, read as halfwords; outside the world: rough ground (6)
-  u8 x, y, k, h, wx, wy; u16 e;
+static void floor_map(volatile u16 *m) {              // 64x64 one-byte entries, read as halfwords
+  u8 x, y, k, h, wx, wy, c; u16 e;
   for (y = 0; y < 64; y++) for (x = 0; x < 64; x += 2) {
     e = 0;
     for (k = 0; k < 2; k++) {
       wx = (u8)(x + k - FMB); wy = (u8)(y - FMB);
-      if (wx >= W || wy >= H) h = 6; else { h = hgt[wy][wx]; h = is_nest(wx, wy) ? 5 : h + 1; }
-      e |= (u16)h << (k * 8);
+      if (wx >= W || wy >= H) c = FT8 + 8;
+      else if (is_nest(wx, wy)) c = FT8 + 7;
+      else { h = hgt[wy][wx]; c = h == 0 ? FT8 : (u8)(FT8 - 1 + h * 2 + ((wx + wy) & 1)); }
+      e |= (u16)c << (k * 8);
     }
     m[y * 32 + x / 2] = e;
   }
+}
+static void sky_init(void) {
+  u8 y, t;
+  for (y = 0; y < 161; y++) {
+    t = y < 64 ? y / 4 : 16;                           // 0 at the top .. 16 at the horizon
+    skyg[y] = RGB(7 + t, 13 + (t * 3) / 4, 27 + t / 4 > 31 ? 31 : 27 + t / 4);
+  }
+}
+static void pano_init(void) {                          // skyline on BG0: tiles 64.. of charblock 0, map in screenblock 27
+  u16 i; volatile u16 *m = (volatile u16 *)0x0600D800;
+  for (i = 0; i < PANO_N * 8; i++) TILE32[64 * 8 + i] = PANO[i];
+  for (i = 0; i < 1024; i++) m[i] = i < 256 && PANOM[i] != 0xFFFF ? (u16)((64 + PANOM[i]) | (5 << 12)) : 0;
+  for (i = 0; i < 16; i++) BGPAL[80 + i] = PAL_PANO[i];
 }
 static void occ_set(u8 on) {
   u8 i;
@@ -1113,6 +1133,7 @@ static void eye_compass(u8 fa, u8 vx, u8 vy) {        // row 0: N E S W letters 
   static const char CL[4] = {'E', 'S', 'W', 'N'};
   u8 k; s16 r; s8 c;
   ov_fill(1, 1, 0, 0);
+  pc(15, 0, '+', 15);
   for (k = 0; k < 4; k++) { r = (s16)(((k * 64 - fa + 128) & 255) - 128); c = (s8)(15 + r * 15 / 64); if (c >= 0 && c < 30) pc((u8)c, 0, CL[k], 2); }
   for (k = 0; k < 2; k++) {
     if (vx == nestx[k] && vy == nesty[k]) continue;
@@ -1120,7 +1141,6 @@ static void eye_compass(u8 fa, u8 vx, u8 vy) {        // row 0: N E S W letters 
     c = (s8)(15 + r * 15 / 64); if (c < 0) c = 0; if (c > 29) c = 29;
     pc((u8)c, 0, k ? '@' : '$', k ? 8 : 1);
   }
-  pc(15, 0, '+', 1);
 }
 // objects on the floor: up to 32, nearest drawn in front. kind: 0 black ant, 1 red ant, 2/3 carrying, 4 your queen, 5 red queen, 6 food
 static s16 obd[64]; static u8 obx[64], oby[64], obk[64], obf[64], obn;
@@ -1172,14 +1192,16 @@ static void eye(void) {                              // time stands still while 
   if (vi < MAXA) { vx = ant[vi].x; vy = ant[vi].y; vang = ant[vi].fl ? 128 : 0; } else { vx = nestx[0]; vy = nesty[0]; vang = 192; }
   fa = vang; fx = (s16)(vx * 256 + 128); fy = (s16)(vy * 256 + 128);
   hide_all(); vsync(); oam_flush();
-  BGPAL[0] = RGB(14, 21, 31);                          // sky
-  BGPAL[82] = RGB(6,13,26);  BGPAL[83] = RGB(13,21,31);  BGPAL[84] = RGB(28,24,14); BGPAL[85] = RGB(22,18,9);
-  BGPAL[86] = RGB(9,21,7);   BGPAL[87] = RGB(5,14,4);    BGPAL[88] = RGB(20,14,8);  BGPAL[89] = RGB(25,20,14);
-  BGPAL[90] = RGB(15,9,4);   BGPAL[91] = RGB(1,1,1);     BGPAL[93] = RGB(12,8,4);   BGPAL[94] = RGB(9,5,2);
-  BGPAL[95] = RGB(11,10,9);  BGPAL[96] = RGB(8,7,6);
+  BGPAL[96] = RGB(6,13,26);   BGPAL[97] = RGB(13,21,31);                                   // water
+  BGPAL[98] = RGB(28,24,14);  BGPAL[99] = RGB(26,22,12);  BGPAL[100] = RGB(23,19,10);          // sand
+  BGPAL[101] = RGB(9,21,7);   BGPAL[102] = RGB(8,19,6);   BGPAL[103] = RGB(13,25,9);           // grass
+  BGPAL[104] = RGB(20,14,8);  BGPAL[105] = RGB(18,12,7);  BGPAL[106] = RGB(25,20,14);          // hill
+  BGPAL[107] = RGB(15,9,4);   BGPAL[108] = RGB(1,1,1);                                         // nest + hole
+  BGPAL[109] = RGB(11,10,9);  BGPAL[110] = RGB(8,7,6);                                         // outside the map
+  sky_init(); pano_init();
   ov_clear();
   occ_set(1);
-  floor_tiles(TILE32 + 0x2000);                       // charblock 2 (0x06008000), 8bpp tiles 0..6 (below the terrain tiles)
+  floor_tiles();
   floor_map((volatile u16 *)0x0600B000);              // screenblock 22 (free space at the end of charblock 2), 64x64
   m7_sky(m7t[0]); m7_sky(m7t[1]);
   m7_build(m7t[0], vang, fx, fy);
@@ -1189,7 +1211,8 @@ static void eye(void) {                              // time stands still while 
   vsync(); eye_arm(m7t[0]); oam_flush();
   BG2CNT = 0x8000 | (22 << 8) | (2 << 2) | 3 | 0x80;  // BG2: priority 3, charblock 2, screenblock 22, 512x512 affine, 8bpp
   BLDCNT = 0x2044;                                    // alpha blend: BG2 over the backdrop (= sky colour)
-  DISPCNT = 0x1641;                                   // mode 1: BG1 + BG2 + OBJ
+  BG0CNT = 3 | (27 << 8); BG0HOFS = (u16)(fa * 5 + (fa >> 2)); BG0VOFS = 0;   // BG0: skyline (charblock 0, screenblock 27)
+  DISPCNT = 0x1741;                                   // mode 1: BG0 + BG1 + BG2 + OBJ
   prev = 0;
   for (;;) {
     vsync();
@@ -1210,11 +1233,11 @@ static void eye(void) {                              // time stands still while 
     if (wd != wlast) { rep = 0; wlast = wd; }
     if (td) {
       if (rt == 0) { vang = (u8)(vang + td * TURN); chg = 1; }          // a tap = one 11.25 degree click
-      else if (rt >= 6) { vang = (u8)(vang + td * 3); chg = 1; }        // held = a smooth sweep
+      else if (rt >= 14 && !(rt & 1)) { vang = (u8)(vang + td); chg = 1; }   // held = a slow, smooth sweep
       if (rt < 250) rt++;
     } else if (vang & 7) { vang = (u8)((vang + 4) & 0xF8); chg = 1; }   // let go: settle on the 8-unit grid so walking stays square
     if (wd) {
-      if (rep == 0 || (rep >= 8 && !(rep & 7))) {                       // held = keep walking, one cell every 8 frames
+      if (rep == 0 || (rep >= 20 && !(rep % 20))) {                    // held = keep walking, one cell every 20 frames
         u8 ox = vx, oy = vy; eye_step(&vx, &vy, wd);
         if (vx != ox || vy != oy) { chg = 1; sfx_lower(); } else if (!(rep & 15)) sfx_deny();   // bumped into something: a thud
       }
@@ -1224,19 +1247,20 @@ static void eye(void) {                              // time stands still while 
     if (jump) { fx = tx; fy = ty; fa = vang; }        // jumping to another ant: no glide
     if (chg) eye_status(vi, vx, vy);
     da = (s16)(((vang - fa + 128) & 255) - 128);      // ease the camera toward the wanted pose
-    fa = (s16)((fa + (da > 4 ? 4 : da < -4 ? -4 : da)) & 255);
-    fx = ease(fx, tx, 40); fy = ease(fy, ty, 40);
+    fa = (s16)((fa + (da > 2 ? 2 : da < -2 ? -2 : da)) & 255);
+    fx = ease(fx, tx, 14); fy = ease(fy, ty, 14);
     cur ^= 1;
     m7_build(m7t[cur], (u8)fa, fx, fy);               // next frame's table (the other buffer is being read by DMA)
     eye_compass((u8)fa, vx, vy);
     eye_objs((u8)fa, fx, fy, vi);
+    BG0HOFS = (u16)(fa * 5 + (fa >> 2));               // the skyline turns with you
   }
   vsync();
-  DMAR(0, 8) = 0; DMAR(1, 8) = 0;
+  DMAR(0, 8) = 0; DMAR(1, 8) = 0; DMAR(2, 8) = 0;
   occ_set(0);
   hide_all(); oam_flush();
   BGPAL[0] = sky;
-  BG2CNT = 1 | (2 << 2) | (30 << 8); DISPCNT = 0x1740; BLDCNT = 0xFF;   // back to the decor layer on BG2
+  BG0CNT = 2 | (2 << 2) | (28 << 8); BG2CNT = 1 | (2 << 2) | (30 << 8); DISPCNT = 0x1740; BLDCNT = 0xFF;   // back to terrain + decor
   ov_clear(); hud();
   while (joy()) vsync();
 }
