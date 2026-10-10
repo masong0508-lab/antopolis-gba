@@ -38,3 +38,11 @@ B: CURSOR HERE  START: LEAVE
   It mixes hills, dents, lakes, 0-2 rivers with fords, noise, smoothing, cliffs, mirror / point symmetry and 4 nest layouts.
 - Easier controls: button pictures in every hint, ANT EYE VIEW and TRADE FOOD FOR AP in the pause menu, navy panels.
 - Paths are searched in the background (no stutter on big maps); faster cartridge wait states.
+
+## In-game map editor
+- On the title screen tap SELECT. The editor opens with the map you picked (or a fresh grass map for MY MAP).
+- D-pad moves, A paints (hold A and move to paint lines), L / R change the tool (water, sand, grass, hill, berries, your nest, red nest),
+  SELECT changes the brush (1, 3, 5), B picks the tool from the square under the cursor, START opens the editor menu.
+- Editor menu: keep editing, save and play, save and quit, width / height (32 to 96), clear to grass, quit without saving.
+  It also shows the berry count and whether ants can walk from nest to nest.
+- The map is saved on the cartridge (battery save) and shows up as MY MAP on the title screen.

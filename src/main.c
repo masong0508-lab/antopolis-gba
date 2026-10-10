@@ -110,13 +110,18 @@ static u8 pfx[16], pfy[16], npatch;                                 // food patc
 static u8 shk, qfl[2], alt, alx, aly, jmp, hrow;                  // screen shake, queen hit flash, alert timer + place, SELECT jump step, decor refresh row
 // maps: 4 styles at any size, then the hand-made maps (maps.h, always 32x32), then INFINITE (a new world from a 320-bit seed)
 #define NSTYLE 4
-#define MAPN (NSTYLE + NHAND + 1)
+#define MAPN (NSTYLE + NHAND + 2)
 #define MINF (NSTYLE + NHAND)
+#define MMY  (NSTYLE + NHAND + 1)                  // MY MAP: made in the in-game editor, saved on the cartridge
+EWRAM static char cmap[MAXH * MAXH];              // MY MAP cells (w s g h f Y R), row by row
+static u8 has_my;
+static HandMap myhm = {"MY MAP", "MADE BY YOU", 32, 32, cmap};
 static const char *const MNAME[NSTYLE] = {"MEADOW", "RIVER", "LAKES", "CANYON"};
 static const char *const MDESC[NSTYLE] = {"GENTLE HILLS AND PONDS", "FIND THE FORDS", "WALK AROUND THE WATER", "CLIFFS AND RAMPS"};
-static const char *mname(u8 i) { return i < NSTYLE ? MNAME[i] : i < MINF ? HMAPS[i - NSTYLE].name : "INFINITE"; }
-static const char *mdesc(u8 i) { return i < NSTYLE ? MDESC[i] : i < MINF ? HMAPS[i - NSTYLE].desc : "A NEW WORLD EVERY GAME"; }
-static u8 tw = 48, th = 48;                                       // chosen world size (the hand-made maps are always 32x32)
+static const char *mname(u8 i) { return i < NSTYLE ? MNAME[i] : i < MINF ? HMAPS[i - NSTYLE].name : i == MINF ? "INFINITE" : "MY MAP"; }
+static const char *mdesc(u8 i) { return i < NSTYLE ? MDESC[i] : i < MINF ? HMAPS[i - NSTYLE].desc : i == MINF ? "A NEW WORLD EVERY GAME" : has_my ? "MADE BY YOU" : "NOT MADE YET: \6 TO MAKE IT"; }
+static const HandMap *hmap(u8 i) { return i == MMY ? (has_my ? &myhm : 0) : (i >= NSTYLE && i < MINF) ? &HMAPS[i - NSTYLE] : 0; }
+static u8 tw = 48, th = 48, newgame_gen_only;                                       // chosen world size (the hand-made maps are always 32x32)
 static Ant ant[MAXA];
 static u8 nestx[2], nesty[2], stock[2], qhp[2], ncnt[2], hatched[2];
 static u8 cx, cy, mana, over, camx, camy, sandbox, cheat, spd = 4, sf, appr, diff, slice;
@@ -483,6 +488,23 @@ static void save_write(void) {
   for (i = 4; i < 19; i++) s = (u8)(s + SRAM[i]);
   SRAM[19] = s;
 }
+// MY MAP on the cartridge: offset 64 'E','M','A','P', w, h, w*h cell letters, 16-bit sum
+#define MYO 64
+static void my_save(void) {
+  u16 i, n = (u16)(myhm.w * myhm.h), sum = 0;
+  SRAM[MYO] = 'E'; SRAM[MYO + 1] = 'M'; SRAM[MYO + 2] = 'A'; SRAM[MYO + 3] = 'P'; SRAM[MYO + 4] = myhm.w; SRAM[MYO + 5] = myhm.h;
+  for (i = 0; i < n; i++) { SRAM[MYO + 6 + i] = (u8)cmap[i]; sum = (u16)(sum + (u8)cmap[i]); }
+  SRAM[MYO + 6 + n] = (u8)sum; SRAM[MYO + 7 + n] = (u8)(sum >> 8); has_my = 1;
+}
+static void my_load(void) {
+  u16 i, n, sum = 0; u8 w = SRAM[MYO + 4], h = SRAM[MYO + 5];
+  has_my = 0;
+  if (SRAM[MYO] != 'E' || SRAM[MYO + 1] != 'M' || SRAM[MYO + 2] != 'A' || SRAM[MYO + 3] != 'P' || w < 32 || h < 32 || w > 96 || h > 96) return;
+  n = (u16)(w * h);
+  for (i = 0; i < n; i++) { cmap[i] = (char)SRAM[MYO + 6 + i]; sum = (u16)(sum + (u8)cmap[i]); }
+  if ((u8)sum != SRAM[MYO + 6 + n] || (u8)(sum >> 8) != SRAM[MYO + 7 + n]) return;
+  myhm.w = w; myhm.h = h; has_my = 1;
+}
 static void save_load(void) {
   u8 i, s = 0;
   for (i = 4; i < 19; i++) s = (u8)(s + SRAM[i]);
@@ -492,6 +514,7 @@ static void save_load(void) {
       hiscore[i] = (u16)(SRAM[13 + 2 * i] | (SRAM[14 + 2 * i] << 8));
     }
   } else { for (i = 0; i < 3; i++) { wins[i] = 0; best[i] = 0; hiscore[i] = 0; } save_write(); }
+  my_load();
 }
 
 static const s16 SINT[256] = {                        // sin(a), 256 = 1.0, a in 1/256 turns, 0 = east, clockwise (y points down)
@@ -814,13 +837,14 @@ static void hand_map(const HandMap *m) {           // a hand-made map from maps.
   }
 }
 static void gen_world(void) {
-  u8 x, y, k, i, t = mapt, hand = (u8)(mapt >= NSTYLE && mapt < MINF); s16 v; s8 a, b;
+  const HandMap *hm = hmap(mapt);
+  u8 x, y, k, i, t = mapt == MMY ? 0 : mapt, hand = (u8)(hm != 0); s16 v; s8 a, b;
   u16 area; u8 sc;                                 // size scale: blob counts grow with the area
-  mw = hand ? HMAPS[mapt - NSTYLE].w : tw; mh = hand ? HMAPS[mapt - NSTYLE].h : th;
+  mw = hand ? hm->w : tw; mh = hand ? hm->h : th;
   if (mw < 32) mw = 32; if (mw > 96) mw = 96; if (mh < 32) mh = 32; if (mh > 96) mh = 96; area = (u16)(W * H); sc = (u8)(area / 1024); if (!sc) sc = 1;
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) { fld[y][x] = 0; food[y][x] = 0; ph[y][x] = 0; }
   nestx[0] = (u8)(3 + (rnd() & 1)); nesty[0] = (u8)(H - 6 + (rnd() & 1)); nestx[1] = (u8)(W - 5 + (rnd() & 1)); nesty[1] = (u8)(4 + (rnd() & 1));
-  if (hand) hand_map(&HMAPS[mapt - NSTYLE]);
+  if (hand) hand_map(hm);
   else if (t == MINF) {                            // INFINITE: every knob comes from the 320-bit generator
     u8 sym, cliffy, nb, nd, nl, nr, noise, smp, cor; s16 base, amp;
     genm = 1;
@@ -1036,7 +1060,7 @@ static void logo_line(const char *s, u8 x0, u8 y0) {   // blocky 3D lettering fr
 }
 static u8 tsel;                                    // title rows: 0 LEVEL, 1 MAP, 2 WIDTH, 3 HEIGHT
 static void title_dyn(void) {
-  u8 hand = (u8)(mapt >= NSTYLE && mapt < MINF), x;
+  const HandMap *hm = hmap(mapt); u8 hand = (u8)(hm != 0), x;
   ov_fill(1, 3, 14, 17);
   ps((u8)(15 - (blen2(mdesc(mapt)) + 1) / 2), 14, mdesc(mapt), 10);
   ps(1, 15, tsel == 0 ? ">" : " ", 9); ps(3, 15, "LEVEL", tsel == 0 ? 9 : 3); ps(10, 15, "<", 10); ps(12, 15, DNAME[diff], 9); ps(17, 15, ">", 10);
@@ -1044,7 +1068,7 @@ static void title_dyn(void) {
   ps(1, 16, tsel == 1 ? ">" : " ", 9); ps(3, 16, "MAP", tsel == 1 ? 9 : 3); ps(10, 16, "<", 10); ps(12, 16, mname(mapt), 9);
   ps((u8)(12 + blen2(mname(mapt)) + 1), 16, ">", 10);
   ps(1, 17, tsel >= 2 ? ">" : " ", 9); ps(3, 17, "SIZE", tsel >= 2 ? 9 : 3);
-  if (hand) { pn(11, 17, HMAPS[mapt - NSTYLE].w, 3); ps(14, 17, "X", 10); pn(16, 17, HMAPS[mapt - NSTYLE].h, 3); ps(20, 17, "FIXED", 10); }
+  if (hand) { pn(11, 17, hm->w, 3); ps(14, 17, "X", 10); pn(16, 17, hm->h, 3); ps(20, 17, mapt == MMY ? "\6 EDIT" : "FIXED", 10); }
   else {
     x = 10;
     pc(x, 17, '<', 10); pn((u8)(x + 1), 17, tw, tsel == 2 ? 9 : 3); pc((u8)(x + 3), 17, '>', 10);
@@ -1063,8 +1087,8 @@ static void title_scene(void) {
   title_dyn();
 }
 static u8 wx[5];
-static void title(void) {
-  u8 i, fr = 0, on = 255, bl; u16 k, p, prev = 0;
+static u8 title(void) {                            // returns 0 = play, 1 = open the map editor
+  u8 i, fr = 0, on = 255, bl, edit = 0, selused = 0, selprev = 0; u16 k, p, prev = 0;
   DISPCNT = 0x80; BLDY = 16;
   ov_clear(); title_scene();
   wx[0] = 14; wx[1] = 62; wx[2] = 112; wx[3] = 200; wx[4] = 150;
@@ -1089,9 +1113,13 @@ static void title(void) {
       sfx_food(); title_dyn();
     }
     if (p & J_A) { tutor = 1; sandbox = 0; break; }          // A alone = guided tutorial
-    if (p & J_START) { tutor = 0; sandbox = (k & J_SEL) ? 1 : 0; break; }
+    if (p & J_START) { selused = 1; tutor = 0; sandbox = (k & J_SEL) ? 1 : 0; if (mapt == MMY && !has_my) { edit = 1; sandbox = 0; } break; }
+    if (p & J_SEL) selused = 0;
+    if ((k & J_SEL) && (k & ~J_SEL)) selused = 1;               // SELECT + another button (SEL+START = sandbox) is not "edit"
+    if (selprev && !(k & J_SEL) && !selused) { edit = 1; break; }   // SELECT tapped alone: open the map editor
+    selprev = (u8)(k & J_SEL);
     bl = (fr & 63) < 44;
-    if (bl != on) { on = bl; ov_fill(1, 3, 1, 1); if (on) ps(5, 1, "\5 PLAY     \1 LEARN HOW", 9); }
+    if (bl != on) { on = bl; ov_fill(1, 3, 1, 1); if (on) ps(2, 1, "\5 PLAY  \1 LEARN  \6 MAP EDITOR", 9); }
     for (i = 0; i < 5; i++) {                      // 3 black ants march right, 2 red ants left, along the grass
       if (!(fr & 1)) { if (i < 3) { if (++wx[i] >= 248) wx[i] = 0; } else wx[i] = wx[i] ? wx[i] - 1 : 247; }
       spr(i, (int)wx[i] - 8, 148, (u8)(3 + (((fr >> 3) + i) & 1)), i < 3 ? 0 : 1, 0, i >= 3);
@@ -1102,6 +1130,7 @@ static void title(void) {
   hide_all(); oam_flush();
   ov_clear();
   while (joy()) vsync();
+  return edit;
 }
 
 // ---------- ANT EYE: first-person view from a black ant (SELECT+START) ----------
@@ -2241,6 +2270,180 @@ static void gfx_init(void) {                          // palettes, tiles, maps, 
   BG1CNT = 0 | (29 << 8);                             // priority 0
   hide_all(); oam_flush();
 }
+
+// ---------- MAP EDITOR (title screen: tap SELECT). Paint a map, it is saved on the cartridge as MY MAP ----------
+#define ET_N 7
+static const char *const ETN[ET_N] = {"WATER", "SAND", "GRASS", "HILL", "BERRIES", "YOUR NEST", "RED NEST"};
+static u8 etool = 3, ebr = 1;
+static void ed_bar(void) {
+  static const u8 SWT[ET_N] = {2, 2, 2, 2, 0, 0, 0}, SWP[ET_N] = {14, 2, 13, 4, 8, 1, 8};
+  static const char SWC[ET_N] = {0, 0, 0, 0, '%', '$', '@'};
+  u8 i, x;
+  ov_fill(1, 1, 17, 19);
+  ps(0, 17, "\1 PAINT \3\4 TOOL \5 MENU", 1); pn(24, 17, mw, 10); pc(26, 17, 'X', 10); pn(27, 17, mh, 10);
+  for (i = 0; i < ET_N; i++) {
+    x = (u8)(1 + i * 4);
+    pc((u8)(x - 1), 18, i == etool ? '>' : ' ', 2);
+    if (SWC[i]) { pc(x, 18, SWC[i], SWP[i]); pc((u8)(x + 1), 18, SWC[i], SWP[i]); }
+    else { BGMAP1[18 * 32 + x] = BGMAP1[18 * 32 + x + 1] = (u16)(SWT[i] | (SWP[i] << 12)); }
+  }
+  ps(0, 19, ETN[etool], 2); ps(11, 19, "\6 BRUSH", 1); pc(19, 19, (char)('0' + ebr), 1); ps(23, 19, "\2 PICK", 1);
+}
+static void ed_area(s8 x0, s8 y0, s8 r) {          // redraw cells around a spot (edges and nest mounds change)
+  s8 x, y;
+  for (y = (s8)(y0 - r); y <= y0 + r; y++) for (x = (s8)(x0 - r); x <= x0 + r; x++) if (x >= 0 && y >= 0 && x < W && y < H) draw_cell((u8)x, (u8)y);
+}
+static void ed_put(s8 x, s8 y) {                    // the current tool on one cell
+  if (x < 0 || y < 0 || x >= W || y >= H) return;
+  if (etool < 4) {
+    if (is_nest((u8)x, (u8)y) && etool == 0) return;   // a nest never sits in water
+    hgt[y][x] = etool; food[y][x] = 0;
+  } else if (etool == 4) { if (!hgt[y][x]) hgt[y][x] = 2; if (!is_nest((u8)x, (u8)y)) food[y][x] = 1; }
+}
+static void ed_paint(void) {
+  s8 r = (s8)(ebr >> 1), dx, dy; u8 t, ox, oy;
+  if (etool >= 5) {                                 // move a nest
+    t = (u8)(etool - 5);
+    if (cx == nestx[t ^ 1] && cy == nesty[t ^ 1]) return;
+    ox = nestx[t]; oy = nesty[t]; nestx[t] = cx; nesty[t] = cy;
+    if (!hgt[cy][cx]) hgt[cy][cx] = 2;
+    food[cy][cx] = 0;
+    ed_area((s8)ox, (s8)oy, 2); ed_area((s8)cx, (s8)cy, 2);
+    return;
+  }
+  for (dy = -r; dy <= r; dy++) for (dx = -r; dx <= r; dx++) ed_put((s8)(cx + dx), (s8)(cy + dy));
+  ed_area((s8)cx, (s8)cy, (s8)(r + 1));
+}
+static void ed_pick(void) {
+  etool = (cx == nestx[0] && cy == nesty[0]) ? 5 : (cx == nestx[1] && cy == nesty[1]) ? 6 : food[cy][cx] ? 4 : hgt[cy][cx];
+}
+static void ed_store(void) {                        // the world -> MY MAP letters -> cartridge
+  static const char LC[4] = {'w', 's', 'g', 'h'};
+  u8 x, y; char c;
+  for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    c = LC[hgt[y][x]];
+    if (food[y][x] && hgt[y][x]) c = 'f';
+    if (x == nestx[0] && y == nesty[0]) c = 'Y';
+    if (x == nestx[1] && y == nesty[1]) c = 'R';
+    cmap[y * W + x] = c;
+  }
+  myhm.w = mw; myhm.h = mh; my_save();
+}
+static void ed_resize(u8 nw, u8 nh) {
+  u8 x, y, i;
+  for (y = 0; y < nh; y++) for (x = 0; x < nw; x++) if (x >= mw || y >= mh) { hgt[y][x] = 2; food[y][x] = 0; ph[y][x] = 0; }
+  mw = nw; mh = nh;
+  for (i = 0; i < 2; i++) { if (nestx[i] >= W) nestx[i] = (u8)(W - 5); if (nesty[i] >= H) nesty[i] = (u8)(H - 5); if (!hgt[nesty[i]][nestx[i]]) hgt[nesty[i]][nestx[i]] = 2; }
+  if (cx >= W) cx = (u8)(W - 1); if (cy >= H) cy = (u8)(H - 1);
+}
+#define EM_N 7
+static const char *const EITEM[EM_N] = {"KEEP EDITING", "SAVE AND PLAY", "SAVE AND QUIT", "WIDTH", "HEIGHT", "CLEAR TO GRASS", "QUIT WITHOUT SAVING"};
+static void em_draw(u8 sel, u8 conf) {
+  u8 i, y, x, n = 0, ok;
+  for (y = 0; y < H; y++) for (x = 0; x < W; x++) n += (u8)(food[y][x] && hgt[y][x] && n < 250);
+  bfs(0); ok = dnp[0][nesty[1]][nestx[1]] != NOPATH;
+  ov_fill(1, 3, 0, 19);
+  big(1, "MAP EDITOR");
+  pm_rule(3);
+  ps(2, 4, "SIZE", 9); pn(11, 4, mw, 3); ps(14, 4, "X", 10); pn(16, 4, mh, 3);
+  ps(2, 5, "BERRIES", 9); pn(11, 5, n, 3); if (n > 16) ps(14, 5, "GAME USES 16", 10);
+  ps(2, 6, "PATH", 9); ps(11, 6, ok ? "ANTS CAN WALK" : "NONE: GAME CUTS ONE", ok ? 13 : 8);
+  ps(11, 7, "NEST TO NEST", 10);
+  pm_rule(9);
+  for (i = 0; i < EM_N; i++) {
+    y = (u8)(10 + i);
+    if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
+    ps(3, y, (conf && i == sel) ? "SURE? \1 YES  \2 NO" : EITEM[i], i == sel ? 9 : 3);
+    if (i == 3) { pc(18, y, '<', 10); pn(20, y, mw, 9); pc(23, y, '>', 10); }
+    if (i == 4) { pc(18, y, '<', 10); pn(20, y, mh, 9); pc(23, y, '>', 10); }
+  }
+  ps(1, 18, sel == 3 || sel == 4 ? "LEFT RIGHT: CHANGE SIZE" : "\1 CHOOSE   \5 BACK", 10);
+}
+static u8 ed_menu(void) {                           // 0 keep editing, 1 save + play, 2 save + quit, 3 quit
+  u8 sel = 0, conf = 0, r = 255; u16 k, p, prev;
+  hide_all(); vsync(); oam_flush();
+  while (joy()) vsync();
+  em_draw(sel, conf); prev = 0;
+  while (r == 255) {
+    vsync(); k = joy(); p = k & ~prev; prev = k;
+    if (!p) continue;
+    if (conf) { if (p & J_A) r = 3; else { conf = 0; em_draw(sel, conf); } continue; }
+    if (p & (J_START | J_B)) { r = 0; break; }
+    if (p & J_UP)   { sel = sel ? sel - 1 : EM_N - 1; sfx_food(); }
+    if (p & J_DOWN) { sel = sel == EM_N - 1 ? 0 : sel + 1; sfx_food(); }
+    if ((sel == 3 || sel == 4) && (p & (J_LEFT | J_RIGHT))) {
+      s8 d = (p & J_RIGHT) ? 8 : -8; u8 v = (u8)((sel == 3 ? mw : mh) + d);
+      if (v >= 32 && v <= 96) { ed_resize(sel == 3 ? v : mw, sel == 4 ? v : mh); sfx_mana(); }
+    }
+    if (p & J_A) {
+      if (sel == 0) r = 0; else if (sel == 1) r = 1; else if (sel == 2) r = 2;
+      else if (sel == 5) { u8 x, y; for (y = 0; y < H; y++) for (x = 0; x < W; x++) { hgt[y][x] = 2; food[y][x] = 0; } sfx_flood(); }
+      else if (sel == 6) { conf = 1; sfx_deny(); }
+    }
+    em_draw(sel, conf);
+  }
+  while (joy()) vsync();
+  return r;
+}
+static u8 editor(void) {                            // returns 1 = play MY MAP now
+  u16 k, p, prev = 0, last = 0; u8 dirs, rep = 0, fire, mx, my, i, res = 255, r;
+  DISPCNT = 0x80;
+  if (mapt == MMY && !has_my) {                     // a fresh map: grass, with the two nests
+    mw = tw; mh = th;
+    for (my = 0; my < H; my++) for (mx = 0; mx < W; mx++) { hgt[my][mx] = 2; food[my][mx] = 0; ph[my][mx] = 0; }
+    nestx[0] = 4; nesty[0] = (u8)(H - 6); nestx[1] = (u8)(W - 5); nesty[1] = 5; npatch = 0;
+  } else {                                          // start from the map chosen on the title (or MY MAP itself)
+    newgame_gen_only = 1; gen_world(); newgame_gen_only = 0;
+    for (my = 0; my < H; my++) for (mx = 0; mx < W; mx++) { food[my][mx] = 0; ph[my][mx] = 0; }
+    for (i = 0; i < npatch; i++) if (pfx[i] < W && pfy[i] < H && hgt[pfy[i]][pfx[i]]) food[pfy[i]][pfx[i]] = 1;
+  }
+  for (i = 0; i < MAXA; i++) ant[i].alive = 0;
+  cx = (u8)(nestx[0] + 2); cy = (u8)(nesty[0] - 2); if (cx >= W) cx = (u8)(W - 1);
+  camx = 0; camy = (u8)(H - VH); follow(); scx = (s16)camx * 8; scy = (s16)camy * 8;
+  win_all(); ov_clear(); ed_bar();
+  BG0HOFS = BG2HOFS = (u16)scx; BG0VOFS = BG2VOFS = (u16)scy; BG2CNT = 1 | (2 << 2) | (30 << 8);
+  hide_all(); place16(MAXA + 2, 20, 2, cx * 8, cy * 8, 0); oam_flush();
+  DISPCNT = 0x1740; BLDY = 16;
+  music_start(); fade(16, 0);
+  while (joy()) vsync();
+  while (res == 255) {
+    vsync(); frc++;
+    BG0HOFS = BG2HOFS = (u16)scx; BG0VOFS = BG2VOFS = (u16)scy; oam_flush();
+    BGPAL[176 + 3] = (frc & 32) ? RGB(14,22,31) : RGB(10,18,30); BGPAL[176 + 14] = (frc & 32) ? RGB(10,18,30) : RGB(14,22,31);
+    OBJPAL[32 + 3] = RGB(31, 26 + ((frc >> 2) & 3), (frc & 16) ? 4 : 12);
+    k = joy(); p = k & ~prev; prev = k;
+    dirs = (u8)(k & 15); mx = cx; my = cy;
+    if (dirs != last) { rep = 0; last = dirs; }
+    if (dirs) {
+      fire = (rep == 0) || (rep >= 10 && (rep % 3) == 1);
+      if (rep < 250) rep++;
+      if (fire) {
+        if ((dirs & J_LEFT) && cx > 0) cx--;
+        if ((dirs & J_RIGHT) && cx < W - 1) cx++;
+        if ((dirs & J_UP) && cy > 0) cy--;
+        if ((dirs & J_DOWN) && cy < H - 1) cy++;
+      }
+    }
+    if (p & J_L) { etool = (u8)((etool + ET_N - 1) % ET_N); sfx_food(); ed_bar(); }
+    if (p & J_R) { etool = (u8)((etool + 1) % ET_N); sfx_food(); ed_bar(); }
+    if (p & J_SEL) { ebr = ebr == 1 ? 3 : ebr == 3 ? 5 : 1; sfx_food(); ed_bar(); }
+    if (p & J_B) { ed_pick(); sfx_spawn(); ed_bar(); }
+    if ((k & J_A) && ((p & J_A) || mx != cx || my != cy)) { ed_paint(); if (p & J_A) sfx_raise(); }
+    if (p & J_START) {
+      r = ed_menu();
+      if (r == 0) { ov_clear(); ed_bar(); follow(); scx = (s16)camx * 8; scy = (s16)camy * 8; win_all(); prev = joy(); continue; }
+      if (r == 1 || r == 2) ed_store();
+      res = r;
+    }
+    follow(); scroll_step(); win_sync();
+    place16(MAXA + 2, 20, 2, cx * 8, cy * 8, 0);
+  }
+  music_stop(); fade(0, 16); hide_all(); oam_flush(); ov_clear();
+  if (res == 1) { mapt = MMY; return 1; }
+  if (res == 2) mapt = MMY;
+  return 0;
+}
+
 int main(void) {
   DISPCNT = 0x80;
   IO16(0x204) = 0x4317;                               // WAITCNT: faster cartridge reads + prefetch (standard on GBA games)
@@ -2249,5 +2452,5 @@ int main(void) {
   gfx_init();
   save_load();
   diff = 1;
-  for (;;) { title(); newgame(); play(); }
+  for (;;) { if (title()) { if (editor()) { newgame(); play(); } continue; } newgame(); play(); }
 }
