@@ -124,6 +124,51 @@ for (a, b) in [(1, 1), (14, 1), (1, 14), (14, 14)]:
 CUR16 = [[[C[ty * 8 + y][tx * 8 + x] for x in range(8)] for y in range(8)] for ty in range(2) for tx in range(2)]
 SPR = [ANT_A, CUR8, QUEEN8, ANT_A, ANT_B, CAR_A, CAR_B, SOL_A, SOL_B, PLUS, SPLASH, PUFF, HEART, EMPTY, EMPTY, EMPTY] + QUEEN + CUR16
 
+
+# ---------------- big 32x32 sprites for the ANT EYE view (scaled by the hardware) ----------------
+def canvas(): return [[0] * 32 for _ in range(32)]
+def ell(img, cx, cy, rx, ry, c):
+    for y in range(32):
+        for x in range(32):
+            dx, dy = (x - cx) / rx, (y - cy) / ry
+            if dx * dx + dy * dy <= 1.0: img[y][x] = c
+def line(img, x0, y0, x1, y1, c):
+    n = max(abs(x1 - x0), abs(y1 - y0), 1)
+    for i in range(n + 1):
+        img[round(y0 + (y1 - y0) * i / n)][round(x0 + (x1 - x0) * i / n)] = c
+def big_ant(carry=False, queen=False):
+    A = canvas()
+    # legs (behind the body), 3 pairs from the thorax, feet on the ground (row 29)
+    for (x0, x1) in [(13, 8), (15, 15), (17, 22)]:
+        line(A, x0, 20, (x0 + x1) // 2, 24, 1); line(A, (x0 + x1) // 2, 24, x1, 29, 1)
+    # outline shapes, then fills: gaster (rear), thorax, head
+    ell(A, 7.5, 17.5, 7.0, 5.6, 1); ell(A, 15.5, 18.5, 3.6, 3.0, 1); ell(A, 23.5, 15.5, 5.0, 4.4, 1)
+    ell(A, 7.5, 17.5, 6.0, 4.6, 2); ell(A, 15.5, 18.5, 2.6, 2.0, 2); ell(A, 23.5, 15.5, 4.0, 3.4, 2)
+    ell(A, 5.5, 15.0, 2.6, 1.6, 3); ell(A, 22.0, 13.5, 1.6, 1.0, 3)
+    A[14][25] = 6; A[14][26] = 6; A[15][25] = 1                  # eye
+    line(A, 26, 12, 29, 6, 1); line(A, 29, 6, 31, 5, 1)          # antenna
+    line(A, 25, 11, 26, 5, 1)
+    line(A, 27, 19, 30, 21, 1)                                    # mandible
+    if carry:
+        ell(A, 29.0, 20.5, 2.6, 2.6, 1); ell(A, 29.0, 20.5, 1.7, 1.7, 5); A[19][28] = 6
+    if queen:
+        for (x, y) in [(5,8),(6,8),(7,8),(8,8),(9,8),(10,8),(11,8),(4,9),(5,9),(6,9),(7,9),(8,9),(9,9),(10,9),(11,9),(12,9),
+                       (6,10),(7,10),(8,10),(9,10),(10,10),(11,10),(12,10),(13,10),(8,11),(9,11),(10,11),(11,11),(12,11),(13,11),(14,11)]:
+            A[y][x] = 6                                           # wings
+        for (x, y) in [(5,7),(6,7),(7,7),(8,7),(9,7),(10,7),(3,9),(14,10),(15,11)]: A[y][x] = 1
+        for x in range(21, 27): A[10][x] = 5; A[9][x] = 5
+        for x in (21, 23, 25): A[8][x] = 5; A[7][x] = 5
+        A[8][26] = 5; A[7][26] = 5
+    return A
+def big_food():
+    F = canvas()
+    for (cx, cy) in [(10, 24), (16, 22), (22, 24), (13, 27.5), (19, 27.5), (16, 17)]:
+        ell(F, cx, cy, 4.2, 3.4, 1); ell(F, cx, cy, 3.2, 2.4, 2); F[int(cy) - 1][int(cx) - 1] = 3
+    line(F, 16, 13, 18, 9, 4); line(F, 18, 9, 21, 8, 4); F[8][19] = 4; F[7][20] = 4
+    return F
+def split32(img): return [[[img[ty * 8 + y][tx * 8 + x] for x in range(8)] for y in range(8)] for ty in range(4) for tx in range(4)]
+BIG = split32(big_ant()) + split32(big_ant(carry=True)) + split32(big_ant(queen=True)) + split32(big_food())
+
 def pack(t): return [sum(t[y][x] << (4 * x) for x in range(8)) for y in range(8)]
 def emit(name, tiles):
     out = ["static const u32 %s[%d] = {" % (name, len(tiles) * 8)]
@@ -139,6 +184,8 @@ with open(sys.argv[1], "w") as f:
     f.write("// DECO: food A, food B, trail weak, trail strong, nest mound 3x3\n" + emit("DECO", DECO) + "\n")
     f.write("// SPR: 0 ant, 1 small cursor, 2 small queen, 3/4 ant walk, 5/6 carrying, 7/8 soldier, 9 +1, 10 splash, 11 puff, 12 heart, 16-19 queen 16x16, 20-23 cursor 16x16\n")
     f.write(emit("SPRT", SPR) + "\n")
+    f.write("// BIGS: ANT EYE 32x32 sprites (OBJ tiles 24..87): ant, ant carrying food, queen (ant palettes), food pile (decor palette)\n")
+    f.write(emit("BIGS", BIG) + "\n")
     f.write(emit_pal("PAL_TERR", TERR_PAL) + "\n" + emit_pal("PAL_DEC", DEC_PAL) + "\n")
     f.write(emit_pal("PAL_ANT0", ANT_PAL[0]) + "\n" + emit_pal("PAL_ANT1", ANT_PAL[1]) + "\n" + emit_pal("PAL_FX", FX_PAL) + "\n")
 
@@ -154,7 +201,7 @@ def put(img, t, ox, oy, pal, sc, transparent_bg=None):
                 for b in range(sc): img.putpixel((ox + x * sc + a, oy + y * sc + b), col)
 if len(sys.argv) > 2:
     sc = 3
-    img = Image.new("RGB", (81 * 8 * 1 + 10, 4 * 8 + 300), (40, 40, 40))
+    img = Image.new("RGB", (740, 4 * 8 + 300), (40, 40, 40))
     for l in range(4):
         for c in range(81): put(img, TERR[l * 81 + c], c * 8, l * 8, TERR_PAL, 1)
     for i, t in enumerate(DECO): put(img, t, 10 + i * 26, 50, DEC_PAL, 3, (60, 120, 50))
@@ -164,4 +211,7 @@ if len(sys.argv) > 2:
     for i in range(9): put(img, MOUND[i], 10 + (i % 3) * 32, 180 + (i // 3) * 32, DEC_PAL, 4, (60, 120, 50))
     for i in range(4): put(img, QUEEN[i], 140 + (i % 2) * 32, 180 + (i // 2) * 32, ANT_PAL[0], 4, (60, 120, 50))
     for i in range(4): put(img, CUR16[i], 230 + (i % 2) * 32, 180 + (i // 2) * 32, [(0,0,0),(2,2,2),(0,0,0),(31,28,4)]+[(0,0,0)]*12, 4, (60, 120, 50))
+    for k in range(4):
+        for i in range(16):
+            put(img, BIG[k * 16 + i], 330 + k * 100 + (i % 4) * 24, 180 + (i // 4) * 24, DEC_PAL if k == 3 else ANT_PAL[k == 1], 3, (60, 120, 50))
     img.save(sys.argv[2])
