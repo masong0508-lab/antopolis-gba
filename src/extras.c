@@ -85,16 +85,16 @@ static void extras(void) {
     pm_rule(1);
     if (tab == 0) {
       ps(2, 2, "EARNED", 10); pn(9, 2, ach_count(), 9); ps(12, 2, "OF 32", 10);
-      if (sel < top) top = sel; if (sel >= top + 11) top = (u8)(sel - 10);
-      for (i = 0; i < 11 && top + i < NACH; i++) { u8 a = (u8)(top + i), y = (u8)(4 + i);
+      if (sel < top) top = sel; if (sel >= top + 5) top = (u8)(sel - 4);
+      for (i = 0; i < 5 && top + i < NACH; i++) { u8 a = (u8)(top + i), y = (u8)(4 + i * 2);
         if (a == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
         pc(3, y, ach_has(a) ? '$' : '-', ach_has(a) ? 9 : 15); ps(5, y, ACN[a], ach_has(a) ? (a == sel ? 9 : 3) : 15); }
       pm_rule(15); ps(1, 16, ACD[sel], 3);
       if (ACR[sel][0]) { ps(1, 17, "UNLOCKS:", 10); ps(10, 17, ACR[sel], ach_has(sel) ? 13 : 15); }
     } else if (tab == 1) {
       ps(2, 2, "CHEATS ON", 10); pn(12, 2, cht_on(), cht_on() ? 13 : 9); if (cht_on()) ps(16, 2, "NO TROPHIES", 8);
-      if (sel < top) top = sel; if (sel >= top + 11) top = (u8)(sel - 10);
-      for (i = 0; i < 11 && top + i < NCHT; i++) { u8 a = (u8)(top + i), y = (u8)(4 + i), ok = cht_ok(a), lv;
+      if (sel < top) top = sel; if (sel >= top + 5) top = (u8)(sel - 4);
+      for (i = 0; i < 5 && top + i < NCHT; i++) { u8 a = (u8)(top + i), y = (u8)(4 + i * 2), ok = cht_ok(a), lv;
         if (a == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
         if (a >= NSEC && !ok) { ps(3, y, "? ? ? SECRET", a == sel ? 8 : 15); continue; }
         ps(3, y, CHN[a], ok ? (a == sel ? 9 : 3) : 15);

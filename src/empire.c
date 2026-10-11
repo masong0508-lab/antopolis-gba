@@ -7,6 +7,9 @@
 #define EMT 512                                    // building tiles in charblock 2 (tile 512 = 0x0600C000, screenblocks 24-25)
 #define ARMT_T 88                                  // army banner sprite tiles
 static u8 eshell, earm, ebat_pal; static const char *ebat_name = "RED";
+static u8 ecity;                                   // 0 empire, 1 ANT CITY, 2 ANTVERSE (see city.c)
+static s32 cash;                                   // ANT CITY money
+static u16 city_tile(u8 x, u8 y); static const char *city_can(u8 t, u8 x, u8 y); static void city_tick(void), city_cycle(void); static u8 city_build_menu(void);
 static void vram_reload(void);
 #include "battle.c"
 
@@ -24,7 +27,7 @@ static const char *const ERAN[4] = {"DIRT AGE", "LEAF AGE", "AMBER AGE", "CRYSTA
 // ---------- buildings ----------
 enum { B_NONE, B_NEST, B_FARM, B_PIT, B_HOUSE, B_BARR, B_TOWER, B_ARCH, B_MARKET, B_TEMPLE, B_MINE, B_OUTPOST, B_WONDER, B_APHID,
        B_GRAN, B_WALL, B_SPIKE, B_NURS, B_HEAL, B_ARMORY, B_SPIT, B_GARDEN, B_DANCE, B_STATUE, B_ACAD, B_VAULT, B_PALACE, B_EMBASSY,
-       B_BRIDGE, B_TRADE, B_N };
+       B_BRIDGE, B_TRADE, B_GUARD, B_CLINIC, B_SCHOOL, B_AIR, B_PUMP, B_PARK, B_STADIUM, B_ARCO, B_N };
 typedef struct { const char *nm, *d1, *d2; u8 f, d, a, jobs, hp, tech, ter, tile; } BDef;   // ter: 1 water 2 sand 4 grass 8 hill
 static const BDef BD[B_N] = {
   {"", "", "", 0, 0, 0, 0, 0, 0, 0, 0},
@@ -57,6 +60,15 @@ static const BDef BD[B_N] = {
   {"EMBASSY", "RIVALS ATTACK", "LESS OFTEN", 0, 30, 20, 1, 15, T_PIONEER, 14, 30},
   {"BRIDGE", "BUILD ON WATER", "ANTS CAN CROSS", 0, 10, 0, 0, 20, T_BRICK, 1, 31},
   {"TRADE POST", "5 FOOD BECOMES", "2 AMBER", 0, 20, 0, 1, 12, T_BARTER, 14, 32},
+  // ANT CITY services (paid with money)
+  {"GUARD POST", "STOPS CRIME NEARBY", "AND BITES BEETLES", 0, 20, 5, 0, 20, T_DIG, 14, 61},
+  {"CLINIC", "KEEPS ANTS HEALTHY", "LEVEL 3 HOMES NEED ONE", 0, 20, 10, 0, 15, T_DIG, 14, 62},
+  {"SCHOOL", "SMARTER ANTS", "LEVEL 3 NEEDS ONE", 0, 25, 10, 0, 15, T_DIG, 14, 63},
+  {"AIR SHAFT", "FRESH AIR: ZONES", "CAN GROW PAST LEVEL 1", 0, 15, 0, 0, 15, T_DIG, 14, 64},
+  {"DEW PUMP", "PUTS OUT FIRES", "LEVEL 3 WORKS NEED ONE", 0, 15, 5, 0, 15, T_DIG, 14, 65},
+  {"BIG PARK", "LAND VALUE UP", "LESS SMOG NEARBY", 0, 10, 0, 0, 10, T_DIG, 14, 66},
+  {"STADIUM", "LAND VALUE WAY UP", "FOR A TOWN OR BIGGER", 0, 60, 30, 0, 30, T_DIG, 14, 67},
+  {"SKY MOUND", "THE CITY WONDER", "FOR A METROPOLIS", 50, 120, 80, 0, 60, T_DIG, 14, 68},
 };
 // land tools in the build menu
 enum { L_PILE = 100, L_DIG, L_ZH, L_ZF, L_ZW, L_ZX };
@@ -125,7 +137,7 @@ EWRAM static u8 ebi[96][96], ezt[96][96];       // building index + 1; territory
 #define ETER(y, x) (ezt[y][x] & 7)
 #define EZN(y, x) ((ezt[y][x] >> 3) & 3)
 static void set_ter(u8 y, u8 x, u8 v) { ezt[y][x] = (u8)((ezt[y][x] & ~7) | v); }
-static void set_zn(u8 y, u8 x, u8 v) { ezt[y][x] = (u8)((ezt[y][x] & 7) | (v << 3)); }
+static void set_zn(u8 y, u8 x, u8 v) { ezt[y][x] = (u8)((ezt[y][x] & ~0x18) | (v << 3)); }
 EWRAM static u16 efld[MAXH][MAXW];
 typedef struct { u8 x, y, ox, oy, age, team, alive, ord, fl, foe; u16 w, s, m, peak; } EA;   // team 0 you, 1..3 rivals; ord 0 hold 1 march 2 home 3 attack
 #define EAN 14
@@ -167,9 +179,10 @@ static void emp_dec(u8 x, u8 y) {
   if (ebi[y][x]) { EB *b = &ebl[ebi[y][x] - 1]; t = b->t == B_WONDER ? (wprog >= 40 ? 11 : 12) : BD[b->t].tile; }
   else {
     for (i = 0; i < enriv; i++) if (ralive[i] && x == rx[i] && y == ry[i]) t = 0;
+    if (t == 0xFFFF && ecity) t = city_tile(x, y);
     if (t == 0xFFFF) {
       e = ETER(y, x);
-      if (EZN(y, x)) t = (u16)(32 + EZN(y, x));
+      if (EZN(y, x) && !ecity) t = (u16)(32 + EZN(y, x));
       else if (e == 1 && ter_edge(x, y, 1)) t = 14;
       else if (e >= 2 && ter_edge(x, y, e)) t = 15;
     }
@@ -186,6 +199,11 @@ static void terr_disc(u8 cx0, u8 cy0, u8 r, u8 v, u8 over) {
 }
 static void terr_calc(void) {
   u8 x, y, i;
+  if (ecity == 1) {                                // ANT CITY: the whole map is yours
+    for (y = 0; y < H; y++) for (x = 0; x < W; x++) set_ter(y, x, 1);
+    for (y = wy0; y < (u8)(wy0 + 32) && y < H; y++) for (x = wx0; x < (u8)(wx0 + 32) && x < W; x++) emp_dec(x, y);
+    return;
+  }
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) set_ter(y, x, 0);
   for (i = 0; i < enriv; i++) if (ralive[i]) terr_disc(rx[i], ry[i], 5, (u8)(2 + i), 1);
   for (i = 0; i < nbl; i++) {
@@ -377,8 +395,9 @@ static void ecycle(void) {
   f -= eat; food_net = (s8)(f < -99 ? -99 : f > 99 ? 99 : f);
   if ((s32)rf + f < 0) { rf = 0; starve = 1; } else radd(&rf, f);
   radd(&rd, d); radd(&ra, a);
-  popcap = (u8)(8 + 5 * nb_of[B_HOUSE]);
-  if (starve) { if (pop > 3) pop--; say("FAMINE! BUILD MORE FARMS"); }
+  if (!ecity) popcap = (u8)(8 + 5 * nb_of[B_HOUSE]);
+  if (ecity) {}
+  else if (starve) { if (pop > 3) pop--; say("FAMINE! BUILD MORE FARMS"); }
   else if (pop < popcap && rf > pop) { pop = (u8)(pop + 1 + (nb_of[B_NURS] > 3 ? 3 : nb_of[B_NURS])); if (pop > popcap) pop = popcap; }
   if (eres != 255) { erp += (u16)(r * RESV[cht[13]]); if (cht[13] == 3) erp = tcost(); if (erp >= tcost()) { erp -= tcost(); etech |= (u16)(1 << eres); say("RESEARCH DONE! \5 MENU"); sfx_mana(); eres = 255; } }
   else if (!(ecyc & 7)) say("PICK RESEARCH: \5 MENU");
@@ -398,7 +417,7 @@ static void ecycle(void) {
   if (fac_avg() < 15 && edict != 2) { if (++lowhap >= 5) end_game(0, 1); else say("REVOLUTION IS NEAR!"); } else lowhap = 0;
   if (!--elect_t) { elect_t = 45; eelection(); }
   // SimCity zones: the colony builds what it needs on painted land, at half price
-  {
+  if (!ecity) {
     u8 want[4] = {0, (u8)(pop + 1 >= popcap), (u8)(food_net < 3), (u8)(unemp == 0 && pop + 2 < popcap)}, built = 0; u16 tries;
     for (tries = 0; tries < 300 && built < ZONEV[cht[9]]; tries++) {
       x = (u8)(rnd() % W); y = (u8)(rnd() % H);
@@ -550,7 +569,8 @@ static void eslice_run(void) {
   if (++eslice < 8) return;
   eslice = 0; gt++;
   armies_tick();
-  if (!(gt % 30)) ecycle();
+  if (ecity) city_tick();
+  if (!(gt % 30)) { if (ecity) city_cycle(); if (ecity != 1) ecycle(); }
 }
 
 // ---------- drawing ----------
@@ -590,7 +610,7 @@ static void edraw_sprites(void) {
   place16(s++, 16, 0, nestx[0] * 8, nesty[0] * 8 - ((frc >> 4) & 1), 0);
   for (i = 0; i < 3; i++, s++) { if (i < enriv && ralive[i]) place16(s, 16, RPAL[i], rx[i] * 8, ry[i] * 8, 1); else spr_hide(s); }
   for (; s < MAXA + 2; s++) spr_hide(s);
-  place16(MAXA + 2, 20, (eplace && can_build(eplace, cx, cy, 1)) ? 5 : 2, cx * 8, cy * 8, 0);
+  place16(MAXA + 2, 20, (eplace && (ecity ? city_can(eplace, cx, cy) != 0 : can_build(eplace, cx, cy, 1) != 0)) ? 5 : 2, cx * 8, cy * 8, 0);
   for (i = 0; i < 8; i++) { Fx *f = &fx[i]; if (!f->t) { spr_hide(MAXA + 3 + i); continue; } f->t--; if (f->tile != FX_PUFF && (f->t & 1)) f->y--; place_px(MAXA + 3 + i, f->tile, 3, f->x, f->y, 0); }
 }
 
@@ -649,9 +669,9 @@ static void research_menu(void) {
   for (;;) {
     ov_fill(1, 3, 0, 19); ui_full(); big(0, "RESEARCH");
     ps(1, 2, ERAN[era_now()], 9); ps(14, 2, "\5 BACK", 10);
-    if (sel < top) top = sel; if (sel >= top + 11) top = (u8)(sel - 10);
-    for (i = 0; i < 11 && top + i < T_N; i++) {
-      k = (u8)(top + i); { u8 y = (u8)(4 + i), can = (TREQ[k] & etech) == TREQ[k];
+    if (sel < top) top = sel; if (sel >= top + 6) top = (u8)(sel - 5);
+    for (i = 0; i < 6 && top + i < T_N; i++) {
+      k = (u8)(top + i); { u8 y = (u8)(4 + i * 2), can = (TREQ[k] & etech) == TREQ[k];
       if (k == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
       ps(3, y, TNAME[k], has_t(k) ? 13 : !can ? 15 : k == sel ? 9 : 3);
       ps(20, y, has_t(k) ? "DONE" : k == eres ? "NOW" : can ? "" : "LOCKED", has_t(k) ? 13 : k == eres ? 9 : 15); }
@@ -668,12 +688,13 @@ static void research_menu(void) {
   ewait_clear();
 }
 static void edict_menu(void) {
-  u8 sel = 0, i;
+  u8 sel = 0, i, top = 0;
   ewait_clear();
   for (;;) {
     ov_fill(1, 3, 0, 19); ui_full(); big(0, "EDICTS");
     if (edict != 255) { ps(1, 2, "NOW:", 10); ps(6, 2, EDN[edict], 9); } else ps(1, 2, "ONE EDICT AT A TIME", 10);
-    for (i = 0; i < NED; i++) { u8 y = (u8)(4 + i * 1);
+    if (sel < top) top = sel; if (sel >= top + 5) top = (u8)(sel - 4);
+    for (i = top; i < NED && i < top + 5; i++) { u8 y = (u8)(4 + (i - top) * 2);
       if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
       ps(3, y, EDN[i], i == sel ? 9 : 3); ps(19, y, EDC[i], 10); }
     pm_rule(13); ps(1, 14, EDD[sel], 3);
@@ -929,10 +950,11 @@ static void panel_open(void) {                     // \1 on a building or an arm
       if (c == 4) { a->ord = 0; break; }
       if (c == 10) { if (!(gw + gs + gm)) { say("NO GUARDS TO SEND"); sfx_deny(); break; }
         if (new_army(0, nestx[0], nesty[0], gw, gs, gm)) { gw = gs = gm = 0; say("ARMY FORMED! \1 ON IT: ORDERS"); sfx_spawn(); } else say("TOO MANY ARMIES"); break; }
-      if (c == 11) { u8 t = build_menu(); if (t) eplace = t; break; }
+      if (c == 11) { u8 t = ecity ? city_build_menu() : build_menu(); if (t) eplace = t; break; }
       if (c == 20) { if (rf >= 10 && rd >= 5) { rf -= 10; rd -= 5; gw += 10; sfx_spawn(); } else sfx_deny(); }
       if (c == 21) { if (rf >= 5 && rd >= 5 && ra >= 5) { rf -= 5; rd -= 5; ra -= 5; gs += 10; sfx_spawn(); } else sfx_deny(); }
       if (c == 22) { if (rf >= 10 && rd >= 10 && ra >= 10) { rf -= 10; rd -= 10; ra -= 10; gm += 5; sfx_spawn(); } else sfx_deny(); }
+      if (c == 30 && ecity && (ecity == 1 || b->t >= B_GUARD)) { cash += (s32)((BD[b->t].f + BD[b->t].d + 2 * BD[b->t].a) * 5); del_b((u8)(b - ebl)); terr_calc(); eredraw(cx, cy, 1); break; }
       if (c == 30) { radd(&rf, BD[b->t].f / 2); radd(&rd, BD[b->t].d / 2); radd(&ra, BD[b->t].a / 2); del_b((u8)(b - ebl)); terr_calc(); eredraw(cx, cy, 1); break; }
     }
   }
@@ -1228,10 +1250,11 @@ static void empire_main(void) {
   ewait_clear();
   emode = 0;
 }
+#include "city.c"
 static void vram_reload(void) {
   u16 k;
   gfx_init(); opts_apply();
-  for (k = 0; k < 36 * 8; k++) TILE2[EMT * 8 + k] = EMPT[k];
+  for (k = 0; k < sizeof(EMPT) / 4; k++) TILE2[EMT * 8 + k] = EMPT[k];
   for (k = 0; k < 4 * 8; k++) OBJT32[ARMT_T * 8 + k] = ARMT[k];
   for (k = 0; k < 16; k++) { OBJPAL[7 * 16 + k] = PAL_ANT1[k]; OBJPAL[8 * 16 + k] = PAL_ANT1[k]; }
   OBJPAL[7 * 16 + 1] = RGB(10, 7, 0); OBJPAL[7 * 16 + 2] = RGB(27, 22, 3); OBJPAL[7 * 16 + 3] = RGB(31, 30, 14);

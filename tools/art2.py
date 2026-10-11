@@ -312,12 +312,54 @@ PE(["........", "..5555..", ".5.2.35.", "5555555.", "1......1", "1.2.3.21", "111
 PE(["7......7", "........", "..7..7..", "........", "........", "..7..7..", "........", "7......7"]),   # 33 housing zone dots
 PE(["4......4", "........", "..4..4..", "........", "........", "..4..4..", "........", "4......4"]),   # 34 farm zone dots
 PE(["c......c", "........", "..c..c..", "........", "........", "..c..c..", "........", "c......c"]),   # 35 work zone dots
+
+# ---- ANT CITY tiles (36+): zone buildings by level, tunnels, city services ----
+PE(["........", "........", "...11...", "..1771..", ".177771.", ".178871.", ".111111.", "........"]),   # 36 homes L1 (small chamber)
+PE(["...11...", "..1771..", ".177771.", "1d7887d1", "17777771", "17d88d71", "11111111", "........"]),   # 37 homes L2 (two-room mound)
+PE(["..1771..", ".17d871.", ".178871.", "17d77d71", "1787787.", "17d77d71", "17888871", "11111111"]),   # 38 homes L3 (tower mound, lit windows)
+PE(["........", "........", "........", "..4..4..", ".434434.", "aaaaaaaa", "aaaaaaaa", "........"]),   # 39 farms L1 (sprouts)
+PE(["........", ".4..4..4", "434434434"[:8], ".4..4..4", "aaaaaaaa", "6a6a6a6a", "aaaaaaaa", "........"]),   # 40 farms L2 (rows)
+PE(["..1111..", ".1dddd1.", "1d4d4dd1", "1d434d41", "1dd4dd41", "1d4dd4d1", "11111111", "........"]),   # 41 farms L3 (fungus dome)
+PE(["........", "........", "..1111..", ".1aaaa1.", "1a8888a1", ".1aaaa1.", "..1111..", "........"]),   # 42 works L1 (dig pit)
+PE(["......e.", "......e.", ".1111.e.", "1eeee1e.", "1e88eeee", "1eeeeee1", "11111111", "........"]),   # 43 works L2 (workshop + chimney)
+PE(["d.d...d.", ".e...e..", ".e1111e.", "1eeeeee1", "1e8e8e81", "1eeeeee1", "1e8e8e81", "11111111"]),   # 44 works L3 (factory, smoke)
+]
+def tun(m):
+    t = [[0] * 8 for _ in range(8)]
+    def box(x0, y0, x1, y1):
+        for y in range(y0, y1 + 1):
+            for x in range(x0, x1 + 1): t[y][x] = 10
+    box(2, 2, 5, 5)
+    if m & 1: box(2, 0, 5, 2)
+    if m & 2: box(5, 2, 7, 5)
+    if m & 4: box(2, 5, 5, 7)
+    if m & 8: box(0, 2, 2, 5)
+    for y in range(8):
+        for x in range(8):
+            if t[y][x] == 10 and 3 <= x <= 4 and 3 <= y <= 4: t[y][x] = 8
+            if t[y][x] == 10 and ((m & 1 and x in (3, 4) and y < 3) or (m & 4 and x in (3, 4) and y > 4) or (m & 2 and y in (3, 4) and x > 4) or (m & 8 and y in (3, 4) and x < 3)): t[y][x] = 8
+    for y in range(8):                                   # a light rim along the tunnel walls
+        for x in range(8):
+            if t[y][x] == 0 and any(0 <= x + dx < 8 and 0 <= y + dy < 8 and t[y + dy][x + dx] in (8, 10) for dx, dy in ((1,0),(-1,0),(0,1),(0,-1))): t[y][x] = 11
+    return t
+EMP += [tun(m) for m in range(16)]                       # 45..60 tunnels by neighbour mask (n1 e2 s4 w8)
+EMP += [
+PE(["...5....", "..555...", "...1....", ".11111..", "1eeeee1.", "1e8e8e1.", "1eeeee1.", "1111111."]),   # 61 guard post
+PE(["........", ".dddddd.", "dd5dddd.", "d555ddd.", "dd5dddd.", "dddddd1.", "d1dd1dd.", "1111111."]),   # 62 clinic
+PE(["...c....", "..ccc...", ".ccccc..", "cdcdcdc.", "ccccccc.", "cdc8cdc.", "ccc8ccc.", "1111111."]),   # 63 school
+PE(["...3....", "..3.3...", "...3....", ".11111..", ".18881..", ".18881..", ".11111..", "........"]),   # 64 air shaft
+PE(["..cccc..", ".c3ccc..", ".cccccc.", "..cccc..", "...ee...", "...ee...", "..eeee..", ".eeeeee."]),   # 65 dew pump
+PE(["........", ".4.4.4..", "4544454.", ".4.4.4..", "4444444.", ".4.5.4..", "4444444.", "........"]),   # 66 big park
+PE(["2......2", "e222222e", "e444444e", "e4d44d4e", "e444444e", "e222222e", "eeeeeeee", "........"]),   # 67 stadium
+PE(["...3....", "..333...", ".3c3c3..", "3cccccc3", "3c3c3c3.", "3cccccc3", "3c3c3c3.", "33333333"]),   # 68 sky mound (arcology)
+PE(["..5.5...", ".535.5..", ".5335.5.", "53335.5.", "533335..", ".5335...", "..55....", "........"]),   # 69 fire
+PE(["........", ".c.c.c..", "cccccccc", ".c.c.c..", "cccccccc", ".c.c.c..", "cccccccc", "........"]),   # 70 flood water
 ]
 
 
 # buildings stand on a packed-dirt plot so they show up on any ground
 for i, t in enumerate(EMP):
-    if i in (13, 14, 15, 33, 34, 35): continue
+    if i in (13, 14, 15, 33, 34, 35, 69, 70) or 45 <= i <= 60: continue
     for y in range(8):
         for x in range(8):
             if t[y][x] == 0: t[y][x] = 10 if (x in (0, 7) or y in (0, 7)) else 11
@@ -384,7 +426,35 @@ def icon_gear():
             if r <= 5: I[y][x] = 1
             if r <= 4: I[y][x] = 0
     return I
-ICONS = split32(icon_book()) + split32(icon_map()) + split32(icon_trophy()) + split32(icon_gear())
+def icon_city():
+    I = canvas()
+    for y in range(26, 31):
+        for x in range(1, 31): I[y][x] = 10 if y > 26 else 1
+    def tower(x0, x1, top, c):
+        for y in range(top, 27):
+            for x in range(x0, x1 + 1):
+                I[y][x] = 1 if x in (x0, x1) or y == top else c
+        for y in range(top + 3, 25, 4):
+            for x in range(x0 + 2, x1 - 1, 3): I[y][x] = 2; I[y][x + 1 if x + 1 < x1 else x] = 2
+    ell(I, 9, 26, 8, 9, 1); ell(I, 9, 26, 7, 8, 7)
+    tower(13, 21, 4, 6); tower(22, 29, 12, 7)
+    for y in range(18, 26, 3):
+        for x in (6, 9, 12):
+            if I[y][x] == 7: I[y][x] = 2
+    for x in range(14, 21): I[2][x] = 0
+    line(I, 17, 0, 17, 4, 1); I[0][18] = 5; I[1][18] = 5; I[1][19] = 5
+    return I
+def icon_verse():
+    I = canvas()
+    import math as _m
+    ell(I, 16, 16, 11, 11, 1); ell(I, 16, 16, 10, 10, 12)
+    ell(I, 12, 12, 4, 3, 4); ell(I, 20, 19, 5, 3, 4); ell(I, 14, 21, 2, 2, 4)
+    for i in range(80):
+        a = i / 80 * 2 * _m.pi; x = round(16 + 15 * _m.cos(a)); y = round(16 + 5 * _m.sin(a) - 4 * _m.cos(a))
+        if 0 <= x < 32 and 0 <= y < 32 and (_m.sin(a) > -0.1 or I[y][x] in (0, 1)): I[y][x] = 2
+    for x, y in ((3, 4), (28, 6), (5, 27), (27, 26), (24, 2)): I[y][x] = 3
+    return I
+ICONS = split32(icon_book()) + split32(icon_map()) + split32(icon_trophy()) + split32(icon_gear()) + split32(icon_city()) + split32(icon_verse())
 
 def pack(t): return [sum(t[y][x] << (4 * x) for x in range(8)) for y in range(8)]
 def emit(name, tiles):
@@ -407,7 +477,7 @@ with open(sys.argv[1], "w") as f:
     f.write("#define PANO_N %d\n" % len(PANO_TILES))
     f.write("static const u16 PANOM[256] = {" + ",".join(str(v & 0xFFFF) for v in PANO_MAP) + "};\n")
     f.write(emit_pal("PAL_PANO", PANO_PAL) + "\n")
-    f.write("// ICNT: home screen icons 32x32: book, map, trophy, gear (OBJ tiles 96..159, decor palette)\n" + emit("ICNT", ICONS) + "\n")
+    f.write("// ICNT: home screen icons 32x32: book, map, trophy, gear, city, antverse (OBJ tiles 96..191, decor palette)\n" + emit("ICNT", ICONS) + "\n")
     f.write("// ARMT: EMPIRE MODE army banner 16x16 (OBJ tiles 88..91, ant palettes)\n" + emit("ARMT", ARMY) + "\n")
     f.write("// EMPT: EMPIRE MODE building tiles (decor palette), loaded at charblock 2 tile 512+\n" + emit("EMPT", EMP) + "\n")
     f.write("// UIT: termite UI tiles: 0-3 soil, 4-11 bark frame (nw n ne w e sw s se), 12-13 grass fringe, 14-29 tunnels (mask n1 e2 s4 w8), 30 root, 31 soil\n")
