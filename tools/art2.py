@@ -335,6 +335,57 @@ for y in (0, 4):
 blit(AR, SOL_A, 7, 3); blit(AR, SOL_B, 2, 8); blit(AR, SOL_A, 8, 8)
 ARMY = [[[AR[ty * 8 + y][tx * 8 + x] for x in range(8)] for y in range(8)] for ty in range(2) for tx in range(2)]
 
+
+# ---------------- home screen card icons 32x32 (OBJ tiles 96..159), drawn in the decor palette ----------------
+def icon_book():
+    I = canvas()
+    for y in range(6, 27):
+        for x in range(4, 28):
+            I[y][x] = 13 if x != 15 and x != 16 else 1
+    for y in range(6, 27): I[y][3] = 1; I[y][28] = 1
+    for x in range(3, 29): I[5][x] = 1; I[27][x] = 1
+    for y in range(9, 25, 3):
+        for x in range(6, 14): I[y][x] = 14
+        for x in range(18, 26): I[y][x] = 14
+    for y in range(4, 12): I[y][22] = 5; I[y][23] = 5
+    return I
+def icon_map():
+    I = canvas()
+    for y in range(5, 27):
+        for x in range(3, 27): I[y][x] = 4 if (x + y) % 9 < 6 else 12
+    ell(I, 12, 14, 5, 4, 12); ell(I, 20, 21, 4, 3, 7)
+    for y in range(5, 27): I[y][3] = 1; I[y][26] = 1
+    for x in range(3, 27): I[5][x] = 1; I[26][x] = 1
+    for k in range(12):                              # a pencil across the corner
+        I[28 - k][16 + k] = 2; I[27 - k][16 + k] = 2; I[28 - k][17 + k] = 1
+    I[29][15] = 1; I[28][15] = 8
+    return I
+def icon_trophy():
+    I = canvas()
+    ell(I, 16, 10, 10, 8, 2)
+    for y in range(2, 10):
+        for x in range(6, 27): I[y][x] = 2
+    ell(I, 16, 9, 6, 5, 3)
+    for y in range(17, 23): I[y][15] = 2; I[y][16] = 2
+    for y in range(23, 28):
+        for x in range(9, 24): I[y][x] = 2 if y < 27 else 1
+    ell(I, 4, 8, 3, 4, 2); ell(I, 4, 8, 1.5, 2.5, 0); ell(I, 28, 8, 3, 4, 2); ell(I, 28, 8, 1.5, 2.5, 0)
+    I[6][13] = 13; I[7][13] = 13; I[6][14] = 13
+    return I
+def icon_gear():
+    I = canvas()
+    import math as _m
+    for y in range(32):
+        for x in range(32):
+            dx, dy = x - 15.5, y - 15.5; r = _m.hypot(dx, dy); a = _m.atan2(dy, dx)
+            tooth = 13 if (int((a + _m.pi) / (2 * _m.pi) * 8 * 2) % 2 == 0) else 10.5
+            if r <= tooth: I[y][x] = 14
+            if r <= tooth and r > tooth - 1.2: I[y][x] = 1
+            if r <= 5: I[y][x] = 1
+            if r <= 4: I[y][x] = 0
+    return I
+ICONS = split32(icon_book()) + split32(icon_map()) + split32(icon_trophy()) + split32(icon_gear())
+
 def pack(t): return [sum(t[y][x] << (4 * x) for x in range(8)) for y in range(8)]
 def emit(name, tiles):
     out = ["static const u32 %s[%d] = {" % (name, len(tiles) * 8)]
@@ -356,6 +407,7 @@ with open(sys.argv[1], "w") as f:
     f.write("#define PANO_N %d\n" % len(PANO_TILES))
     f.write("static const u16 PANOM[256] = {" + ",".join(str(v & 0xFFFF) for v in PANO_MAP) + "};\n")
     f.write(emit_pal("PAL_PANO", PANO_PAL) + "\n")
+    f.write("// ICNT: home screen icons 32x32: book, map, trophy, gear (OBJ tiles 96..159, decor palette)\n" + emit("ICNT", ICONS) + "\n")
     f.write("// ARMT: EMPIRE MODE army banner 16x16 (OBJ tiles 88..91, ant palettes)\n" + emit("ARMT", ARMY) + "\n")
     f.write("// EMPT: EMPIRE MODE building tiles (decor palette), loaded at charblock 2 tile 512+\n" + emit("EMPT", EMP) + "\n")
     f.write("// UIT: termite UI tiles: 0-3 soil, 4-11 bark frame (nw n ne w e sw s se), 12-13 grass fringe, 14-29 tunnels (mask n1 e2 s4 w8), 30 root, 31 soil\n")

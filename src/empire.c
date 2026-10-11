@@ -150,6 +150,9 @@ static u8 has_t(u8 t) { return (u8)((etech >> t) & 1); }
 static u8 era_now(void) { u8 n = 0, i; for (i = 0; i < T_N; i++) n += has_t(i); return has_t(T_GREAT) ? 3 : has_t(T_AMBER) ? 2 : n >= 5 ? 1 : 0; }
 static u8 fac_avg(void) { return (u8)((fac[0] + fac[1] + fac[2] + fac[3]) / 4); }
 static u16 a_size(const EA *a) { return (u16)(a->w + a->s + a->m); }
+static const u16 RICHV[4] = {0, 250, 500, 999}, MEGAV[4] = {0, 100, 250, 500};   // cheat levels
+static const u8 ZONEV[4] = {1, 2, 5, 10}, RESV[4] = {1, 2, 5, 5};
+static u16 bc(u16 v) { return cht[14] == 2 ? 0 : cht[14] == 1 ? (u16)(v / 2) : v; }   // FREE BUILD: HALF / FREE
 static u16 tcost(void) { u8 n = 0, i; for (i = 0; i < T_N; i++) n += has_t(i); return (u16)(12 + 9 * n); }
 static void radd(u16 *r, s16 v) { s32 t = (s32)*r + v; *r = (u16)(t < 0 ? 0 : t > 999 ? 999 : t); }
 
@@ -229,7 +232,7 @@ static const char *can_build(u8 t, u8 x, u8 y, u8 pay) {   // 0 = OK, else the r
   if (!((BD[t].ter >> h) & 1)) return t == B_BRIDGE ? "ONLY ON WATER" : t == B_MINE ? "ONLY ON HILLS" : h == 0 ? "NOT ON WATER" : "WRONG GROUND HERE";
   if (t == B_WONDER && nb_of[B_WONDER]) return "ONLY ONE WONDER";
   if (t == B_PALACE && nb_of[B_PALACE]) return "ONLY ONE PALACE";
-  if (pay && (rf < BD[t].f || rd < BD[t].d || ra < BD[t].a)) return "NOT ENOUGH STUFF";
+  if (pay && (rf < bc(BD[t].f) || rd < bc(BD[t].d) || ra < bc(BD[t].a))) return "NOT ENOUGH STUFF";
   return 0;
 }
 static u8 do_build(u8 t, u8 x, u8 y) {
@@ -241,7 +244,7 @@ static u8 do_build(u8 t, u8 x, u8 y) {
     else { set_zn(y, x, t == L_ZX ? 0 : (u8)(t - L_ZH + 1)); emp_dec(x, y); }
     return 1;
   }
-  rf -= BD[t].f; rd -= BD[t].d; ra -= BD[t].a;
+  rf -= bc(BD[t].f); rd -= bc(BD[t].d); ra -= bc(BD[t].a);
   add_b(x, y, t); terr_calc(); eredraw(x, y, 1); sfx_spawn(); fx_add(x, y, FX_PLUS);
   if (t == B_WONDER) say("THE GREAT MOUND BEGINS!");
   return 1;
@@ -336,7 +339,7 @@ static void ecycle(void) {
   u8 tg[4];
   ecyc++;
   count_b(); eshell = has_t(T_SHELL); earm = nb_of[B_ARMORY] ? 1 : 0;
-  if (cht[3]) rf = rd = ra = 999;
+  if (cht[3]) { u16 v = RICHV[cht[3]]; if (rf < v) rf = v; if (rd < v) rd = v; if (ra < v) ra = v; }
   if (efarm_t && !--efarm_t) efarm_mod = 0;
   for (i = 0; i < 3; i++) if (rpeace[i] && !--rpeace[i] && ralive[i]) say("A PEACE TREATY HAS ENDED");
   if (ecyc % 20 == 0 && ecyc >= 20 && echap != 0) evpend = (u8)(rnd() % 10);   // random events (Tropico)
@@ -377,7 +380,7 @@ static void ecycle(void) {
   popcap = (u8)(8 + 5 * nb_of[B_HOUSE]);
   if (starve) { if (pop > 3) pop--; say("FAMINE! BUILD MORE FARMS"); }
   else if (pop < popcap && rf > pop) { pop = (u8)(pop + 1 + (nb_of[B_NURS] > 3 ? 3 : nb_of[B_NURS])); if (pop > popcap) pop = popcap; }
-  if (eres != 255) { erp += r; if (erp >= tcost()) { erp -= tcost(); etech |= (u16)(1 << eres); say("RESEARCH DONE! \5 MENU"); sfx_mana(); eres = 255; } }
+  if (eres != 255) { erp += (u16)(r * RESV[cht[13]]); if (cht[13] == 3) erp = tcost(); if (erp >= tcost()) { erp -= tcost(); etech |= (u16)(1 << eres); say("RESEARCH DONE! \5 MENU"); sfx_mana(); eres = 255; } }
   else if (!(ecyc & 7)) say("PICK RESEARCH: \5 MENU");
   i = era_now(); if (i != era) { era = i; say(ERAN[era]); jingle(WIN_TUNE, 6); }
   // factions (Tropico): each drifts toward what it wants
@@ -397,7 +400,7 @@ static void ecycle(void) {
   // SimCity zones: the colony builds what it needs on painted land, at half price
   {
     u8 want[4] = {0, (u8)(pop + 1 >= popcap), (u8)(food_net < 3), (u8)(unemp == 0 && pop + 2 < popcap)}, built = 0; u16 tries;
-    for (tries = 0; tries < 300 && built < (cht[9] ? 5 : 1); tries++) {
+    for (tries = 0; tries < 300 && built < ZONEV[cht[9]]; tries++) {
       x = (u8)(rnd() % W); y = (u8)(rnd() % H);
       if (!EZN(y, x) || ebi[y][x] || ETER(y, x) != 1 || !want[EZN(y, x)]) continue;
       { u8 z = EZN(y, x), t = z == 1 ? B_HOUSE : z == 2 ? ((hgt[y][x] == 2 && has_t(T_GENES) && (rnd() & 1)) ? B_APHID : B_FARM) : ((hgt[y][x] == 3 && has_t(T_AMBER) && (rnd() & 1)) ? B_MINE : B_PIT);
@@ -596,9 +599,10 @@ static u16 emk, emp_, emprev;
 static u8 ekey(void) { vsync(); emk = joy(); emp_ = emk & ~emprev; emprev = emk; return emp_ != 0; }
 static void ewait_clear(void) { while (joy()) vsync(); emprev = 0; }
 static void cost_txt(u8 x, u8 y, u8 t) {
-  if (BD[t].f) { pc(x, y, '%', 13); p3((u8)(x + 1), y, BD[t].f, 13); x += 5; }
-  if (BD[t].d) { pc(x, y, '[', 2); p3((u8)(x + 1), y, BD[t].d, 2); x += 5; }
-  if (BD[t].a) { pc(x, y, ']', 9); p3((u8)(x + 1), y, BD[t].a, 9); }
+  if (cht[14] == 2) { ps(x, y, "FREE", 13); return; }
+  if (BD[t].f) { pc(x, y, '%', 13); p3((u8)(x + 1), y, bc(BD[t].f), 13); x += 5; }
+  if (BD[t].d) { pc(x, y, '[', 2); p3((u8)(x + 1), y, bc(BD[t].d), 2); x += 5; }
+  if (BD[t].a) { pc(x, y, ']', 9); p3((u8)(x + 1), y, bc(BD[t].a), 9); }
 }
 static u8 build_menu(void) {                       // tabs (L / R) of things to build; returns what to place (0 = nothing)
   u8 sel = epsel, tab = eptab, n, i, t, r = 0;
@@ -735,7 +739,8 @@ static void emp_event(u8 e) {
   static const char *const EV1[10] = {"BEETLES CAME TO TRADE.", "THE RAINS ARE HERE!", "NO RAIN FOR WEEKS.", "LOCUSTS ATE OUR STORES!", "ANTS FROM A FLOODED NEST", "THE SUN SHINES, THE FOOD", "A TUNNEL COLLAPSED UNDER", "OUR DIGGERS STRUCK AMBER!", "A GREY ROT IS ON THE", "A BAND OF LOST SOLDIERS"};
   static const char *const EV2[10] = {"WE SOLD FOOD FOR AMBER.", "FARMS GROW DOUBLE A WHILE.", "FARMS GROW HALF A WHILE.", "WE LOST A THIRD OF FOOD.", "JOINED US: +5 ANTS!", "IS SWEET: EVERYONE +10.", "ONE OF OUR BUILDINGS.", "+30 AMBER.", "FARMS: FOOD AND FARMERS -.", "JOINED OUR GUARD: +25!"};
   const char *L[6] = {EV1[e], EV2[e], 0, 0, 0, 0};
-  if (cht[2] && (e == 2 || e == 3 || e == 6 || e == 8)) e = 7;   // NO DISASTERS: only good news
+  if (cht[2] == 1 && (e == 2 || e == 3 || e == 6 || e == 8)) e = 7;   // WEATHER CALM: only good news
+  if (cht[2] == 2 && (e == 1 || e == 5 || e == 7)) e = (u8)(e == 1 ? 2 : e == 5 ? 3 : 8);   // WEATHER CHAOS: only bad news
   L[0] = EV1[e]; L[1] = EV2[e];
   switch (e) {
   case 0: if (rf >= 30) { rf -= 30; radd(&ra, 25); } else radd(&ra, 10); break;
@@ -969,8 +974,8 @@ static void emp_newgame(void) {
   else { etech = (1 << T_FUNGUS) | (1 << T_DIG) | (enriv ? (1 << T_SOLD) : 0); rf = 50; rd = 70; ra = 0; edry = 0; }
   pop = 6; popcap = 8; gw = enriv ? 20 : 0; gs = gm = 0; eres = 255; erp = 0;
   if (cht[4]) etech = 0xFFF;
-  if (cht[5]) { gw = 400; gs = 60; gm = 40; }
-  if (cht[3]) rf = rd = ra = 999;
+  if (cht[5]) { u16 v = MEGAV[cht[5]]; gw = (u16)(v * 4 / 5); gs = (u16)(v * 3 / 25); gm = (u16)(v - gw - gs); }
+  if (cht[3]) rf = rd = ra = RICHV[cht[3]];
   era = era_now();
   place_rivals();
   bfs(0); bfs(1); pdirty = 0;

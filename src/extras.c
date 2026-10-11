@@ -17,12 +17,12 @@ static const char *const ACD[NACH] = {
   "PASS MARTIAL LAW", "FINISH THE STORY", "FINISH CHAPTER 1", "ZONES BUILD 10 THINGS", "MAKE PEACE WITH A RIVAL",
   "STOP 10 ENEMY ARMIES", "999 OF ANYTHING", "TURN ON A CHEAT", "GET 31 ACHIEVEMENTS", "ENTER THE KONAMI CODE"};
 static const char *const ACR[NACH] = {     // what each one unlocks ("" = just the trophy)
-  "GOLD ANTS", "CHEAT: NO DISASTERS", "", "CHEAT: INFINITE AP", "", "", "", "",
+  "GOLD ANTS", "CHEAT: WEATHER", "CHEAT: STRONG ANTS", "CHEAT: INFINITE AP", "CHEAT: FOOD RAIN", "", "", "",
   "CHEAT: GOD QUEEN", "PINK ANTS", "CHEAT: TURBO", "", "", "CHEAT: RICH COLONY", "", "CHEAT: ALL TECHS  WHITE ANTS",
   "AMBER MENUS", "", "CHEAT: MEGA ARMY", "", "", "CHEAT: PARTY ANTS", "SHADOW ANTS", "CRYSTAL MENUS",
-  "", "CHEAT: INSTANT ZONES", "CHEAT: PEACEFUL RIVALS", "", "", "", "", ""};
+  "", "CHEAT: INSTANT ZONES", "CHEAT: PEACEFUL RIVALS", "CHEAT: BIG BROOD", "", "", "", ""};
 static u32 ach;
-static u8 any_cheat(void) { u8 i; for (i = 0; i < 10; i++) if (cht[i]) return 1; return 0; }
+static u8 any_cheat(void) { u8 i; for (i = 0; i < 16; i++) if (cht[i]) return 1; return 0; }
 static void ach_save(void) { SRAM[56] = (u8)ach; SRAM[57] = (u8)(ach >> 8); SRAM[58] = (u8)(ach >> 16); SRAM[59] = (u8)(ach >> 24); }
 static void ach_load(void) {
   ach = (u32)SRAM[56] | ((u32)SRAM[57] << 8) | ((u32)SRAM[58] << 16) | ((u32)SRAM[59] << 24);
@@ -41,14 +41,32 @@ static void ach_get(u8 i) {
   if (ach_count() >= 31) ach_get(30);
 }
 // ---------- cheats ----------
-#define NCHT 10
-static const char *const CHN[NCHT] = {"INFINITE AP", "GOD QUEEN", "NO DISASTERS", "RICH COLONY", "ALL TECHS", "MEGA ARMY", "PARTY ANTS", "TURBO", "PEACEFUL RIVALS", "INSTANT ZONES"};
-static const char *const CHD[NCHT] = {"CLASSIC: AP NEVER RUNS OUT", "YOUR QUEEN AND NEST CANT DIE", "NO FLOODS OR EARTHQUAKES",
-  "EMPIRE: 999 OF EVERYTHING", "EMPIRE: START KNOWING ALL", "EMPIRE: START WITH 500 GUARDS", "YOUR ANTS CHANGE COLOR", "R SWITCHES TO X8 SPEED",
-  "RED ANTS NEVER ATTACK", "EMPIRE: ZONES BUILD FAST + FREE"};
-static const u8 CHA[NCHT] = {3, 8, 1, 13, 15, 18, 21, 10, 26, 25};   // the achievement that unlocks each cheat
-static u8 cht_ok(u8 i) { return SRAM[61] == 'C' || ach_has(CHA[i]); }
-static const u16 CODE[9] = {J_UP, J_DOWN, J_LEFT, J_RIGHT, J_UP, J_DOWN, J_LEFT, J_RIGHT, J_SEL};   // EXTRAS > CHEATS: unlocks every cheat
+// Every cheat has levels (A steps through them: OFF -> level 1 -> ... -> OFF). Cheats 0-12 are unlocked by trophies
+// (or all at once by the master code). 13-15 are SECRET: they only appear after you type their own button code on
+// the CHEATS page. Found secrets are saved in SRAM 20 (21 = 'S' marks it as valid).
+#define NCHT 16
+#define NSEC 13                                     // first secret cheat
+static const char *const CHN[NCHT] = {"INFINITE AP", "GOD QUEEN", "WEATHER", "RICH COLONY", "ALL TECHS", "MEGA ARMY", "PARTY ANTS", "TURBO",
+  "PEACEFUL RIVALS", "INSTANT ZONES", "FOOD RAIN", "STRONG ANTS", "BIG BROOD", "FAST RESEARCH", "FREE BUILD", "SLEEPY REDS"};
+static const char *const CHD[NCHT] = {"CLASSIC: AP NEVER RUNS OUT", "YOUR QUEEN AND NEST CANT DIE", "CALM = NONE  CHAOS = LOTS",
+  "EMPIRE: LOTS OF EVERYTHING", "EMPIRE: START KNOWING ALL", "EMPIRE: START WITH GUARDS", "YOUR ANTS CHANGE COLOR", "R SWITCHES TO X8 SPEED",
+  "RED ANTS NEVER ATTACK", "EMPIRE: ZONES GROW FAST", "CLASSIC: FOOD FALLS FROM SKY", "YOUR ANTS WIN MORE FIGHTS", "MORE BABIES EACH HATCH",
+  "EMPIRE: LEARN TECHS FASTER", "EMPIRE: BUILDINGS COST LESS", "CLASSIC: RED ANTS HATCH LESS"};
+static const u8 CHMAX[NCHT] = {1, 1, 2, 3, 1, 3, 3, 1, 1, 3, 3, 3, 2, 3, 2, 2};
+static const char *const CHV[NCHT][4] = {
+  {"OFF", "ON"}, {"OFF", "ON"}, {"OFF", "CALM", "CHAOS"}, {"OFF", "250", "500", "999"}, {"OFF", "ON"}, {"OFF", "100", "250", "500"},
+  {"OFF", "SLOW", "FAST", "STROBE"}, {"OFF", "ON"}, {"OFF", "ON"}, {"OFF", "X2", "X5", "X10"}, {"OFF", "LIGHT", "HEAVY", "STORM"},
+  {"OFF", "X2", "X4", "SUPER"}, {"OFF", "TWINS", "TRIPLE"}, {"OFF", "X2", "X5", "INSTANT"}, {"OFF", "HALF", "FREE"}, {"OFF", "FEWER", "NONE"}};
+static const u8 CHA[NCHT] = {3, 8, 1, 13, 15, 18, 21, 10, 26, 25, 4, 2, 27, 255, 255, 255};   // trophy that unlocks each (255 = secret code)
+static const u16 SECC[3][8] = {                    // the secret codes (no A, B, L or R: those do other things on the page)
+  {J_UP, J_UP, J_UP, J_DOWN, J_DOWN, J_DOWN, J_START, J_SEL},
+  {J_LEFT, J_LEFT, J_RIGHT, J_RIGHT, J_LEFT, J_RIGHT, J_START, J_START},
+  {J_DOWN, J_DOWN, J_DOWN, J_DOWN, J_SEL, J_SEL, J_START, J_START}};
+static const char *const SECH[3] = {"UUU DDD START SELECT", "LL RR L R START START", "DDDD SEL SEL START START"};
+static u8 sec_bits(void) { return SRAM[21] == 'S' ? SRAM[20] : 0; }
+static u8 cht_ok(u8 i) { return i >= NSEC ? (u8)((sec_bits() >> (i - NSEC)) & 1) : (SRAM[61] == 'C' || ach_has(CHA[i])); }
+static u8 cht_on(void) { u8 i, n = 0; for (i = 0; i < NCHT; i++) n += cht[i] != 0; return n; }
+static const u16 CODE[9] = {J_UP, J_DOWN, J_LEFT, J_RIGHT, J_UP, J_DOWN, J_LEFT, J_RIGHT, J_SEL};   // EXTRAS > CHEATS: unlocks cheats 0-12
 // ---------- unlockable colours / styles (checked by the options screen) ----------
 static u8 opt_locked(u8 i, u8 v) {
   if (i == O_ANTCOL) { if (v == 4) return !ach_has(0); if (v == 5) return !ach_has(15); if (v == 6) return !ach_has(9); if (v == 7) return !ach_has(22); }
@@ -74,13 +92,21 @@ static void extras(void) {
       pm_rule(15); ps(1, 16, ACD[sel], 3);
       if (ACR[sel][0]) { ps(1, 17, "UNLOCKS:", 10); ps(10, 17, ACR[sel], ach_has(sel) ? 13 : 15); }
     } else if (tab == 1) {
-      ps(2, 2, "ACHIEVEMENTS UNLOCK CHEATS", 10);
-      for (i = 0; i < NCHT; i++) { u8 y = (u8)(4 + i);
-        if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
-        ps(3, y, CHN[i], cht_ok(i) ? (i == sel ? 9 : 3) : 15);
-        ps(21, y, !cht_ok(i) ? "LOCKED" : cht[i] ? "ON" : "OFF", !cht_ok(i) ? 15 : cht[i] ? 13 : 10); }
-      pm_rule(15); ps(1, 16, CHD[sel], 3);
-      if (!cht_ok(sel)) { ps(1, 17, "EARN:", 10); ps(7, 17, ACN[CHA[sel]], 8); }
+      ps(2, 2, "CHEATS ON", 10); pn(12, 2, cht_on(), cht_on() ? 13 : 9); if (cht_on()) ps(16, 2, "NO TROPHIES", 8);
+      if (sel < top) top = sel; if (sel >= top + 11) top = (u8)(sel - 10);
+      for (i = 0; i < 11 && top + i < NCHT; i++) { u8 a = (u8)(top + i), y = (u8)(4 + i), ok = cht_ok(a), lv;
+        if (a == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
+        if (a >= NSEC && !ok) { ps(3, y, "? ? ? SECRET", a == sel ? 8 : 15); continue; }
+        ps(3, y, CHN[a], ok ? (a == sel ? 9 : 3) : 15);
+        if (!ok) { ps(21, y, "LOCKED", 15); continue; }
+        if (CHMAX[a] > 1) for (lv = 0; lv < CHMAX[a]; lv++)            // level pips: one per level, lit up to the current one
+          BGMAP1[y * 32 + 19 + lv] = (u16)((cht[a] > lv ? BAR_F : BAR_E) | (14 << 12));
+        ps(23, y, CHV[a][cht[a]], cht[a] ? 13 : 10); }
+      pm_rule(15);
+      if (sel >= NSEC && !cht_ok(sel)) { ps(1, 16, "SECRET! TYPE ITS CODE HERE:", 8); ps(1, 17, SECH[sel - NSEC], 9); }
+      else { ps(1, 16, CHD[sel], 3);
+        if (!cht_ok(sel)) { ps(1, 17, "EARN:", 10); ps(7, 17, ACN[CHA[sel]], 8); }
+        else if (CHMAX[sel] > 1) { ps(1, 17, "LEVELS:", 10); { u8 x = 9, lv; for (lv = 1; lv <= CHMAX[sel]; lv++) { ps(x, 17, CHV[sel][lv], cht[sel] == lv ? 13 : 3); x = (u8)(x + blen2(CHV[sel][lv]) + 1); } } } }
     } else {
       static const char *const DN3[3] = {"EASY", "NORM", "HARD"};
       ps(2, 3, "LEVEL   WINS   BEST   SCORE", 10);
@@ -92,17 +118,23 @@ static void extras(void) {
       ps(2, 13, "STORY", 10); pc(14, 13, (char)('0' + (SRAM[63] <= 7 ? SRAM[63] : 0)), 9); ps(17, 13, "OF 7 DONE", 10);
       ps(2, 14, "EMPIRE MODE", 10); ps(14, 14, emp_unlocked() ? "OPEN" : "LOCKED", emp_unlocked() ? 13 : 15);
     }
-    ps(1, 19, tab == 1 ? "\1 ON/OFF \3\4 TABS \2 BACK" : "\3\4 TABS   \2 BACK", 10);
+    ps(1, 19, tab == 1 ? "\1 CHANGE \3\4 TABS \2 BACK" : "\3\4 TABS   \2 BACK", 10);
     DISPCNT = 0x1B40; BLDY = 0;
     do { vsync(); k = joy(); p = k & ~prev; prev = k; } while (!p);
-    if (tab == 1) {                                 // the secret code: L R L R UP DOWN B A
+    if (tab == 1) {                                 // the master code, and the 3 secret cheat codes
+      static u8 sk[3]; u8 c;
       if (p == CODE[ki]) { if (++ki == 9) { ki = 0; SRAM[61] = 'C'; sfx_mana(); jingle(WIN_TUNE, 6); continue; } } else ki = (u8)(p == CODE[0]);
+      for (c = 0; c < 3; c++) {
+        if (p == SECC[c][sk[c]]) { if (++sk[c] == 8) { sk[c] = 0;
+            if (!cht_ok((u8)(NSEC + c))) { SRAM[20] = (u8)(sec_bits() | (1 << c)); SRAM[21] = 'S'; sel = (u8)(NSEC + c); sfx_mana(); jingle(WIN_TUNE, 6); } } }
+        else sk[c] = (u8)(p == SECC[c][0]);
+      }
     }
     if (p & J_B) break;
     if (p & (J_L | J_R)) { tab = (u8)((tab + ((p & J_R) ? 1 : 2)) % 3); sel = 0; top = 0; sfx_food(); continue; }
     if (n && (p & J_UP)) { sel = sel ? sel - 1 : n - 1; sfx_food(); }
     if (n && (p & J_DOWN)) { sel = sel + 1 >= n ? 0 : sel + 1; sfx_food(); }
-    if (tab == 1 && (p & J_A)) { if (cht_ok(sel)) { cht[sel] ^= 1; sfx_mana(); if (cht[sel]) ach_get(29); } else sfx_deny(); }
+    if (tab == 1 && (p & J_A)) { if (cht_ok(sel)) { cht[sel] = (u8)(cht[sel] >= CHMAX[sel] ? 0 : cht[sel] + 1); sfx_mana(); if (cht[sel]) ach_get(29); } else sfx_deny(); }
   }
   while (joy()) vsync();
   ov_clear();

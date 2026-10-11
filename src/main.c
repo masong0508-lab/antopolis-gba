@@ -190,7 +190,7 @@ static const Opt OPTS[NOPT] = {
   {"ANT EYE SKY",   "DAY|SUNSET|NIGHT",         0, "THE SKY IN THE ANT EYE", "VIEW"},
 };
 static u8 opt[NOPT];
-static u8 cht[10];                                // cheats switched on (EXTRAS > CHEATS)
+static u8 cht[16];                                   // cheats switched on (EXTRAS > CHEATS)
 static void ach_get(u8 i);
 static u8 opt_locked(u8 i, u8 v);
 static u8 qlost, rdrown, ewins;                   // classic achievements: queen hurt, red ants drowned, elections won
@@ -320,8 +320,10 @@ static u8 timeup;
 static u16 frc;
 static void party_tick(void) {                    // PARTY ANTS cheat: your ants cycle through the rainbow
   static const u16 RB[8] = {RGB(31,4,4), RGB(31,18,2), RGB(31,31,4), RGB(6,28,6), RGB(4,24,31), RGB(10,8,31), RGB(24,6,31), RGB(31,8,20)};
+  u8 f;
   if (!cht[6]) return;
-  OBJPAL[2] = RB[(frc >> 3) & 7]; OBJPAL[3] = RB[((frc >> 3) + 2) & 7]; OBJPAL[4] = RB[((frc >> 3) + 4) & 7];
+  f = (u8)(frc >> (cht[6] == 1 ? 4 : cht[6] == 2 ? 3 : 1));   // SLOW / FAST / STROBE
+  OBJPAL[2] = RB[f & 7]; OBJPAL[3] = RB[(f + 2) & 7]; OBJPAL[4] = RB[(f + 4) & 7];
 }
 static void say(const char *m) { msg = m; msgt = 12; }
 static u8 blen2(const char *s) { u8 n = 0; while (s[n]) n++; return n; }
@@ -788,7 +790,7 @@ static u8 dmask_dis(void) {
   return (perk & 8) ? (u8)((b << 1) | 1) : b;
 }
 static void disaster(void) {                     // hits both colonies alike, anywhere on the map
-  if (cht[2]) return;
+  if (cht[2] == 1) return;                        // WEATHER: CALM
   u8 q = (u8)(rnd() & 1), x = (u8)(rnd() % W), y = (u8)(rnd() % H);
   hit(x, y, q);
   sfx_flood(); alx = x; aly = y; alt = 120; (void)0; say(q ? "EARTHQUAKE!  \6 LOOK" : "FLASH FLOOD!  \6 LOOK");
@@ -845,6 +847,13 @@ static void grow_food(void) {                    // food regrows, mostly around 
     if (hgt[y][x] && !food[y][x] && !near_nest(x, y)) { food[y][x] = 1; nfood++; draw_dec(x, y); }
   }
 }
+static void food_rain(void) {                    // FOOD RAIN cheat: food drops anywhere, past the normal limit
+  static const u8 FR[4] = {0, 2, 6, 16}; u8 i, x, y;
+  for (i = 0; i < FR[cht[10]] && nfood < (u16)W * H / 4; i++) {
+    x = (u8)(rnd() % W); y = (u8)(rnd() % H);
+    if (hgt[y][x] && !food[y][x] && !near_nest(x, y)) { food[y][x] = 1; nfood++; draw_dec(x, y); }
+  }
+}
 static void tick_slice(void) {                    // 1/8 of the ants per call; every 8th call runs the colony-level work
   u8 i, j, x, y, cst;
   for (i = 0; i < MAXA; i++) if (ant[i].age < 8) ant[i].age++;
@@ -856,7 +865,11 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
   for (i = slice; i < MAXA; i += 8)
     if (ant[i].alive) for (j = i + 1; j < MAXA; j++)
       if (ant[j].alive && ant[i].team != ant[j].team && ant[i].x == ant[j].x && ant[i].y == ant[j].y)
-        { if (rnd() & 1) die(&ant[i], 0); else die(&ant[j], 0); sfx_fight(); if (!ant[i].alive) break; }
+        { u8 iw = (u8)(rnd() & 1);
+          if (cht[11] && ant[i].team != ant[j].team) {     // STRONG ANTS: your ant wins more often
+            static const u8 SW[4] = {50, 67, 80, 100}; u8 mine_i = (u8)(ant[i].team == 0);
+            u8 win = (u8)(rnd() % 100 < SW[cht[11]]); iw = (u8)(mine_i ? win : !win); }
+          if (iw) die(&ant[j], 0); else die(&ant[i], 0); sfx_fight(); if (!ant[i].alive) break; }
   if ((gt & 3) == 0) for (y = slice; y < H; y += 8) for (x = 0; x < W; x++) if (ph[y][x]) ph[y][x]--;
   if (++slice < 8) return;
   slice = 0; gt++;
@@ -864,11 +877,14 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
   for (i = 0; i < 2; i++) {
     if (!qhp[i]) continue;
     cst = i ? hc1 : hc0;
-    if (stock[i] >= cst && spawn(i)) { stock[i] -= cst; if (i == 0) { sfx_spawn(); apr(1); } }
+    if (i == 1 && cht[15] && (cht[15] == 2 || (gt & 1))) { if (ncnt[1] == 0 && (gt & 31) == 0) spawn(1); }   // SLEEPY REDS
+    else if (stock[i] >= cst && spawn(i)) { stock[i] -= cst; if (i == 0) { u8 b; for (b = 0; b < cht[12]; b++) spawn(0); sfx_spawn(); apr(1); } }   // BIG BROOD: free twins
     else if (ncnt[i] == 0 && (gt & 31) == 0) spawn(i);
     if ((gt & 127) == 0 && qhp[i] < (i ? qbase : qmax0)) qhp[i]++;
   }
   if (!O(O_ELECT) && (gt & dm) == 0) apr(!stock[0] && ncnt[0] ? -2 : -1);
+  if (cht[2] == 2 && !tut && gt > 30 && (gt & 31) == 0) disaster();      // WEATHER: CHAOS
+  if (cht[10]) food_rain();
   if (O(O_DIS) && !tut && !sandbox && gt > 90 && (gt & dmask_dis()) == 0 && !(rnd() & 3)) disaster();   // rarer on EASY / with CALM
   if (!O(O_ELECT) && ++etk >= 450) { etk = 0; election(); }
   if ((gt & (O(O_REGROW) == 0 ? 15 : O(O_REGROW) == 1 ? 7 : 3)) == 0) grow_food();
