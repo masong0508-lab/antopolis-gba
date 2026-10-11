@@ -362,7 +362,7 @@ static void ecycle(void) {
   for (i = 0; i < 3; i++) if (rpeace[i] && !--rpeace[i] && ralive[i]) say("A PEACE TREATY HAS ENDED");
   if (ecyc % 20 == 0 && ecyc >= 20 && echap != 0) evpend = (u8)(rnd() % 10);   // random events (Tropico)
   // trophies
-  if (nbl >= 10) ach_get(12); if (nbl >= 40) ach_get(13); if (pop >= 60) ach_get(14); if ((etech & 0xFFF) == 0xFFF) ach_get(15);
+  if (nbl >= 10) ach_get(12); if (nbl >= 40) ach_get(13); if (nbl >= 80) ach_get(52); if (pop >= 60) ach_get(14); if ((etech & 0xFFF) == 0xFFF) ach_get(15);
   if (era_now() >= 2) ach_get(16); if (my_troops() >= 500) ach_get(18);
   if (fac[0] >= 80 && fac[1] >= 80 && fac[2] >= 80 && fac[3] >= 80) ach_get(21);
   if (rf >= 999 || rd >= 999 || ra >= 999) ach_get(28);
@@ -575,18 +575,22 @@ static void eslice_run(void) {
 
 // ---------- drawing ----------
 static void p3(u8 x, u8 y, u16 v, u8 p) { pc(x, y, v >= 100 ? (char)('0' + v / 100 % 10) : ' ', p); pc((u8)(x + 1), y, v >= 10 ? (char)('0' + v / 10 % 10) : ' ', p); pc((u8)(x + 2), y, (char)('0' + v % 10), p); }
+static void spd_tag(u8 x) {                          // the game speed; with 2 players on one GBA the turn clock sits here instead
+  if (mp_on == 1) { u8 s = (u8)(mp_tleft / 60 > 99 ? 99 : mp_tleft / 60), c = s < 10 ? 8 : 9; pc(28, 17, (char)(s >= 10 ? '0' + s / 10 : ' '), c); pc(29, 17, (char)('0' + s % 10), c); return; }
+  if (spd != 4) ps(x, 17, SPTAG[spd], 2);
+}
 static void ehud(void) {
   u8 i, x; u16 c = tcost();
   ov_fill(1, 1, 17, 19);
   pc(0, 17, '%', 13); p3(1, 17, rf, 13); pc(5, 17, '[', 2); p3(6, 17, rd, 2); pc(10, 17, ']', 9); p3(11, 17, ra, 9);
   pc(15, 17, '{', 1); p3(16, 17, pop, 1); pc(19, 17, '/', 15); p3(20, 17, popcap, 1);
   pc(24, 17, '^', 2); pn(25, 17, fac_avg(), fac_avg() < 30 ? 8 : 2);
-  if (spd != 4) ps(28, 17, SPTAG[spd], 2);
+  spd_tag(27);
   pc(0, 18, '=', 8); { u16 t = my_troops(); pc(1, 18, t >= 1000 ? '9' : ' ', 1); p3(1, 18, t > 999 ? 999 : t, 1); }
   pc(5, 18, '}', 14);
   if (eres != 255) { ps(6, 18, TNAME[eres], 14); for (i = 0; i < 4; i++) BGMAP1[18 * 32 + 20 + i] = (u16)((erp * 4 / c > i ? BAR_F : BAR_E) | (14 << 12)); }
   else ps(6, 18, "NO RESEARCH", 15);
-  x = 25; pc(x, 18, 'H', pop + 1 >= popcap ? 13 : 15); pc((u8)(x + 1), 18, 'F', food_net < 3 ? 13 : 15); pc((u8)(x + 2), 18, 'W', unemp == 0 ? 13 : 15);
+  x = 24; pc(x, 18, 'H', pop + 1 >= popcap ? 13 : 15); pc((u8)(x + 1), 18, 'F', food_net < 3 ? 13 : 15); pc((u8)(x + 2), 18, 'W', unemp == 0 ? 13 : 15);
   if (msgt) { psx(0, 19, msg, 2); msgt--; return; }
   if (eplace) {
     const char *why = can_build(eplace, cx, cy, 1);
@@ -849,11 +853,12 @@ static void world_map(void) {
   vram_reload();
 }
 static void emp_save(void);
+static u8 em_sel, cm_sel;                          // remembered menu picks (reset when a link game starts)
 static u8 emp_menu(void) {                         // START: 0 resume, 1 quit. A 3 x 4 board of bark buttons, D-pad moves freely
   static const char *const IT[12] = {"RESUME", "BUILD", "MAP", "SCIENCE", "EDICTS", "RIVALS", "GROUPS", "ADVICE", "GOAL", "SPEED", "SAVE", "QUIT"};
   static const char *const IH[12] = {"BACK TO YOUR EMPIRE", "PICK SOMETHING TO BUILD", "SEE THE WHOLE WORLD", "LEARN NEW TECHS",
     "PASS LAWS FOR YOUR ANTS", "TALK TO OTHER COLONIES", "WHAT YOUR ANTS THINK", "CHITIN GIVES ADVICE", "WHAT YOU MUST DO", "", "SAVE AND GO TO THE MENU", "LEAVE THIS EMPIRE"};
-  static u8 sel = 0;
+  u8 sel = em_sel;
   u8 i, x, y, x0, y0, w, pal, r = 255, conf = 0, fr = 0; u16 t;
   hide_all(); vsync(); oam_flush(); ewait_clear();
   while (r == 255) {
@@ -909,6 +914,7 @@ static u8 emp_menu(void) {                         // START: 0 resume, 1 quit. A
       }
     }
   }
+  em_sel = sel;
   ewait_clear(); ov_clear();
   return r;
 }
@@ -1078,11 +1084,129 @@ static void emp_load(void) {
   for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team && (ea[i].ord == 1 || ea[i].ord == 3)) ea[i].ord = 0;
 }
 
+// ---------- 2 PLAYERS helpers (shared by the empire, ANT CITY and versus loops) ----------
+static void ps_load(u8 p) { cx = pst[p].x; cy = pst[p].y; eplace = pst[p].place; etgt = pst[p].tgt; etgt_a = pst[p].tgta; }
+static void ps_save(u8 p) { pst[p].x = cx; pst[p].y = cy; pst[p].place = eplace; pst[p].tgt = etgt; pst[p].tgta = etgt_a; }
+static void ps_init(u8 x, u8 y, u8 x2, u8 y2) {
+  u8 p;
+  for (p = 0; p < 2; p++) { memset(&pst[p], 0, sizeof(PSt)); pst[p].prev = 0x3FF; }
+  pst[0].x = x; pst[0].y = y; pst[1].x = x2 < W ? x2 : (u8)(W - 1); pst[1].y = y2 < H ? y2 : (u8)(H - 1);
+  mp_turn = 0; mp_tleft = (u16)((mp_tlen + 1) * 30 * 60);
+}
+static void mp_pass_card(u8 p) {                   // same GBA: hand it over
+  static const char *const W2[5] = {"BLACK ANTS", "THE EMPIRE", "THE CITY", "THE ANTVERSE", "THE BLACK ANTS"};
+  u16 k, prev = 0x3FF; u16 fr = 0;
+  music_stop(); fade(0, 16); hide_all(); oam_flush();
+  ov_fill(1, 3, 0, 19); ui_full();
+  big(2, p ? "PLAYER 2" : "PLAYER 1");
+  ps(15 - (blen2(mp_kind == 0 ? (p ? "RED ANTS" : "BLACK ANTS") : W2[mp_kind]) + 1) / 2, 6, mp_kind == 0 ? (p ? "RED ANTS" : "BLACK ANTS") : W2[mp_kind], p && !mp_kind ? 8 : 13);
+  ps(8, 9, "YOUR TURN!", 9);
+  ps(5, 12, "PASS THE GBA OVER", 3);
+  ps(6, 16, "\1 WHEN YOU ARE READY", 10);
+  for (k = 0; k < 16; k++) BGPAL[96 + k] = BGPAL[k];
+  DISPCNT = 0x1B40; fade(16, 0);
+  for (;;) { vsync(); fr++; k = raw_keys(); if ((k & ~prev) & (J_A | J_START)) break; prev = k; }
+  while (raw_keys()) vsync();
+}
+static u8 mp_turn_tick(void) {                     // same GBA: count the turn down; 1 = the GBA was just passed
+  if (mp_on != 1) return 0;
+  if (mp_tleft) mp_tleft--;
+  if (mp_tleft) return 0;
+  ps_save(mp_turn);
+  mp_turn ^= 1; mp_tleft = (u16)((mp_tlen + 1) * 30 * 60);
+  mp_pass_card(mp_turn); ach_get(49);
+  ps_load(mp_turn); pst[mp_turn].prev = 0x3FF;
+  return 1;
+}
+static void mp_cursor2(void) {                     // the other player's cursor (red)
+  u8 o = (u8)(mp_local() ^ 1);
+  if (mp_on) place16(60, 20, 5, pst[o].x * 8, pst[o].y * 8, 0); else spr_hide(60);
+}
+static void mp_tag(void) {                         // whose cursor this screen follows (the turn clock: spd_tag)
+  if (!mp_on) return;
+  pc(28, 18, 'P', mp_local() ? 8 : 13); pc(29, 18, (char)('1' + mp_local()), mp_local() ? 8 : 13);
+}
+static void mp_hash(void) { lk_hash = rs ^ ((u32)gt << 12) ^ ((u32)rf << 3) ^ ((u32)nbl << 24) ^ (u32)cash ^ ((u32)mana << 20) ^ ((u32)stock[0] << 8); }
+
 // ---------- the empire game loop ----------
+static void emp_resume(void) {                     // back from a menu: same camera as before
+  win_all(); terr_calc(); ov_clear(); ehud(); mp_tag();
+  BG0HOFS = BG2HOFS = (u16)scx; BG0VOFS = BG2VOFS = (u16)scy; BG2CNT = 1 | (2 << 2) | (30 << 8);
+  hide_all(); edraw_sprites(); mp_cursor2(); oam_flush(); DISPCNT = 0x1F40; BLDY = 0;
+  if (!mus_on && !nomus) music_start();
+}
+static u8 emp_input(u8 p, u16 k) {                 // one player's buttons this frame: 0 go on, 1 quit, 2 a menu was used
+  PSt *s = &pst[p]; u16 pr = k & ~s->prev; u8 dirs, fire, mx = cx, my = cy;
+  s->prev = k;
+  dirs = (u8)(k & 15);
+  if (dirs != s->last) { s->rep = 0; s->last = dirs; }
+  if (dirs) {
+    fire = (s->rep == 0) || (s->rep >= CDLY[O(O_CURSOR)] && ((s->rep - CDLY[O(O_CURSOR)]) % CRAT[O(O_CURSOR)]) == 0);
+    if (s->rep < 250) s->rep++;
+    if (fire) {
+      if ((dirs & J_LEFT) && cx > 0) cx--;
+      if ((dirs & J_RIGHT) && cx < W - 1) cx++;
+      if ((dirs & J_UP) && cy > 0) cy--;
+      if ((dirs & J_DOWN) && cy < H - 1) cy++;
+    }
+  }
+  if (k & J_SEL) { if (pr & J_SEL) s->selused = 0; if (k & ~J_SEL) s->selused = 1; }
+  else if (s->selprev && !s->selused) {            // SELECT: jump to alert, home, your army, rival nest
+    if (alt) { cx = alx; cy = aly; alt = 0; }
+    else { u8 i; s->jj = (u8)((s->jj + 1) % 3);
+      if (s->jj == 0) { cx = nestx[0]; cy = nesty[0]; say("YOUR NEST"); }
+      else if (s->jj == 1) { for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team) { cx = ea[i].x; cy = ea[i].y; say("YOUR ARMY"); break; } if (i == EAN) s->jj = 2; }
+      if (s->jj == 2) { for (i = 0; i < enriv; i++) if (ralive[i]) { cx = rx[i]; cy = ry[i]; say("RIVAL NEST"); break; } } }
+    sfx_spawn();
+  }
+  s->selprev = (u8)(k & J_SEL);
+  if (pr & J_START) {
+    u8 q;
+    if (eplace || etgt) { eplace = 0; etgt = 0; return 0; }
+    lk_focus = p; q = emp_menu(); lk_focus = 2; s->prev = 0x3FF;
+    if (q) return 1;
+    emp_resume(); return 2;
+  }
+  if (etgt) {
+    if (pr & J_A) { EA *a = &ea[etgt_a]; u8 j; efield(cx, cy); if (a->alive) a->ord = 1; for (j = 0; j < EAN; j++) if (ea[j].alive && !ea[j].team && ea[j].ord == 3) ea[j].ord = 1; etgt = 0; say("MARCHING!"); sfx_alarm(); }
+    if (pr & J_B) etgt = 0;
+  } else if (eplace) {
+    if ((pr & J_A) || ((k & J_A) && (mx != cx || my != cy) && eplace >= L_ZH)) { if (do_build(eplace, cx, cy)) s->built++; }
+    if (pr & J_B) eplace = 0;
+  } else {
+    if (pr & J_A) {
+      u8 i, on = ebi[cy][cx] != 0;
+      for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team && ea[i].x == cx && ea[i].y == cy) on = 1;
+      if (on) { lk_focus = p; panel_open(); lk_focus = 2; s->prev = 0x3FF; emp_resume(); return 2; }
+      if (ETER(cy, cx) == 1) { u8 b; lk_focus = p; b = build_menu(); lk_focus = 2; if (b) eplace = b; s->prev = 0x3FF; emp_resume(); return 2; }
+      say("NOT YOUR LAND"); sfx_deny();
+    }
+    if (pr & J_B) { say("\1 BUILD  \5 MENU  \6 JUMP"); }
+  }
+  if (pr & J_L) {                                  // zoom into the nearest fight: the pixel battle
+    u8 i, bi = 255, bd = 255;
+    for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team && ea[i].foe != 255) { u8 dd = (u8)(dist(ea[i].x, cx) + dist(ea[i].y, cy)); if (dd < bd) { bd = dd; bi = i; } }
+    lk_focus = p;
+    if (bi != 255 && ea[ea[bi].foe].alive) { EA *e = &ea[ea[bi].foe]; zoom_battle(&ea[bi], &e->w, &e->s, &e->m, (u8)(e->team - 1), e->x, e->y);
+      if (!a_size(e)) e->alive = 0; if (!a_size(&ea[bi])) ea[bi].alive = 0; ea[bi].foe = 255; e->foe = 255; lk_focus = 2; s->prev = 0x3FF; return 2; }
+    { u8 j; for (i = 0; i < EAN; i++) if (ea[i].alive && ea[i].team && dnp[0][ea[i].y][ea[i].x] <= 1 && (gw + gs + gm)) {   // a siege at your nest
+        EA *e = &ea[i]; zoom_battle(0, &e->w, &e->s, &e->m, (u8)(e->team - 1), nestx[0], nesty[0]); if (!a_size(e)) e->alive = 0; lk_focus = 2; s->prev = 0x3FF; return 2; }
+      for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team) for (j = 0; j < enriv; j++) if (ralive[j] && rgar[j] && dist(ea[i].x, rx[j]) + dist(ea[i].y, ry[j]) <= 1) {   // storming a rival nest
+        u16 w2 = (u16)(rgar[j] * 7 / 10), s2 = (u16)(rgar[j] / 5), m2 = (u16)(rgar[j] - w2 - s2);
+        zoom_battle(&ea[i], &w2, &s2, &m2, j, rx[j], ry[j]); rgar[j] = (u16)(w2 + s2 + m2); if (!a_size(&ea[i])) ea[i].alive = 0; lk_focus = 2; s->prev = 0x3FF; return 2; } }
+    lk_focus = 2;
+    say("NO BATTLE NOW");
+  }
+  if (pr & J_R) spd_toggle();
+  return 0;
+}
 static void emp_play(void) {
-  u16 k, p, prev = 0, last = 0; u8 dirs, rep = 0, fire, t = 0, n, mx, my, selused = 0, selprev = 0;
+  u16 k; u8 t = 0, n, i, r = 0, lx, ly;
+  if (mp_on == 1) { mp_turn = 0; mp_tleft = (u16)((mp_tlen + 1) * 30 * 60); mp_pass_card(0); }
   emp_show();
-  if (echap != 255) say(CH[echap].goal_txt); else say("\1 BUILD  \5 MENU  \3 ZOOM");
+  ps_init(cx, cy, (u8)(cx + 2), cy);
+  if (echap != 255) say(CH[echap].goal_txt); else say(mp_on ? "2 PLAYERS: SHARE THE COLONY!" : "\1 BUILD  \5 MENU  \3 ZOOM");
+  mp_tag(); mp_cursor2();
   while (!eend) {
     vsync(); frc++;
     shx = (shk && !O(O_SHAKE)) ? ((shk & 2) ? 2 : -2) : 0; if (shk) shk--;
@@ -1091,71 +1215,28 @@ static void emp_play(void) {
     OBJPAL[32 + 3] = RGB(31, 26 + ((frc >> 2) & 3), (frc & 16) ? 4 : 12);
     party_tick();
     if (alt) alt--;
-    if (evpend != 255) { emp_event(evpend); evpend = 255; emp_show(); prev = joy(); continue; }
-    k = joy(); p = k & ~prev; prev = k;
-    dirs = (u8)(k & 15); mx = cx; my = cy;
-    if (dirs != last) { rep = 0; last = dirs; }
-    if (dirs) {
-      fire = (rep == 0) || (rep >= CDLY[O(O_CURSOR)] && ((rep - CDLY[O(O_CURSOR)]) % CRAT[O(O_CURSOR)]) == 0);
-      if (rep < 250) rep++;
-      if (fire) {
-        if ((dirs & J_LEFT) && cx > 0) cx--;
-        if ((dirs & J_RIGHT) && cx < W - 1) cx++;
-        if ((dirs & J_UP) && cy > 0) cy--;
-        if ((dirs & J_DOWN) && cy < H - 1) cy++;
-      }
+    if (evpend != 255) { lk_focus = 2; emp_event(evpend); evpend = 255; emp_resume(); continue; }
+    mp_hash();
+    k = joy();
+    if (lk_err) { eend = 3; break; }
+    lx = cx; ly = cy;
+    for (i = 0; i < (mp_on == 2 ? 2 : 1); i++) {
+      u8 p = mp_on == 2 ? i : mp_on == 1 ? mp_turn : 0;
+      ps_load(p); r = emp_input(p, mp_on == 2 ? lk_k[p] : k); ps_save(p);
+      if (r) break;
     }
-    if (k & J_SEL) { if (p & J_SEL) selused = 0; if (k & ~J_SEL) selused = 1; }
-    else if (selprev && !selused) {                // SELECT: jump to alert, home, your army, rival nest
-      if (alt) { cx = alx; cy = aly; alt = 0; }
-      else { static u8 jj; u8 i; jj = (u8)((jj + 1) % 3);
-        if (jj == 0) { cx = nestx[0]; cy = nesty[0]; say("YOUR NEST"); }
-        else if (jj == 1) { for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team) { cx = ea[i].x; cy = ea[i].y; say("YOUR ARMY"); break; } if (i == EAN) jj = 2; }
-        if (jj == 2) { for (i = 0; i < enriv; i++) if (ralive[i]) { cx = rx[i]; cy = ry[i]; say("RIVAL NEST"); break; } } }
-      sfx_spawn();
-    }
-    selprev = (u8)(k & J_SEL);
-    if (p & J_START) { if (eplace || etgt) { eplace = 0; etgt = 0; } else if (emp_menu()) { eend = 3; break; } emp_show(); prev = joy(); continue; }
-    if (etgt) {
-      if (p & J_A) { EA *a = &ea[etgt_a]; u8 j; efield(cx, cy); if (a->alive) a->ord = 1; for (j = 0; j < EAN; j++) if (ea[j].alive && !ea[j].team && ea[j].ord == 3) ea[j].ord = 1; etgt = 0; say("MARCHING!"); sfx_alarm(); }
-      if (p & J_B) etgt = 0;
-    } else if (eplace) {
-      if ((p & J_A) || ((k & J_A) && (mx != cx || my != cy) && eplace >= L_ZH)) do_build(eplace, cx, cy);
-      if (p & J_B) eplace = 0;
-    } else {
-      if (p & J_A) {
-        u8 i, on = ebi[cy][cx] != 0;
-        for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team && ea[i].x == cx && ea[i].y == cy) on = 1;
-        if (on) { panel_open(); emp_show(); prev = joy(); continue; }
-        if (ETER(cy, cx) == 1) { u8 b = build_menu(); if (b) eplace = b; emp_show(); prev = joy(); continue; }
-        say("NOT YOUR LAND"); sfx_deny();
-      }
-      if (p & J_B) { say("\1 BUILD  \5 MENU  \6 JUMP"); }
-    }
-    if (p & J_L) {                                 // zoom into the nearest fight: the pixel battle
-      u8 i, bi = 255, bd = 255;
-      for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team && ea[i].foe != 255) { u8 dd = (u8)(dist(ea[i].x, cx) + dist(ea[i].y, cy)); if (dd < bd) { bd = dd; bi = i; } }
-      if (bi != 255 && ea[ea[bi].foe].alive) { EA *e = &ea[ea[bi].foe]; zoom_battle(&ea[bi], &e->w, &e->s, &e->m, (u8)(e->team - 1), e->x, e->y);
-        if (!a_size(e)) e->alive = 0; if (!a_size(&ea[bi])) ea[bi].alive = 0; ea[bi].foe = 255; e->foe = 255; prev = joy(); continue; }
-      { u8 j; for (i = 0; i < EAN; i++) if (ea[i].alive && ea[i].team && dnp[0][ea[i].y][ea[i].x] <= 1 && (gw + gs + gm)) {   // a siege at your nest
-          EA *e = &ea[i]; zoom_battle(0, &e->w, &e->s, &e->m, (u8)(e->team - 1), nestx[0], nesty[0]); if (!a_size(e)) e->alive = 0; prev = joy(); goto cont; }
-        for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team) for (j = 0; j < enriv; j++) if (ralive[j] && rgar[j] && dist(ea[i].x, rx[j]) + dist(ea[i].y, ry[j]) <= 1) {   // storming a rival nest
-          u16 w2 = (u16)(rgar[j] * 7 / 10), s2 = (u16)(rgar[j] / 5), m2 = (u16)(rgar[j] - w2 - s2);
-          zoom_battle(&ea[i], &w2, &s2, &m2, j, rx[j], ry[j]); rgar[j] = (u16)(w2 + s2 + m2); if (!a_size(&ea[i])) ea[i].alive = 0; prev = joy(); goto cont; } }
-#ifdef BATTLETEST
-      { u16 w2 = 420, s2 = 50, m2 = 30; gw = 400; gs = 60; gm = 40; zoom_battle(0, &w2, &s2, &m2, 0, cx, cy); prev = joy(); goto cont; }
-#endif
-      say("NO BATTLE NOW");
-    }
-cont:
-    if (p & J_R) spd_toggle();
+    if (r == 1) { eend = 3; break; }
+    ps_load(mp_local());
+    if (r == 2) continue;
+    if (mp_turn_tick()) { emp_resume(); continue; }
     follow(); scroll_step(); win_sync();
     bfs_tick(450);
     n = SPN[spd]; if (n && (sf++ & SPM[spd])) n = 0;
     for (; n; n--) eslice_run();
-    if (++t >= 8 || p || mx != cx || my != cy) { t = 0; ehud(); }
-    edraw_sprites();
+    if (++t >= 8 || (mp_on == 2 ? lk_k[lk_me] : k) || lx != cx || ly != cy) { t = 0; ehud(); mp_tag(); }
+    edraw_sprites(); mp_cursor2();
   }
+  if (mp_on == 2 && lk_err) { ps_load(0); }
   music_stop();
 }
 
@@ -1251,6 +1332,7 @@ static void empire_main(void) {
   emode = 0;
 }
 #include "city.c"
+#include "mp.c"
 static void vram_reload(void) {
   u16 k;
   gfx_init(); opts_apply();

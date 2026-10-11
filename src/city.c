@@ -54,6 +54,7 @@ static const char *const LAWN[NLAW] = {"CLEAN AIR", "NEIGHBOR WATCH", "FREE CLIN
 static const char *const LAWD[NLAW] = {"SMOG -30 PERCENT", "CRIME -20", "LAND VALUE +6", "MORE JOBS  MORE SMOG", "PARKS BRING VISITORS: MONEY",
   "FOOD SELLS FOR DOUBLE", "FIRES SPREAD LESS", "EVERYONE WANTS TO MOVE IN"};
 static const u8 LAWC[NLAW] = {40, 20, 50, 0, 10, 15, 25, 0};
+static u8 c_fout, c_pw;                            // fires saved by dew pumps, god powers used (trophies)
 static u8 law(u8 i) { return (u8)((claws >> i) & 1); }
 static u16 ccost(u8 t) { return bc((u16)((BD[t].f + BD[t].d + 2 * BD[t].a) * 10)); }
 static u8 cupk(u8 t) { return (u8)((BD[t].f + BD[t].d + 2 * BD[t].a) / 5); }
@@ -160,7 +161,7 @@ static u8 city_do(u8 t, u8 x, u8 y) {
   const char *why = city_can(t, x, y);
   if (why) { say(why); sfx_deny(); return 0; }
   if (t >= P_RAISE) {
-    mana -= PWRC[t - P_RAISE];
+    mana -= PWRC[t - P_RAISE]; c_pw |= (u8)(1 << (t - P_RAISE)); if (c_pw == 31) ach_get(45);
     if (t == P_RAISE) { hgt[y][x]++; draw_around(x, y); sfx_raise(); }
     else if (t == P_LOWER) { hgt[y][x]--; if (!hgt[y][x]) { ezt[y][x] &= 7; } draw_around(x, y); sfx_lower(); }
     else if (t == P_FLOOD) city_flood_power(x, y);
@@ -192,7 +193,7 @@ static u8 city_do(u8 t, u8 x, u8 y) {
 // ---------- disasters ----------
 static void fire_start(u8 x, u8 y) {
   u8 i;
-  if (in_fire(x, y) || !hgt[y][x]) return;
+  if (cht[19] || in_fire(x, y) || !hgt[y][x]) return;
   for (i = 0; i < NFIRE; i++) if (!ftime[i]) { fcell[i] = (u16)((y << 7) | x); ftime[i] = (u8)(40 + (rnd() & 15)); cfires_n++; emp_dec(x, y); return; }
 }
 static u8 burnable(u8 x, u8 y) { return ELV(y, x) || (ebi[y][x] && ebl[ebi[y][x] - 1].t != B_NEST); }
@@ -344,6 +345,7 @@ static void city_cycle(void) {
   // money
   inc_r = (s16)(cpop * taxR / 150); inc_w = (s16)(cjw * taxW / 100); inc_f = (s16)(cjf * taxF / 120);
   if (law(7)) { inc_r = (s16)(inc_r * 8 / 10); inc_w = (s16)(inc_w * 8 / 10); inc_f = (s16)(inc_f * 8 / 10); }
+  if (cht[18]) { inc_r = (s16)(inc_r * (1 + cht[18])); inc_w = (s16)(inc_w * (1 + cht[18])); inc_f = (s16)(inc_f * (1 + cht[18])); }
   if (law(4)) { u8 pk = 0; for (i = 0; i < nbl; i++) if (ebl[i].t == B_PARK || ebl[i].t == B_GARDEN || ebl[i].t == B_STADIUM) pk++; inc_x += (s16)(pk >= 3 ? cpop / 100 + pk * 3 : 0); }
   exp_s = 0; for (i = 0; i < nbl; i++) if (cash_paid(ebl[i].t) && ebl[i].t != B_NEST) exp_s += cupk(ebl[i].t);
   exp_t = (s16)(ctun / 10); exp_l = 0; for (i = 0; i < NLAW; i++) if (law(i)) exp_l += LAWC[i];
@@ -379,6 +381,9 @@ static void city_cycle(void) {
   if (ecity == 2 && nb_of[B_ARCO]) city_end(1, 5);
   // trophies that fit the city
   if (cpop >= 2000) ach_get(14); if (ezbuilt >= 10) ach_get(25);
+  if (cash >= 20000) ach_get(37); if (cmile >= 5) ach_get(38);
+  if (cpop >= 2000 && csmog < 10) ach_get(39); if (cpop >= 2000 && ccrime < 10) ach_get(40);
+  if (czn[1][3] >= 50) ach_get(50); if (inc_r + inc_w + inc_f + inc_x - exp_s - exp_t - exp_l - exp_n >= 500) ach_get(51);
   scan_reset();
 }
 static u8 city_goal_ok(void);
@@ -392,6 +397,7 @@ static void city_tick(void) {                      // every game tick: the scan,
     if (!pumped && !(rnd() % (law(6) ? 16 : 7))) { k = (u8)(rnd() & 3); { s8 a = (s8)x + DX[k], b = (s8)y + DY[k]; if (a >= 0 && b >= 0 && a < W && b < H && burnable((u8)a, (u8)b)) fire_start((u8)a, (u8)b); } }
     if (!ftime[i]) {
       cfires_n--;
+      if (pumped) { if (++c_fout >= 10) ach_get(41); emp_dec(x, y); say("THE DEW PUMPS SAVED IT!"); continue; }   // pumps put it out in time
       if (ebi[y][x]) { EB *e = &ebl[ebi[y][x] - 1]; if (e->t != B_NEST) { del_b((u8)(ebi[y][x] - 1)); terr_calc(); } }
       else if (ELV(y, x)) set_lv(y, x, 0);
       eredraw(x, y, 1); fx_add(x, y, FX_PUFF);
@@ -409,7 +415,7 @@ static void city_tick(void) {                      // every game tick: the scan,
     bt_ox = bt_x; bt_oy = bt_y; bt_x = (u8)nx; bt_y = (u8)ny; bt_age = 0; if (bt_dx) bt_fl = bt_dx < 0;
     if (ELV(bt_y, bt_x)) { set_lv(bt_y, bt_x, 0); emp_dec(bt_x, bt_y); fx_add(bt_x, bt_y, FX_PUFF); }
     if (ebi[bt_y][bt_x] && ebl[ebi[bt_y][bt_x] - 1].t != B_NEST) { del_b((u8)(ebi[bt_y][bt_x] - 1)); terr_calc(); eredraw(bt_x, bt_y, 1); }
-    if (ccov[bt_y >> 2][bt_x >> 2] & CV_GUARD) { if (bt_hp <= 3) { bt_on = 0; say("THE GUARDS BEAT THE BEETLE!"); sfx_mana(); return; } bt_hp -= 3; fx_add(bt_x, bt_y, FX_HEART); }
+    if (ccov[bt_y >> 2][bt_x >> 2] & CV_GUARD) { if (bt_hp <= 3) { bt_on = 0; say("THE GUARDS BEAT THE BEETLE!"); sfx_mana(); ach_get(42); return; } bt_hp -= 3; fx_add(bt_x, bt_y, FX_HEART); }
     shk = 3;
   }
 }
@@ -433,7 +439,7 @@ static void chud(void) {
   pcash(1, 17, cash, 9);
   pc(11, 17, '{', 1); pnum(13, 17, cpop, 1);
   ps(20, 17, MONTHS[cmon % 12], 3); pc(24, 17, 'Y', 10); pnum(25, 17, (u32)(cmon / 12 + 1), 3);
-  if (spd != 4) ps(27, 17, SPTAG[spd], 2);
+  spd_tag(27);
   if (ecity == 2) {
     pc(0, 18, '%', 13); p3(1, 18, rf, 13); pc(4, 18, '[', 2); p3(5, 18, rd, 2); pc(8, 18, ']', 9); p3(9, 18, ra, 9);
     pc(13, 18, '=', 8); { u16 t = my_troops(); p3(14, 18, t > 999 ? 999 : t, 1); }
@@ -441,7 +447,7 @@ static void chud(void) {
     pc(23, 18, 'H', dR > 15 ? 13 : dR < -15 ? 8 : 3); pc(24, 18, 'F', dF > 15 ? 13 : dF < -15 ? 8 : 3); pc(25, 18, 'W', dW > 15 ? 13 : dW < -15 ? 8 : 3);
   } else {
     dbar(1, 18, 'H', dR); dbar(8, 18, 'F', dF); dbar(15, 18, 'W', dW);
-    pc(23, 18, '%', chunger ? 8 : 13); p3(25, 18, rf, chunger ? 8 : 13);
+    pc(22, 18, '%', chunger ? 8 : 13); p3(24, 18, rf, chunger ? 8 : 13);
   }
   if (msgt) { psx(0, 19, msg, 2); msgt--; return; }
   if (eplace) {
@@ -905,30 +911,30 @@ static u8 city_menu(void) {                        // 0 resume, 1 quit
   static const char *const IH[15] = {"BACK TO THE CITY", "ZONES TUNNELS AND BUILDINGS", "TAXES AND MONEY", "SEE LAND VALUE SMOG CRIME",
     "CITY RULES THAT HELP", "WHAT THE CITY NEEDS", "ANTS AND MONEY OVER TIME", "FIRE FLOOD BEETLE...", "WHAT YOU MUST DO", "L SLOWER  A FASTER",
     "SAVE AND GO TO THE MENU", "LEAVE THIS CITY", "LEARN NEW TECHS", "TALK TO OTHER COLONIES", "PASS LAWS FOR YOUR ANTS"};
-  static u8 sel = 0;
+  u8 sel = cm_sel;
   u8 n = ecity == 2 ? 15 : 12, r;
   for (;;) {
     r = grid_menu(ecity == 2 ? "ANTVERSE" : "ANT CITY", IT, IH, n, &sel);
     if (r == 255 || r == 0) break;
     switch (r) {
-    case 1: { u8 b = city_build_menu(); if (b) { eplace = b; ewait_clear(); ov_clear(); return 0; } break; }
+    case 1: { u8 b = city_build_menu(); if (b) { eplace = b; ewait_clear(); ov_clear(); cm_sel = sel; return 0; } break; }
     case 2: city_budget(); break;
     case 3: city_data(); break;
     case 4: city_laws(); break;
     case 5: city_advice(); break;
     case 6: city_graphs(); break;
-    case 7: city_disasters(); ewait_clear(); ov_clear(); return 0;
+    case 7: city_disasters(); ewait_clear(); ov_clear(); cm_sel = sel; return 0;
     case 8: city_goal_card(); break;
     case 9: spd_next(1); break;
-    case 10: if (cscen == 255) { city_save(); ewait_clear(); ov_clear(); return 1; } sfx_deny(); break;
+    case 10: if (cscen == 255) { city_save(); ewait_clear(); ov_clear(); cm_sel = sel; return 1; } sfx_deny(); break;
     case 11: { static const char *const Y[2] = {"YES, QUIT", "NO"}; static const char *const YH[2] = {"LEAVE WITHOUT SAVING", "KEEP PLAYING"}; u8 s2 = 1;
-      if (grid_menu("QUIT?", Y, YH, 2, &s2) == 0) { ewait_clear(); ov_clear(); return 1; } break; }
+      if (grid_menu("QUIT?", Y, YH, 2, &s2) == 0) { ewait_clear(); ov_clear(); cm_sel = sel; return 1; } break; }
     case 12: research_menu(); break;
     case 13: rivals_screen(); break;
     case 14: edict_menu(); break;
     }
   }
-  ewait_clear(); ov_clear();
+  cm_sel = sel; ewait_clear(); ov_clear();
   return 0;
 }
 
@@ -942,9 +948,9 @@ static void city_show(void) {
   DISPCNT = 0x1F40; BLDY = 16; music_start(); fade(16, 0);
 }
 static void city_resume(void) {                    // back from a menu: keep the camera where it was
-  win_all(); ov_clear(); chud();
-  BG0HOFS = BG2HOFS = (u16)scx; BG0VOFS = BG2VOFS = (u16)scy;
-  hide_all(); edraw_sprites(); oam_flush(); DISPCNT = 0x1F40; BLDY = 0;
+  win_all(); ov_clear(); chud(); mp_tag();
+  BG0HOFS = BG2HOFS = (u16)scx; BG0VOFS = BG2VOFS = (u16)scy; BG2CNT = 1 | (2 << 2) | (30 << 8);
+  hide_all(); edraw_sprites(); mp_cursor2(); oam_flush(); DISPCNT = 0x1F40; BLDY = 0;
   if (!mus_on && !nomus) music_start();
 }
 static void milestone_card(u8 m) {
@@ -954,10 +960,80 @@ static void milestone_card(u8 m) {
   music_stop(); fade(0, 16); DISPCNT = 0x80;
   story_card(MILEN[m], L, "\1 HOORAY");
 }
+static u8 city_input(u8 p, u16 k) {                // one player's buttons this frame: 0 go on, 1 quit, 2 a menu was used
+  PSt *s = &pst[p]; u16 pr = k & ~s->prev; u8 dirs, fire, mx = cx, my = cy;
+  s->prev = k;
+  dirs = (u8)(k & 15);
+  if (dirs != s->last) { s->rep = 0; s->last = dirs; }
+  if (dirs) {
+    fire = (s->rep == 0) || (s->rep >= CDLY[O(O_CURSOR)] && ((s->rep - CDLY[O(O_CURSOR)]) % CRAT[O(O_CURSOR)]) == 0);
+    if (s->rep < 250) s->rep++;
+    if (fire) {
+      if ((dirs & J_LEFT) && cx > 0) cx--;
+      if ((dirs & J_RIGHT) && cx < W - 1) cx++;
+      if ((dirs & J_UP) && cy > 0) cy--;
+      if ((dirs & J_DOWN) && cy < H - 1) cy++;
+    }
+  }
+  if (k & J_SEL) { if (pr & J_SEL) s->selused = 0; if (k & ~J_SEL) s->selused = 1; }
+  else if (s->selprev && !s->selused) {
+    if (alt) { cx = alx; cy = aly; alt = 0; }
+    else if (bt_on) { cx = bt_x; cy = bt_y; say("THE BEETLE"); }
+    else { u8 i; s->jj = (u8)((s->jj + 1) % 3);
+      if (s->jj == 0) { cx = nestx[0]; cy = nesty[0]; say("THE NEST"); }
+      else if (s->jj == 1) { for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team) { cx = ea[i].x; cy = ea[i].y; say("YOUR ARMY"); break; } if (i == EAN) s->jj = 2; }
+      if (s->jj == 2) { for (i = 0; i < enriv; i++) if (ralive[i]) { cx = rx[i]; cy = ry[i]; say("RIVAL NEST"); break; } if (!enriv) { cx = nestx[0]; cy = nesty[0]; } } }
+    sfx_spawn();
+  }
+  s->selprev = (u8)(k & J_SEL);
+  if (pr & J_START) {
+    u8 q;
+    if (eplace || etgt) { eplace = 0; etgt = 0; return 0; }
+    lk_focus = p; q = city_menu(); lk_focus = 2; s->prev = 0x3FF;
+    if (q) return 1;
+    city_resume(); return 2;
+  }
+  if (etgt) {
+    if (pr & J_A) { EA *a = &ea[etgt_a]; u8 j; efield(cx, cy); if (a->alive) a->ord = 1; for (j = 0; j < EAN; j++) if (ea[j].alive && !ea[j].team && ea[j].ord == 3) ea[j].ord = 1; etgt = 0; say("MARCHING!"); sfx_alarm(); }
+    if (pr & J_B) etgt = 0;
+  } else if (eplace) {
+    u8 drag = eplace == L_TUN || eplace == L_DOZE || (eplace >= L_ZH && eplace <= L_ZX);
+    if ((pr & J_A) || ((k & J_A) && (mx != cx || my != cy) && drag)) { if (city_do(eplace, cx, cy)) s->built++; }
+    if (pr & J_B) eplace = 0;
+  } else {
+    if (pr & J_A) {
+      u8 i, on = ebi[cy][cx] != 0;
+      for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team && ea[i].x == cx && ea[i].y == cy) on = 1;
+      lk_focus = p;
+      if (on) { panel_open(); lk_focus = 2; s->prev = 0x3FF; city_resume(); return 2; }
+      if (hgt[cy][cx] && (ecity == 1 || ETER(cy, cx) == 1)) { u8 b = city_build_menu(); lk_focus = 2; if (b) eplace = b; s->prev = 0x3FF; city_resume(); return 2; }
+      lk_focus = 2;
+      say(hgt[cy][cx] ? "NOT YOUR LAND" : "WATER: NOTHING TO BUILD"); sfx_deny();
+    }
+    if (pr & J_B) { lk_focus = p; if (city_info()) { u8 b = city_build_menu(); if (b) eplace = b; } lk_focus = 2; s->prev = 0x3FF; city_resume(); return 2; }
+  }
+  if (pr & J_L) {
+    lk_focus = p;
+    if (ecity == 2) {                              // zoom into a fight
+      u8 i, bi = 255, bd = 255;
+      for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team && ea[i].foe != 255) { u8 dd = (u8)(dist(ea[i].x, cx) + dist(ea[i].y, cy)); if (dd < bd) { bd = dd; bi = i; } }
+      if (bi != 255 && ea[ea[bi].foe].alive) { EA *e = &ea[ea[bi].foe]; zoom_battle(&ea[bi], &e->w, &e->s, &e->m, (u8)(e->team - 1), e->x, e->y);
+        if (!a_size(e)) e->alive = 0; if (!a_size(&ea[bi])) ea[bi].alive = 0; ea[bi].foe = 255; e->foe = 255; lk_focus = 2; s->prev = 0x3FF; city_resume(); return 2; }
+      for (i = 0; i < EAN; i++) if (ea[i].alive && ea[i].team && dnp[0][ea[i].y][ea[i].x] <= 1 && (gw + gs + gm)) {
+        EA *e = &ea[i]; zoom_battle(0, &e->w, &e->s, &e->m, (u8)(e->team - 1), nestx[0], nesty[0]); if (!a_size(e)) e->alive = 0; lk_focus = 2; s->prev = 0x3FF; city_resume(); return 2; }
+    }
+    city_data(); lk_focus = 2; s->prev = 0x3FF; city_resume(); return 2;   // L: the data maps
+  }
+  if (pr & J_R) spd_toggle();
+  return 0;
+}
 static void city_play(void) {
-  u16 k, p, prev = 0, last = 0; u8 dirs, rep = 0, fire, t = 0, n, mx, my, selused = 0, selprev = 0;
+  u16 k; u8 t = 0, n, i, r = 0, lx, ly;
+  if (mp_on == 1) { mp_turn = 0; mp_tleft = (u16)((mp_tlen + 1) * 30 * 60); mp_pass_card(0); }
   city_show();
-  say(cscen != 255 ? SC[cscen].name : "\1 BUILD  \2 INFO  \5 MENU");
+  ps_init(cx, cy, (u8)(cx + 2), cy);
+  say(cscen != 255 ? SC[cscen].name : mp_on ? "2 MAYORS! BUILD TOGETHER" : "\1 BUILD  \2 INFO  \5 MENU");
+  mp_tag(); mp_cursor2();
   while (!eend) {
     vsync(); frc++;
     shx = (shk && !O(O_SHAKE)) ? ((shk & 2) ? 2 : -2) : 0; if (shk) shk--;
@@ -967,73 +1043,32 @@ static void city_play(void) {
     OBJPAL[32 + 3] = RGB(31, 26 + ((frc >> 2) & 3), (frc & 16) ? 4 : 12);
     party_tick();
     if (alt) alt--;
-    if (cnews) { u8 m = (u8)(cnews - 1); cnews = 0; milestone_card(m); city_show(); prev = joy(); continue; }
-    if (evpend != 255 && ecity == 2) { emp_event(evpend); evpend = 255; city_show(); prev = joy(); continue; }
+    lk_focus = 2;
+    if (cnews) { u8 m = (u8)(cnews - 1); cnews = 0; milestone_card(m); city_resume(); continue; }
+    if (evpend != 255 && ecity == 2) { emp_event(evpend); evpend = 255; city_resume(); continue; }
     if (cscen != 255 && cmon) {
       if (city_goal_ok()) { city_end(1, 22); break; }
       if (cmon >= cyears_lim) { city_end(0, 21); break; }
     }
-    k = joy(); p = k & ~prev; prev = k;
-    dirs = (u8)(k & 15); mx = cx; my = cy;
-    if (dirs != last) { rep = 0; last = dirs; }
-    if (dirs) {
-      fire = (rep == 0) || (rep >= CDLY[O(O_CURSOR)] && ((rep - CDLY[O(O_CURSOR)]) % CRAT[O(O_CURSOR)]) == 0);
-      if (rep < 250) rep++;
-      if (fire) {
-        if ((dirs & J_LEFT) && cx > 0) cx--;
-        if ((dirs & J_RIGHT) && cx < W - 1) cx++;
-        if ((dirs & J_UP) && cy > 0) cy--;
-        if ((dirs & J_DOWN) && cy < H - 1) cy++;
-      }
+    mp_hash();
+    k = joy();
+    if (lk_err) { eend = 3; break; }
+    lx = cx; ly = cy;
+    for (i = 0; i < (mp_on == 2 ? 2 : 1); i++) {
+      u8 p = mp_on == 2 ? i : mp_on == 1 ? mp_turn : 0;
+      ps_load(p); r = city_input(p, mp_on == 2 ? lk_k[p] : k); ps_save(p);
+      if (r) break;
     }
-    if (k & J_SEL) { if (p & J_SEL) selused = 0; if (k & ~J_SEL) selused = 1; }
-    else if (selprev && !selused) {
-      if (alt) { cx = alx; cy = aly; alt = 0; }
-      else if (bt_on) { cx = bt_x; cy = bt_y; say("THE BEETLE"); }
-      else { static u8 jj; u8 i; jj = (u8)((jj + 1) % 3);
-        if (jj == 0) { cx = nestx[0]; cy = nesty[0]; say("THE NEST"); }
-        else if (jj == 1) { for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team) { cx = ea[i].x; cy = ea[i].y; say("YOUR ARMY"); break; } if (i == EAN) jj = 2; }
-        if (jj == 2) { for (i = 0; i < enriv; i++) if (ralive[i]) { cx = rx[i]; cy = ry[i]; say("RIVAL NEST"); break; } if (!enriv) { cx = nestx[0]; cy = nesty[0]; } } }
-      sfx_spawn();
-    }
-    selprev = (u8)(k & J_SEL);
-    if (p & J_START) { if (eplace || etgt) { eplace = 0; etgt = 0; } else if (city_menu()) { eend = 3; break; } city_resume(); prev = joy(); continue; }
-    if (etgt) {
-      if (p & J_A) { EA *a = &ea[etgt_a]; u8 j; efield(cx, cy); if (a->alive) a->ord = 1; for (j = 0; j < EAN; j++) if (ea[j].alive && !ea[j].team && ea[j].ord == 3) ea[j].ord = 1; etgt = 0; say("MARCHING!"); sfx_alarm(); }
-      if (p & J_B) etgt = 0;
-    } else if (eplace) {
-      u8 drag = eplace == L_TUN || eplace == L_DOZE || (eplace >= L_ZH && eplace <= L_ZX);
-      if ((p & J_A) || ((k & J_A) && (mx != cx || my != cy) && drag)) city_do(eplace, cx, cy);
-      if (p & J_B) eplace = 0;
-    } else {
-      if (p & J_A) {
-        u8 i, on = ebi[cy][cx] != 0;
-        for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team && ea[i].x == cx && ea[i].y == cy) on = 1;
-        if (on) { panel_open(); city_resume(); prev = joy(); continue; }
-        if (hgt[cy][cx] && (ecity == 1 || ETER(cy, cx) == 1)) { u8 b = city_build_menu(); if (b) eplace = b; city_resume(); prev = joy(); continue; }
-        say(hgt[cy][cx] ? "NOT YOUR LAND" : "WATER: NOTHING TO BUILD"); sfx_deny();
-      }
-      if (p & J_B) { if (city_info()) { u8 b = city_build_menu(); if (b) eplace = b; } city_resume(); prev = joy(); continue; }
-    }
-    if (p & J_L) {
-      if (ecity == 2) {                            // zoom into a fight
-        u8 i, bi = 255, bd = 255;
-        for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team && ea[i].foe != 255) { u8 dd = (u8)(dist(ea[i].x, cx) + dist(ea[i].y, cy)); if (dd < bd) { bd = dd; bi = i; } }
-        if (bi != 255 && ea[ea[bi].foe].alive) { EA *e = &ea[ea[bi].foe]; zoom_battle(&ea[bi], &e->w, &e->s, &e->m, (u8)(e->team - 1), e->x, e->y);
-          if (!a_size(e)) e->alive = 0; if (!a_size(&ea[bi])) ea[bi].alive = 0; ea[bi].foe = 255; e->foe = 255; city_resume(); prev = joy(); continue; }
-        for (i = 0; i < EAN; i++) if (ea[i].alive && ea[i].team && dnp[0][ea[i].y][ea[i].x] <= 1 && (gw + gs + gm)) {
-          EA *e = &ea[i]; zoom_battle(0, &e->w, &e->s, &e->m, (u8)(e->team - 1), nestx[0], nesty[0]); if (!a_size(e)) e->alive = 0; break; }
-        if (i < EAN) { city_resume(); prev = joy(); continue; }
-      }
-      city_data(); city_resume(); prev = joy(); continue;   // L: the data maps
-    }
-    if (p & J_R) spd_toggle();
+    if (r == 1) { eend = 3; break; }
+    ps_load(mp_local());
+    if (r == 2) continue;
+    if (mp_turn_tick()) { city_resume(); continue; }
     follow(); scroll_step(); win_sync();
     bfs_tick(450);
     n = SPN[spd]; if (n && (sf++ & SPM[spd])) n = 0;
     for (; n; n--) eslice_run();
-    if (++t >= 8 || p || mx != cx || my != cy) { t = 0; chud(); }
-    edraw_sprites();
+    if (++t >= 8 || (mp_on == 2 ? lk_k[lk_me] : k) || lx != cx || ly != cy) { t = 0; chud(); mp_tag(); }
+    edraw_sprites(); mp_cursor2();
     if (bt_on) place16(MAXA + 1, 16, 1, bt_ox * 8 + (bt_x - bt_ox) * bt_age, bt_oy * 8 + (bt_y - bt_oy) * bt_age, bt_fl);
     else spr_hide(MAXA + 1);
   }
@@ -1046,7 +1081,8 @@ static void city_end_screen(void) {
   ov_fill(1, 3, 0, 19); ui_full();
   if (eend == 1) {
     big(2, ecity == 2 ? "ANTVERSE WON!" : "SUCCESS!");
-    if (cscen != 255) { u8 had = verse_unlocked(); ps(3, 5, SC[cscen].name, 9); ps(3, 6, "COMPLETE!", 13); scen_mark(cscen); if (!had && verse_unlocked()) { ps(3, 15, "ANTVERSE IS UNLOCKED!", 13); ps(3, 16, "EVERY MODE AT ONCE...", 3); } }
+    if (cscen != 255) { u8 had = verse_unlocked(); ps(3, 5, SC[cscen].name, 9); ps(3, 6, "COMPLETE!", 13); scen_mark(cscen); ach_get(36); if (verse_unlocked()) ach_get(43); if (!had && verse_unlocked()) { ps(3, 15, "ANTVERSE IS UNLOCKED!", 13); ps(3, 16, "EVERY MODE AT ONCE...", 3); } }
+    if (ecity == 2) ach_get(44);
     else ps(3, 5, ewhy == 5 ? "THE SKY MOUND RISES!" : ewhy == 2 ? "THE GREAT MOUND IS COMPLETE" : ewhy == 3 ? "ALL RIVALS ARE BEATEN" : "A GREAT CITY", 3);
     jingle(WIN_TUNE, 6);
   } else { big(2, "GAME OVER"); ps(3, 5, ewhy == 20 ? WL[0] : ewhy == 21 ? WL[1] : ewhy == 1 ? WL[3] : "YOUR NEST WAS DESTROYED", 3); jingle(LOSE_TUNE, 4); }

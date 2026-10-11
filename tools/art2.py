@@ -543,7 +543,30 @@ def icon_verse():
         if 0 <= x < 32 and 0 <= y < 32 and (_m.sin(a) > -0.1 or I[y][x] in (0, 1)): I[y][x] = 2
     for x, y in ((3, 4), (28, 6), (5, 27), (27, 26), (24, 2)): I[y][x] = 3
     return I
-ICONS = split32(icon_book()) + split32(icon_map()) + split32(icon_trophy()) + split32(icon_gear()) + split32(icon_city()) + split32(icon_verse())
+def icon_two():                                   # 2 PLAYERS: a black ant and a red ant, face to face
+    I = canvas()
+    def ant(ox, flip, body, shine):
+        def P(x, y): return (31 - (ox + x) if flip else ox + x, y)
+        def E(cx, cy, rx, ry, c):
+            for y in range(32):
+                for x in range(32):
+                    X = 31 - x if flip else x
+                    dx, dy = (X - ox - cx) / rx, (y - cy) / ry
+                    if dx * dx + dy * dy <= 1.0: I[y][x] = c
+        for (x0, x1) in [(5, 2), (7, 7), (9, 12)]:
+            for t in range(9):
+                x = x0 + (x1 - x0) * t // 8; y = 20 + t
+                xx, yy = P(x, y); I[yy][xx] = 1
+        E(4, 17, 4.2, 3.6, 1); E(4, 17, 3.2, 2.6, body); E(8.5, 17.5, 2.2, 1.9, 1); E(8.5, 17.5, 1.4, 1.1, body)
+        E(12.5, 14.5, 3.3, 3.0, 1); E(12.5, 14.5, 2.3, 2.0, body); E(3, 15.5, 1.4, 0.9, shine)
+        for t in range(6):
+            xx, yy = P(14 + t // 2, 11 - t); I[yy][xx] = 1
+        xx, yy = P(13, 13); I[yy][xx] = 3
+    ant(0, False, 8, 13)
+    ant(0, True, 5, 3)
+    for (x, y) in [(15, 6), (16, 6), (15, 7), (16, 7), (14, 5), (17, 5), (15, 9), (16, 9)]: I[y][x] = 2   # a spark between them
+    return I
+ICONS = split32(icon_book()) + split32(icon_map()) + split32(icon_trophy()) + split32(icon_gear()) + split32(icon_city()) + split32(icon_verse()) + split32(icon_two())
 
 def pack(t): return [sum(t[y][x] << (4 * x) for x in range(8)) for y in range(8)]
 def emit(name, tiles):
@@ -566,8 +589,8 @@ with open(sys.argv[1], "w") as f:
     f.write("#define PANO_N %d\n" % len(PANO_TILES))
     f.write("static const u16 PANOM[256] = {" + ",".join(str(v & 0xFFFF) for v in PANO_MAP) + "};\n")
     f.write(emit_pal("PAL_PANO", PANO_PAL) + "\n")
-    f.write("// EYE2: ANT EYE 2.0 sprites (OBJ tiles 192..343): ant walk 2 (16), carrying walk 2 (16), front (16), back (16) [ant palette];\n//   shadow (16), nest mound (16), 6 small decor 16x16 (tuft flower pebble rock mushroom reed, 4 each) [decor palette]; jaw (16) [ant palette]\n" + emit("EYE2", EYE2) + "\n")
-    f.write("// ICNT: home screen icons 32x32: book, map, trophy, gear, city, antverse (OBJ tiles 96..191, decor palette)\n" + emit("ICNT", ICONS) + "\n")
+    f.write("// EYE2: ANT EYE 2.0 sprites (OBJ tiles 224..375): ant walk 2 (16), carrying walk 2 (16), front (16), back (16) [ant palette];\n//   shadow (16), nest mound (16), 6 small decor 16x16 (tuft flower pebble rock mushroom reed, 4 each) [decor palette]; jaw (16) [ant palette]\n" + emit("EYE2", EYE2) + "\n")
+    f.write("// ICNT: home screen icons 32x32: book, map, trophy, gear, city, antverse, 2 players (OBJ tiles 96..207, decor palette)\n" + emit("ICNT", ICONS) + "\n")
     f.write("// ARMT: EMPIRE MODE army banner 16x16 (OBJ tiles 88..91, ant palettes)\n" + emit("ARMT", ARMY) + "\n")
     f.write("// EMPT: EMPIRE MODE building tiles (decor palette), loaded at charblock 2 tile 512+\n" + emit("EMPT", EMP) + "\n")
     f.write("// UIT: termite UI tiles: 0-3 soil, 4-11 bark frame (nw n ne w e sw s se), 12-13 grass fringe, 14-29 tunnels (mask n1 e2 s4 w8), 30 root, 31 soil\n")

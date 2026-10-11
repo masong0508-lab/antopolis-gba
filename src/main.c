@@ -190,7 +190,7 @@ static const Opt OPTS[NOPT] = {
   {"ANT EYE SKY",   "DAY|SUNSET|NIGHT",         0, "THE SKY IN THE ANT EYE", "VIEW"},
 };
 static u8 opt[NOPT];
-static u8 cht[16];                                   // cheats switched on (EXTRAS > CHEATS)
+static u8 cht[21];                                   // cheats switched on (EXTRAS > CHEATS)
 static void ach_get(u8 i);
 static u8 opt_locked(u8 i, u8 v);
 static u8 qlost, rdrown, ewins;                   // classic achievements: queen hurt, red ants drowned, elections won
@@ -201,12 +201,62 @@ void *memset(void *d, int c, unsigned n) { u8 *a = d; while (n--) *a++ = (u8)c; 
 static u32 rnd(void) { if (genm) return mrnd() >> 8; rs ^= rs << 13; rs ^= rs >> 17; rs ^= rs << 5; return rs >> 8; }
 
 // ---------- input / timing ----------
-static u16 joy(void) {
+static u16 raw_keys(void) {
   u16 k = (u16)~KEYS, r = 0;
   if (k & 1) r |= J_A;     if (k & 2) r |= J_B;    if (k & 4) r |= J_SEL;   if (k & 8) r |= J_START;
   if (k & 16) r |= J_RIGHT; if (k & 32) r |= J_LEFT; if (k & 64) r |= J_UP;  if (k & 128) r |= J_DOWN;
   if (k & 256) r |= J_R;   if (k & 512) r |= J_L;
   return r;
+}
+// ---------- LINK CABLE: two GBAs in lockstep (multi-player SIO mode, 115200 baud) ----------
+// While a link game runs, every call to joy() is one lockstep step: this GBA sends its buttons and gets the partner's.
+// Both GBAs run exactly the same game code with exactly the same buttons, so their worlds stay identical; only what each
+// screen shows differs (each player's own cursor and camera). joy() returns the buttons of the player who "has focus"
+// (the one who opened a menu), or both players' buttons together. Game loops read lk_k[0] (P1, the host) and lk_k[1] (P2).
+// A word on the cable: bits 15-12 step number, 11-10 two bits of a game-state checksum (to spot a desync), 9-0 buttons.
+#define SIOMULTI(n) IO16(0x120 + 2 * (n))
+#define SIOCNTR IO16(0x128)
+#define SIOSEND IO16(0x12A)
+#define RCNTR IO16(0x134)
+static u8 lk_on, lk_me, lk_focus = 2, lk_err, lk_seq, lk_bad, lk_vbl, lk_errt;
+static u16 lk_k[2], lk_frames;
+static u32 lk_hash;                                // filled in each frame by the game (lk_hash_state)
+static void lk_tick(void) { u8 v = VCOUNT >= 160; if (v && !lk_vbl) lk_frames++; lk_vbl = v; }
+static void lk_open(void) { RCNTR = 0; SIOCNTR = 0x2003; lk_seq = 0; lk_err = 0; lk_bad = 0; lk_focus = 2; }
+static void lk_close(void) { lk_on = 0; SIOCNTR = 0; RCNTR = 0x8000; lk_focus = 2; }
+static u8 lk_step(u16 pay, u16 *other, u16 tmo) {  // one exchange of 12 bits each way; 0 = the partner did not answer in time
+  u16 s = lk_seq & 15, w = (u16)((s << 12) | (pay & 0xFFF));
+  lk_frames = 0;
+  if (lk_me == 0) {                                // host: keep sending our last word until the guest is on step s
+    for (;;) {
+      if (SIOCNTR & 8) {
+        SIOCNTR = (u16)(SIOCNTR | 0x80);
+        while (SIOCNTR & 0x80) { lk_tick(); if (lk_frames > tmo) return 0; }
+        if ((SIOMULTI(1) >> 12) == s) { *other = SIOMULTI(1) & 0xFFF; break; }
+      }
+      lk_tick(); if (lk_frames > tmo) return 0;
+    }
+    SIOSEND = w;                                   // now publish step s, and pass it over at once
+    if (SIOCNTR & 8) { SIOCNTR = (u16)(SIOCNTR | 0x80); while (SIOCNTR & 0x80) { lk_tick(); if (lk_frames > tmo) break; } }
+  } else {                                         // guest: send step s, wait for the host's step s
+    SIOSEND = w;
+    for (;;) {
+      if ((SIOMULTI(0) >> 12) == s) { *other = SIOMULTI(0) & 0xFFF; break; }
+      lk_tick(); if (lk_frames > tmo) return 0;
+    }
+  }
+  lk_seq++;
+  return 1;
+}
+static u16 joy(void) {
+  u16 r = raw_keys(), o; u8 hb;
+  if (lk_err) { lk_errt ^= 1; return lk_errt ? J_START : 0; }   // the link broke: tap START so every screen can be left
+  if (!lk_on) return r;
+  hb = (u8)((lk_hash >> ((lk_seq & 15) * 2)) & 3);
+  if (!lk_step((u16)((r & 0x3FF) | (hb << 10)), &o, 240)) { lk_err = 1; lk_on = 0; return J_START; }
+  if (((o >> 10) & 3) != hb) { if (++lk_bad >= 6) { lk_err = 2; lk_on = 0; return J_START; } } else lk_bad = 0;
+  lk_k[lk_me] = (u16)(r & 0x3FF); lk_k[lk_me ^ 1] = (u16)(o & 0x3FF);
+  return lk_focus == 2 ? (u16)(lk_k[0] | lk_k[1]) : lk_k[lk_focus];
 }
 static void music_update(void), tm_update(void);
 static void vsync(void) { while (VCOUNT >= 160); while (VCOUNT < 160); music_update(); tm_update(); }
@@ -754,6 +804,16 @@ static void hist_add(void) {
   if (nhist == 64) { for (i = 0; i < 32; i++) { hist[0][i] = hist[0][i * 2]; hist[1][i] = hist[1][i * 2]; } nhist = 32; hmask = (u8)(hmask * 2 + 1); }
   hist[0][nhist] = ncnt[0]; hist[1][nhist] = ncnt[1]; nhist++;
 }
+// ---------- 2 PLAYERS ----------
+// mp_on: 0 one player, 1 two players on one GBA taking turns, 2 two GBAs on a link cable (lockstep, see joy()).
+// mp_kind: 0 VERSUS (classic: P1 black ants, P2 red ants), 1 CO-OP EMPIRE, 2 CO-OP ANT CITY, 3 CO-OP ANTVERSE.
+// Each player keeps a cursor and a tool (PSt); the game swaps them in and out of the usual globals.
+typedef struct { u8 x, y, place, tgt, tgta, rep, last, selused, selprev, jj; u16 prev, built; } PSt;
+static PSt pst[2];
+static u8 mp_on, mp_kind, mp_turn, mp_tlen = 1, mana2;
+static u16 mp_tleft;
+static u8 mp_local(void) { return mp_on == 2 ? lk_me : mp_on == 1 ? mp_turn : 0; }
+static u8 mp_vs(void) { return mp_on && mp_kind == 0; }
 static u8 eye_ctl = 255;                          // the ant you are steering in the ANT EYE (the AI leaves it alone)
 static void apr(s8 d) { s16 v = (s16)appr + d; appr = v < 0 ? 0 : v > 99 ? 99 : (u8)v; }
 static void die(Ant *a, u8 drown) { a->alive = 0; if (a->team) st_kill++; else st_lost++; if (a->team == 0) apr(-2); if (drown && a->team == 1 && ++rdrown >= 20) ach_get(3); fx_add(a->x, a->y, drown ? FX_SPLASH : FX_PUFF); }
@@ -833,6 +893,7 @@ static void step_ant(Ant *a) {
   if (a->carry && a->x == nestx[t] && a->y == nesty[t]) {
     a->carry = 0; if (stock[t] < 99) stock[t]++;
     if (t == 0) { st_food++; mana = (mana + MANA_PER_FOOD > MANA_MAX) ? MANA_MAX : mana + MANA_PER_FOOD; apr(1); sfx_food(); fx_add(a->x, a->y, FX_PLUS); }
+    else if (mp_vs()) { mana2 = (u8)(mana2 + MANA_PER_FOOD > MANA_MAX ? MANA_MAX : mana2 + MANA_PER_FOOD); fx_add(a->x, a->y, FX_PLUS); }
   }
   if (!a->carry && qhp[e] && a->x == nestx[e] && a->y == nesty[e]) {
     if (a->sol) {
@@ -898,6 +959,7 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
   if (!O(O_ELECT) && ++etk >= 450) { etk = 0; election(); }
   if ((gt & (O(O_REGROW) == 0 ? 15 : O(O_REGROW) == 1 ? 7 : 3)) == 0) grow_food();
   if ((gt & tm) == 0 && mana < MANA_MAX) mana++;
+  if (mp_vs() && (gt & tm) == 0 && mana2 < MANA_MAX) mana2++;
 }
 
 // ---------- map generator: 4 kinds of land, always a walking path between the two nests ----------
@@ -1163,10 +1225,11 @@ static void flood(void) {
   s8 x, y;
   if (mana < fcost) { sfx_deny(); say(fcost == 4 ? "FLOOD NEEDS 4 AP" : "FLOOD NEEDS 8 AP"); return; }
   mana -= fcost; sfx_flood(); tev |= 8; shk = 10; st_flood++;
-  for (y = (s8)cy - 1; y <= (s8)cy + 1; y++) for (x = (s8)cx - 1; x <= (s8)cx + 1; x++)
+  { s8 r = (s8)(cht[20] ? 2 : 1);
+  for (y = (s8)cy - r; y <= (s8)cy + r; y++) for (x = (s8)cx - r; x <= (s8)cx + r; x++)
     if (x >= 0 && y >= 0 && x < W && y < H && hgt[y][x] && !is_nest(x, y)) { hgt[y][x]--; if (!hgt[y][x]) food[y][x] = 0; }
-  for (y = (s8)cy - 2; y <= (s8)cy + 2; y++) for (x = (s8)cx - 2; x <= (s8)cx + 2; x++)
-    if (x >= 0 && y >= 0 && x < W && y < H) draw_cell(x, y);
+  for (y = (s8)cy - r - 1; y <= (s8)cy + r + 1; y++) for (x = (s8)cx - r - 1; x <= (s8)cx + r + 1; x++)
+    if (x >= 0 && y >= 0 && x < W && y < H) draw_cell(x, y); }
   pdirty = 1;
 }
 static void jump(void) {                           // SELECT: alert spot, else HOME -> ARMY -> RED NEST
@@ -1197,7 +1260,7 @@ static u8 tsel;                                    // NEW GAME rows: 0 LEVEL, 1 
 #define BG3HOFS IO16(0x1C)
 #define BIGT 24
 #define ORN  764                                       // 764 rule, 765/766 centre diamond, 767/768 pip on/off, 769 arrow
-#define EY2T 192                                   // ANT EYE 2.0 sprites (see EYE2 in art2.h)
+#define EY2T 224                                   // ANT EYE 2.0 sprites (see EYE2 in art2.h)
 #define ICNT_T 96                                  // OBJ tiles of the home screen icons: book 96, map 112, trophy 128, gear 144
 // ---------- MAP PICTURE: the whole world drawn into 12 x 12 BG tiles (96 x 96 pixels), palette bank 6 ----------
 // Used by the NEW GAME preview and the pause menu's MAP. Scale: 1, 2 or 3 pixels per cell so the map fills the box.
@@ -1338,13 +1401,14 @@ static u8 newgame_menu(void) {                     // 0 = back, 1 = play, 2 = op
 }
 // ---------- the HOME screen: six picture cards, move freely with the D-pad ----------
 #define NCARD 6
-static const char *const CARDN[NCARD] = {"PLAY", "EMPIRE", "CITY", "EDITOR", "EXTRAS", "ANTVERSE"};
+static const char *const CARDN[NCARD] = {"PLAY", "EMPIRE", "CITY", "2 PLAYER", "EXTRAS", "ANTVERSE"};
 static const char *const CARDD[NCARD] = {"FIGHT THE RED ANTS", "RULE AND CONQUER", "BE THE MAYOR OF ANT CITY",
-  "DRAW YOUR OWN MAP", "TROPHIES  CHEATS  RECORDS", "EVERY MODE AT ONCE"};
+  "PLAY WITH A FRIEND", "TROPHIES  CHEATS  RECORDS", "EVERY MODE AT ONCE"};
 static u8 hsel, opts_go;
 static u8 card_x(u8 c) { return (u8)(1 + (c % 3) * 10); }
 static u8 card_y(u8 c) { return (u8)(c < 3 ? 4 : 11); }
 static u8 verse_unlocked(void);
+static u8 scen_count(void);
 static u8 card_lock(u8 c) { return (c == 1 && !emp_unlocked()) || (c == 5 && !verse_unlocked()); }
 static void card_draw(u8 c) {                      // bark frame + dark tunnel inside; the chosen card uses the gold palette bank 6
   u8 x0 = card_x(c), y0 = card_y(c), x, y, pal = c == hsel ? 6 : 0; u16 t; const char *n = card_lock(c) ? "LOCKED" : CARDN[c];
@@ -1372,7 +1436,7 @@ static void hub_scene(void) {
   ps(5, 2, "DIPPINN PRODUCTIONS", 10);
   for (c = 0; c < NCARD; c++) card_draw(c);
   hub_desc();
-  ps(2, 19, "\1 OPEN   \4 OPTIONS", 10);
+  ps(2, 19, "\1 OPEN  \4 OPTIONS  \6 EDITOR", 10);
   for (x = 0; x < 16; x++) BGPAL[96 + x] = BGPAL[x];
 }
 static void hub_glow(u8 fr) {                      // the chosen card's bark frame shines gold and pulses
@@ -1386,7 +1450,7 @@ static u8 kk_busy;
 static u8 kk_mid(void) { return kk_busy; }
 static u8 title(void) {                            // returns 0 = play, 1 = open the map editor, 2 = empire, 3 = extras
   static const s8 BOB[16] = {0, -1, -2, -3, -3, -4, -4, -4, -4, -4, -3, -3, -2, -1, 0, 0};
-  static const u16 ICO[NCARD] = {BIGT, BIGT + 32, ICNT_T + 64, ICNT_T + 16, ICNT_T + 32, ICNT_T + 80};
+  static const u16 ICO[NCARD] = {BIGT, BIGT + 32, ICNT_T + 64, ICNT_T + 96, ICNT_T + 32, ICNT_T + 80};
   u8 i, fr = 0, edit = 0, old; u16 k, p, prev = joy();
   (void)kk_mid;
   DISPCNT = 0x80; BLDY = 16;
@@ -1417,6 +1481,7 @@ static u8 title(void) {                            // returns 0 = play, 1 = open
     if (hsel != old) { sfx_food(); card_draw(old); card_draw(hsel); hub_desc(); }
     if (p & J_L) hsel = 1, p |= J_A;                // shortcuts: L = EMPIRE, R = OPTIONS
     if (p & J_R) opts_go = 1;
+    if (p & J_SEL) { edit = 1; break; }            // SELECT: the map editor
     if (p & (J_A | J_START)) {
       if (hsel == 0) {                              // PLAY: the NEW GAME screen
         u8 r;
@@ -1428,7 +1493,7 @@ static u8 title(void) {                            // returns 0 = play, 1 = open
       }
       if (hsel == 1) { if (emp_unlocked()) { edit = 2; break; } sfx_deny(); card_draw(1); hub_desc(); continue; }
       if (hsel == 2) { edit = 4; break; }
-      if (hsel == 3) { edit = 1; break; }
+      if (hsel == 3) { edit = 6; break; }
       if (hsel == 4) { edit = 3; break; }
       if (hsel == 5) { edit = 5; break; }
     }
@@ -1761,7 +1826,7 @@ static u8 eye_walk(s32 *px, s32 *py, s32 dx, s32 dy) {
   if (n >= 40 && n < (s32)H * 256 - 40) { u8 nc = (u8)(n >> 8); if (nc == cy0 || can_go(cx0, cy0, 0, (s8)(nc - cy0))) { *py = n; moved = 1; } }
   return moved;
 }
-static const char *emsg; static u8 emsgt, emsgc;
+static const char *emsg; static u8 emsgt, emsgc, e_del, e_bit, e_sc;   // message; food delivered, bites, scent squares (trophies)
 static void esay(const char *m, u8 c) { emsg = m; emsgt = 90; emsgc = c; }
 static void eye_panel(u8 vi, u8 php, u8 scent) {
   u8 i;
@@ -1780,7 +1845,7 @@ static void eye_panel(u8 vi, u8 php, u8 scent) {
 static void eye(void) {                              // play as one of your ants (the world goes on around you)
   u8 i, vi = MAXA, best = 255, d, cur = 0, jaw = 0, bite_cd = 0, hurt = 0, php = 3, bob = 0, scent = 0, dead = 0, prevcell = 0;
   s32 px, py; u16 a16, k, p, prev, sky = BGPAL[0], pic[16]; s16 tv = 0; u8 fa;
-  tev |= 16; ach_get(7);
+  tev |= 16; ach_get(7); e_del = e_bit = e_sc = 0;
   for (i = 0; i < 16; i++) pic[i] = BGPAL[112 + i];
   for (i = 0; i < MAXA; i++) if (vok(i)) { d = (u8)(dist(ant[i].x, cx) + dist(ant[i].y, cy)); if (d < best) { best = d; vi = i; } }
   if (vi < MAXA) { px = (s32)ant[vi].x * 256 + 128; py = (s32)ant[vi].y * 256 + 128; a16 = (u16)((ant[vi].fl ? 128 : 0) << 8); eye_ctl = vi; }
@@ -1835,7 +1900,7 @@ static void eye(void) {                              // play as one of your ants
     fa = (u8)(a16 >> 8); vang = fa;
     cs = SINT[(fa + 64) & 255]; sn = SINT[fa];
     if (vi < MAXA && !dead) {
-      s32 sp = ESPD[O(O_EYESPD)];
+      s32 sp = ESPD[O(O_EYESPD)] * (cht[16] ? 3 : 2) / 2;
       if (k & J_UP) { mvx += cs * sp >> 8; mvy += sn * sp >> 8; }
       if (k & J_DOWN) { mvx -= cs * sp / 2 >> 8; mvy -= sn * sp / 2 >> 8; }
       if (k & J_L) { mvx += sn * sp * 3 / 4 >> 8; mvy -= cs * sp * 3 / 4 >> 8; }
@@ -1847,12 +1912,12 @@ static void eye(void) {                              // play as one of your ants
       // food: walk over it to pick it up, bring it home
       if (!ant[vi].carry && food[cyv][cxv] && hgt[cyv][cxv]) { food[cyv][cxv] = 0; ant[vi].carry = 1; draw_dec(cxv, cyv); sfx_mana(); esay("GOT FOOD! TAKE IT HOME", 13); }
       if (ant[vi].carry && dist(cxv, nestx[0]) <= 1 && dist(cyv, nesty[0]) <= 1) {
-        ant[vi].carry = 0; if (stock[0] < 99) stock[0]++; st_food++;
+        ant[vi].carry = 0; if (stock[0] < 99) stock[0]++; st_food++; if (++e_del >= 10) ach_get(32);
         mana = (u8)(mana + 2 > MANA_MAX ? MANA_MAX : mana + 2); apr(2); sfx_spawn(); esay("FOOD DELIVERED! +2 AP", 13); if (php < 3) php++;
       }
       // scent trail
       scent = (k & J_B) != 0;
-      if (scent) { ph[cyv][cxv] = 255; if (prevcell != (u8)(cxv * 7 + cyv)) { prevcell = (u8)(cxv * 7 + cyv); sfx_food(); } }
+      if (scent) { ph[cyv][cxv] = 255; if (prevcell != (u8)(cxv * 7 + cyv)) { prevcell = (u8)(cxv * 7 + cyv); sfx_food(); if (++e_sc >= 50) ach_get(35); } }
       // bite
       if (bite_cd) bite_cd--;
       if ((p & J_A) && !bite_cd) {
@@ -1862,12 +1927,12 @@ static void eye(void) {                              // play as one of your ants
           s32 dx = (s32)ant[i].x * 256 + 128 - px, dy = (s32)ant[i].y * 256 + 128 - py, dd = (dx * cs + dy * sn) >> 8, sd = (-dx * sn + dy * cs) >> 8;
           if (dd > -40 && dd < bdd && (sd < 0 ? -sd : sd) < 230) { bdd = dd; bj = i; }
         }
-        if (bj != 255) { if (rnd() % 100 < 70) { die(&ant[bj], 0); esay("GOT HIM!", 13); sfx_hit(); } else esay("MISSED! BITE AGAIN", 2); }
-        else if (dist(cxv, nestx[1]) <= 1 && dist(cyv, nesty[1]) <= 1 && qhp[1]) { qhp[1]--; qfl[1] = 10; sfx_hit(); esay(qhp[1] ? "THE RED QUEEN IS HURT!" : "THE RED QUEEN FALLS!", 13); }
+        if (bj != 255) { if (cht[17] || rnd() % 100 < 70) { die(&ant[bj], 0); esay("GOT HIM!", 13); sfx_hit(); if (++e_bit >= 10) ach_get(33); } else esay("MISSED! BITE AGAIN", 2); }
+        else if (dist(cxv, nestx[1]) <= 1 && dist(cyv, nesty[1]) <= 1 && qhp[1]) { qhp[1]--; qfl[1] = 10; sfx_hit(); esay(qhp[1] ? "THE RED QUEEN IS HURT!" : "THE RED QUEEN FALLS!", 13); if (!qhp[1]) ach_get(34); }
       }
       // red ants bite back
       if (hurt) hurt--;
-      if (!hurt && !dead) for (i = 0; i < MAXA; i++) if (ant[i].alive && ant[i].team && dist(ant[i].x, cxv) + dist(ant[i].y, cyv) <= 1 && !(rnd() % 50)) {
+      if (!hurt && !dead && !cht[16]) for (i = 0; i < MAXA; i++) if (ant[i].alive && ant[i].team && dist(ant[i].x, cxv) + dist(ant[i].y, cyv) <= 1 && !(rnd() % 50)) {
         hurt = 40; sfx_qdead();
         if (php) php--;
         if (!php) { die(&ant[vi], 0); esay("THE RED ANTS GOT YOU...", 8); dead = 90; eye_ctl = 255; } else esay("OUCH! BITE BACK WITH \1", 8);
@@ -2931,7 +2996,7 @@ static void ed_store(void) {                        // the world -> MY MAP lette
     if (x == nestx[1] && y == nesty[1]) c = 'R';
     cmap[y * W + x] = c;
   }
-  myhm.w = mw; myhm.h = mh; my_save(); ach_get(6);
+  myhm.w = mw; myhm.h = mh; my_save(); ach_get(6); if (mw == 96 && mh == 96) ach_get(54);
 }
 static void ed_resize(u8 nw, u8 nh) {
   u8 x, y, i;
@@ -3064,6 +3129,7 @@ int main(void) {
     if (r == 2) { empire_main(); continue; }
     if (r == 3) { extras(); continue; }
     if (r == 4 || r == 5) { city_main((u8)(r == 5)); vram_reload(); continue; }
+    if (r == 6) { mp_menu(); vram_reload(); continue; }
     if (r == 1) { if (editor()) { newgame(); play(); } continue; }
     newgame(); play();
   }

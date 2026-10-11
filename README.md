@@ -3,7 +3,7 @@ Native Game Boy Advance port of the GBC game: raw registers, no libraries. Build
 
 New on GBA: 30x18 tile view, 24 ants per colony, EASY/NORM/HARD, game timer, battery-save records (wins + best time per difficulty), L/R shortcuts. Same controls as the GBC version (A/B raise/lower, SELECT flood, SELECT+A embezzle, SELECT+B fast forward, START pause/help).
 
-**Status:** written and syntax-checked on a PC only. Never ARM-compiled or run on an emulator. Includes the interactive tutorial (title: A) and the first-person ANT EYE (SELECT+START), now a Mode-7 hybrid: BG2 affine floor with per-scanline HBlank-DMA perspective, smooth turning / gliding, distance fog (BLDALPHA), plus the old ray-marched columns on BG1 for hills, water and ants (hot code runs from IWRAM). The Danny Steel boot logo (src/logo.c, START skips) now plays at power-on. The GBC title theme is back (stereo, see below) and the ANT EYE status panel was rewritten. Also ported from GBC: roguelike perks after elections, flash floods / earthquakes, and win score + high score per level (the SRAM layout changed, so old saves reset). Check first: sound, BG1 overlay transparency, sprite priority, ANT EYE (Mode 7): floor/overlay alignment, first scanline of the DMA table, fog, and whether the overlay returns quickly after a turn.
+**Status:** builds with arm-none-eabi-gcc (`make`, then gbafix) and is tested in the mGBA core, including two linked mGBA cores for the link cable. Includes the interactive tutorial, the first-person ANT EYE, EMPIRE MODE, ANT CITY, ANTVERSE and 2 PLAYERS in every mode.
 
 ## Title music (ported from the GBC build)
 The title screen has its own stereo theme again (E phrygian-dominant, ~81 BPM, 16 bars): echo of the lead hard left, lead with vibrato hard right, a plucked drone bass in the centre on the wave channel, and tiny footsteps that ping-pong between the speakers. It fades in with the picture and out on START; the in-game loop takes over afterwards. The routing uses NR51 (high byte of SOUNDCNT_L), which is reset to centred sound when the title ends. Code: `tm_start` / `tm_update` / `tm_stop` in `src/main.c`, driven once per frame from `vsync()`.
@@ -77,13 +77,29 @@ Civilization + Age of Empires + Tropico + SimCity, played on the normal map scre
 - STORY: 7 chapters with Counselor Chitin. FREE PLAY: 0-3 rivals (calm / normal / brutal), any map and size from the title.
   Win by conquest, the Great Mound, or prosperity (50 ants and 70 happiness at a vote). SAVE AND QUIT / CONTINUE in free play.
 
-## Extras (title: B)
-- ACHIEVEMENTS: 32 trophies for classic and Empire Mode, saved on the cartridge. Many unlock rewards.
+## ANT CITY (home screen: CITY) and ANTVERSE
+- ANT CITY is the SimCity mode: zone homes, farms and works, dig tunnels, build services (guard posts, clinics, schools, air shafts,
+  dew pumps, parks, the stadium, the sky mound), set taxes and laws, read the advisors, data maps and graphs, and survive fires, floods and giant beetles.
+- 10 scenarios (campaigns) plus FREE CITY. Win all 10 to open ANTVERSE: the city, the empire, rivals and god powers all at once.
+
+## 2 PLAYERS (home screen: 2 PLAYER)
+- Every mode works for two: VERSUS (black ants against red ants), CO-OP CLASSIC (two gods, one colony), CO-OP EMPIRE,
+  CO-OP CITY and CO-OP ANTVERSE.
+- PLAY ON: SAME GBA = take turns with a turn clock (30 to 120 seconds) and a "pass the GBA" card between turns.
+  LINK CABLE = two GBAs at the same time. Both pick 2 PLAYERS > LINK CABLE > START; the first GBA (player 1) sends its game,
+  map, options and cheats to the other one. Each player has a cursor (the other one shows in red). START opens your menu on
+  both screens. If the cable comes out, both GBAs say LINK LOST and go back to the menu.
+- The link cable needs real hardware or an emulator with GBA link (multiplayer) support. SAME GBA works everywhere.
+
+## Extras (home screen: EXTRAS)
+- ACHIEVEMENTS: 56 trophies for every mode (classic, ANT EYE, Empire, City, Antverse, 2 players), saved on the cartridge.
+  Many unlock rewards.
 - UNLOCKABLES: ant colours GOLD, WHITE, PINK, SHADOW and menu styles AMBER, CRYSTAL (pick them in OPTIONS once unlocked).
-- CHEATS: infinite AP, god queen, no disasters, rich colony, all techs, mega army, party ants, turbo, peaceful rivals,
-  instant zones. Each is unlocked by an achievement, or all at once with UP DOWN LEFT RIGHT UP DOWN LEFT RIGHT SELECT
-  on the cheats tab. Trophies are not earned while a cheat is on (except CHEATER).
-- RECORDS: wins, best times and high scores per level, trophies, story progress.
+- CHEATS (21, most with levels): infinite AP, god queen, weather, rich colony, all techs, mega army, party ants, turbo,
+  peaceful rivals, instant zones, food rain, strong ants, big brood, super ant, iron jaws, money tree, no fires, giant floods,
+  and 3 secret cheats with their own button codes. Each is unlocked by a trophy, or all at once with
+  UP DOWN LEFT RIGHT UP DOWN LEFT RIGHT SELECT on the cheats tab. Trophies are not earned while a cheat is on (except CHEATER).
+- RECORDS: wins, best times and high scores per level, trophies, story progress, city goals, what is open.
 ## Empire Mode additions
 - RIVALS screen (diplomacy): offer peace (20 amber), demand tribute, declare war.
 - WORLD MAP: the whole land on one screen with your nest, armies and rivals.
