@@ -267,7 +267,9 @@ UI_THEMES = [
   [rgb(7,4,2), rgb(10,6,3), rgb(13,9,5), rgb(17,15,12), rgb(6,3,1), rgb(14,8,3), rgb(22,14,6), rgb(2,1,1), rgb(5,3,2), rgb(6,15,3), rgb(10,22,5), rgb(12,8,4)],
   [rgb(11,4,2), rgb(15,6,3), rgb(19,9,5), rgb(22,16,12), rgb(7,2,1), rgb(17,8,3), rgb(25,14,7), rgb(3,1,1), rgb(7,2,1), rgb(7,15,3), rgb(11,22,5), rgb(15,7,3)],
   [rgb(3,6,2), rgb(5,9,3), rgb(8,12,5), rgb(15,16,12), rgb(3,4,1), rgb(8,11,3), rgb(14,18,6), rgb(1,2,1), rgb(2,4,2), rgb(8,18,4), rgb(13,25,7), rgb(6,9,4)],
-  [rgb(2,3,7), rgb(4,5,10), rgb(6,8,14), rgb(13,14,18), rgb(2,2,5), rgb(6,7,14), rgb(11,13,22), rgb(1,1,2), rgb(3,3,6), rgb(4,10,8), rgb(7,15,12), rgb(6,6,10)]]
+  [rgb(2,3,7), rgb(4,5,10), rgb(6,8,14), rgb(13,14,18), rgb(2,2,5), rgb(6,7,14), rgb(11,13,22), rgb(1,1,2), rgb(3,3,6), rgb(4,10,8), rgb(7,15,12), rgb(6,6,10)],
+  [rgb(14,8,1), rgb(18,11,2), rgb(23,15,4), rgb(29,24,10), rgb(9,5,1), rgb(22,14,3), rgb(30,22,8), rgb(5,3,0), rgb(10,6,1), rgb(9,16,3), rgb(14,23,5), rgb(19,11,3)],
+  [rgb(3,6,10), rgb(5,10,15), rgb(9,15,21), rgb(22,27,31), rgb(3,5,9), rgb(10,16,24), rgb(20,26,31), rgb(1,2,4), rgb(4,7,12), rgb(8,18,16), rgb(14,26,24), rgb(9,13,20)]]
 
 
 # ---------------- EMPIRE MODE building tiles (decor layer, decor palette; 1 outline 2 gold 3 light 4 leaf 5 red 6 mound 7 mound light
@@ -358,7 +360,7 @@ with open(sys.argv[1], "w") as f:
     f.write("// EMPT: EMPIRE MODE building tiles (decor palette), loaded at charblock 2 tile 512+\n" + emit("EMPT", EMP) + "\n")
     f.write("// UIT: termite UI tiles: 0-3 soil, 4-11 bark frame (nw n ne w e sw s se), 12-13 grass fringe, 14-29 tunnels (mask n1 e2 s4 w8), 30 root, 31 soil\n")
     f.write(emit("UIT", UI) + "\n")
-    f.write("static const u16 UIPAL[4][12] = {" + ",".join("{" + ",".join(str(r | g << 5 | b << 10) for r, g, b in th) + "}" for th in UI_THEMES) + "};\n")
+    f.write("static const u16 UIPAL[%d][12] = {" % len(UI_THEMES) + "" + ",".join("{" + ",".join(str(r | g << 5 | b << 10) for r, g, b in th) + "}" for th in UI_THEMES) + "};\n")
     f.write(emit_pal("PAL_TERR", TERR_PAL) + "\n" + emit_pal("PAL_DEC", DEC_PAL) + "\n")
     f.write(emit_pal("PAL_ANT0", ANT_PAL[0]) + "\n" + emit_pal("PAL_ANT1", ANT_PAL[1]) + "\n" + emit_pal("PAL_FX", FX_PAL) + "\n")
 

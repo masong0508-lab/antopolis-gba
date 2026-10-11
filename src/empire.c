@@ -143,6 +143,8 @@ static const char *const RNAME[3] = {"RED", "GOLD", "VIOLET"};
 static u8 eplace, eptab, epsel, etgt, etgt_a, ezoom, evote_ok, edry;
 static s8 food_net;
 static u8 nb_of[B_N];
+static u8 rpeace[3], efarm_t, ezbuilt, ebeat, evpend = 255;   // peace cycles per rival, rain(+)/drought(-) timer, zone builds, enemy armies beaten, event to show
+static s8 efarm_mod;
 
 static u8 has_t(u8 t) { return (u8)((etech >> t) & 1); }
 static u8 era_now(void) { u8 n = 0, i; for (i = 0; i < T_N; i++) n += has_t(i); return has_t(T_GREAT) ? 3 : has_t(T_AMBER) ? 2 : n >= 5 ? 1 : 0; }
@@ -281,7 +283,7 @@ static u16 dbg_fr;
 static void zoom_battle(EA *me, u16 *ew_, u16 *es_, u16 *em_, u8 rv, u8 x, u8 y) {   // the pixel battle, then back to the map
   u16 *aw = me ? &me->w : &gw, *as = me ? &me->s : &gs, *am = me ? &me->m : &gm;
   ebat_pal = RPAL[rv]; ebat_name = RNAME[rv];
-  battle(aw, as, am, ew_, es_, em_, hgt[y][x], towers_near(x, y, 4), 1);
+  if (battle(aw, as, am, ew_, es_, em_, hgt[y][x], towers_near(x, y, 4), 1) && (*aw + *as + *am)) ach_get(17);
   // after the bitmap screen: rebuild the map view
   win_all(); ov_clear(); hide_all(); oam_flush();
   BG0HOFS = BG2HOFS = (u16)scx; BG0VOFS = BG2VOFS = (u16)scy;
@@ -317,7 +319,16 @@ static void worker_step(EW *w) {
 // ---------- the economy cycle (every 30 ticks, about 4 seconds) ----------
 static void apr_f(u8 i, s8 d) { s16 v = (s16)fac[i] + d; fac[i] = (u8)(v < 0 ? 0 : v > 100 ? 100 : v); }
 static void approval_all(s8 d) { u8 i; for (i = 0; i < 4; i++) apr_f(i, d); }
-static void end_game(u8 win, u8 why) { if (!eend) { eend = (u8)(win ? 1 : 2); ewhy = why; } }
+static void end_game(u8 win, u8 why) {
+  if (eend) return;
+  eend = (u8)(win ? 1 : 2); ewhy = why;
+  if (win) {
+    if (why == 3 || (why == 10 && echap == 5)) ach_get(19);
+    if (why == 2 || (why == 10 && echap == 6)) ach_get(20);
+    if (why == 10 && echap == 0) ach_get(24);
+    if (why == 10 && echap == NCH - 1) ach_get(23);
+  }
+}
 static void eelection(void);
 static void ecycle(void) {
   u8 i, x, y, work = pop, protest, starve = 0;
@@ -325,6 +336,16 @@ static void ecycle(void) {
   u8 tg[4];
   ecyc++;
   count_b(); eshell = has_t(T_SHELL); earm = nb_of[B_ARMORY] ? 1 : 0;
+  if (cht[3]) rf = rd = ra = 999;
+  if (efarm_t && !--efarm_t) efarm_mod = 0;
+  for (i = 0; i < 3; i++) if (rpeace[i] && !--rpeace[i] && ralive[i]) say("A PEACE TREATY HAS ENDED");
+  if (ecyc % 20 == 0 && ecyc >= 20 && echap != 0) evpend = (u8)(rnd() % 10);   // random events (Tropico)
+  // trophies
+  if (nbl >= 10) ach_get(12); if (nbl >= 40) ach_get(13); if (pop >= 60) ach_get(14); if ((etech & 0xFFF) == 0xFFF) ach_get(15);
+  if (era_now() >= 2) ach_get(16); if (my_troops() >= 500) ach_get(18);
+  if (fac[0] >= 80 && fac[1] >= 80 && fac[2] >= 80 && fac[3] >= 80) ach_get(21);
+  if (rf >= 999 || rd >= 999 || ra >= 999) ach_get(28);
+  if (ezbuilt >= 10) ach_get(25); if (ebeat >= 10) ach_get(27);
   for (i = 0; i < nbl; i++) { EB *b = &ebl[i]; b->staff = BD[b->t].jobs < work ? BD[b->t].jobs : work; work -= b->staff; }
   unemp = work;
   protest = fac_avg() < 30 && edict != 2;
@@ -335,7 +356,7 @@ static void ecycle(void) {
     switch (b->t) {
     case B_NEST: f += 2; r += 1; break;
     case B_FARM: { u8 k, wv = 0; for (k = 0; k < 4; k++) { s8 xx = (s8)b->x + DX[k], yy = (s8)b->y + DY[k]; if (xx >= 0 && yy >= 0 && xx < W && yy < H && !hgt[yy][xx]) wv = 1; }
-      f += (s16)((3 + wv + has_t(T_GENES)) * (full ? 2 : 1) / 2 / (edry ? 2 : 1)); break; }
+      f += (s16)((3 + wv + has_t(T_GENES)) * (full ? 2 : 1) / 2 / (edry ? 2 : 1) * (efarm_mod > 0 ? 2 : 1) / (efarm_mod < 0 ? 2 : 1)); break; }
     case B_APHID: f += full ? 5 : 2; break;
     case B_PIT: d += full ? 3 : 1; break;
     case B_MINE: a += full ? 2 : 1; break;
@@ -376,12 +397,12 @@ static void ecycle(void) {
   // SimCity zones: the colony builds what it needs on painted land, at half price
   {
     u8 want[4] = {0, (u8)(pop + 1 >= popcap), (u8)(food_net < 3), (u8)(unemp == 0 && pop + 2 < popcap)}, built = 0; u16 tries;
-    for (tries = 0; tries < 300 && built < 1; tries++) {
+    for (tries = 0; tries < 300 && built < (cht[9] ? 5 : 1); tries++) {
       x = (u8)(rnd() % W); y = (u8)(rnd() % H);
       if (!EZN(y, x) || ebi[y][x] || ETER(y, x) != 1 || !want[EZN(y, x)]) continue;
       { u8 z = EZN(y, x), t = z == 1 ? B_HOUSE : z == 2 ? ((hgt[y][x] == 2 && has_t(T_GENES) && (rnd() & 1)) ? B_APHID : B_FARM) : ((hgt[y][x] == 3 && has_t(T_AMBER) && (rnd() & 1)) ? B_MINE : B_PIT);
         if (!has_t(BD[t].tech) || !((BD[t].ter >> hgt[y][x]) & 1) || rf < BD[t].f / 2 || rd < BD[t].d / 2) continue;
-        rf -= BD[t].f / 2; rd -= BD[t].d / 2; add_b(x, y, t); terr_calc(); eredraw(x, y, 1); fx_add(x, y, FX_PLUS); built++; }
+        if (!cht[9]) { rf -= BD[t].f / 2; rd -= BD[t].d / 2; } add_b(x, y, t); terr_calc(); eredraw(x, y, 1); fx_add(x, y, FX_PLUS); built++; ezbuilt++; }
     }
   }
   // healers bring wounded back
@@ -393,6 +414,7 @@ static void ecycle(void) {
   for (i = 0; i < enriv; i++) if (ralive[i]) {
     u16 add = (u16)(2 + eaggr * 2 + (ecyc / 40 > 3 ? 3 : ecyc / 40) * 2 + i);
     rgar[i] = (u16)(rgar[i] + add > 500 ? 500 : rgar[i] + add);
+    if (cht[8] || rpeace[i]) continue;
     if (!--rwt[i]) {
       u16 sz = (u16)(12 + rwave[i] * 18 * (eaggr + 1) / 2); EA *a;
       if (sz > rgar[i]) sz = rgar[i]; if (sz > 500) sz = 500;
@@ -442,8 +464,8 @@ static void armies_tick(void) {
         if (a->team == 0) lb += earm * lb / 3; else la += earm * la / 3;
         loss(&a->w, &a->s, &a->m, la); loss(&b->w, &b->s, &b->m, lb);
         fx_add(a->x, a->y, FX_PUFF); if (!(gt & 3) && !nosfx) sfx_fight();
-        if (!a_size(a)) { a->alive = 0; b->foe = 255; say(a->team ? "ENEMY ARMY BEATEN!" : "OUR ARMY WAS LOST"); }
-        if (!a_size(b)) { b->alive = 0; a->foe = 255; say(b->team ? "ENEMY ARMY BEATEN!" : "OUR ARMY WAS LOST"); }
+        if (!a_size(a)) { a->alive = 0; b->foe = 255; say(a->team ? "ENEMY ARMY BEATEN!" : "OUR ARMY WAS LOST"); if (a->team) ebeat++; }
+        if (!a_size(b)) { b->alive = 0; a->foe = 255; say(b->team ? "ENEMY ARMY BEATEN!" : "OUR ARMY WAS LOST"); if (b->team) ebeat++; }
         continue;
       }
       a->foe = 255;
@@ -459,7 +481,7 @@ static void armies_tick(void) {
           if (bb->t == B_NEST && (gw + gs + gm)) break;   // the nest has guards: fight them below
           fx_add((u8)xx, (u8)yy, FX_PUFF);
           if (bb->hp <= dmg) {
-            if (bb->t == B_NEST) { end_game(0, 0); return; }
+            if (bb->t == B_NEST) { if (cht[1]) { bb->hp = 250; goto moved; } end_game(0, 0); return; }
             del_b((u8)(ebi[yy][xx] - 1)); terr_calc(); eredraw((u8)xx, (u8)yy, 1); say("A BUILDING WAS DESTROYED!");
           } else bb->hp -= dmg;
           alt = 120; alx = (u8)xx; aly = (u8)yy;
@@ -483,7 +505,8 @@ static void armies_tick(void) {
         if (efld[a->y][a->x] == 0 || !step_down(&a->x, &a->y, efld)) a->ord = 0;
       }
       if (a->ord != 2) {
-        for (j = 0; j < enriv; j++) if (ralive[j] && dist(a->x, rx[j]) + dist(a->y, ry[j]) <= 1) {   // at a rival nest: fight the guards, then the nest
+        for (j = 0; j < enriv; j++) if (ralive[j] && dist(a->x, rx[j]) + dist(a->y, ry[j]) <= 1) {
+          if (rpeace[j]) { rpeace[j] = 0; say("WE BROKE THE PEACE!"); approval_all(-5); }   // at a rival nest: fight the guards, then the nest
           if (rgar[j]) { u16 sa = (u16)(a->w + 2 * a->s + 4 * a->m), sb = rgar[j]; u16 w2 = (u16)(rgar[j] * 7 / 10), s2 = (u16)(rgar[j] / 5), m2 = (u16)(rgar[j] - w2 - s2);
             loss(&a->w, &a->s, &a->m, (u16)(sb / 14 + 1)); loss(&w2, &s2, &m2, (u16)(sa / 14 + 1)); rgar[j] = (u16)(w2 + s2 + m2); fx_add(rx[j], ry[j], FX_PUFF); if (!(gt & 3)) sfx_fight(); ezoom = (u8)(i + 1); }
           else { u8 dmg = (u8)(1 + a_size(a) / 30); fx_add(rx[j], ry[j], FX_HEART);
@@ -665,7 +688,7 @@ static void edict_menu(void) {
       else if (sel == 4) { gw += 30; apr_f(0, -10); }
       else if (sel == 5) { erig = 1; approval_all(-5); }
       else if (sel == 7) approval_all(8);
-      else { edict = sel; edt = sel == 1 ? 8 : 10; }
+      else { edict = sel; edt = sel == 1 ? 8 : 10; if (sel == 2) ach_get(22); }
       say("THE ANTPEROR HAS SPOKEN!");
       break;
     }
@@ -705,31 +728,128 @@ static void advisor_screen(void) {
   ewait_clear(); while (!ekey() || !(emp_ & (J_A | J_B | J_START))) {}
   ewait_clear();
 }
+// ---------- random events (Tropico style): Chitin tells you what happened ----------
+static void story_card(const char *title, const char *const *lines, const char *foot);
+static void emp_event(u8 e) {
+  static const char *const EVT[10] = {"BEETLE TRADERS", "SPRING RAIN", "DROUGHT", "LOCUST SWARM", "REFUGEES", "GOLDEN DAY", "CAVE IN", "AMBER VEIN", "FUNGUS BLIGHT", "WANDERING WARRIORS"};
+  static const char *const EV1[10] = {"BEETLES CAME TO TRADE.", "THE RAINS ARE HERE!", "NO RAIN FOR WEEKS.", "LOCUSTS ATE OUR STORES!", "ANTS FROM A FLOODED NEST", "THE SUN SHINES, THE FOOD", "A TUNNEL COLLAPSED UNDER", "OUR DIGGERS STRUCK AMBER!", "A GREY ROT IS ON THE", "A BAND OF LOST SOLDIERS"};
+  static const char *const EV2[10] = {"WE SOLD FOOD FOR AMBER.", "FARMS GROW DOUBLE A WHILE.", "FARMS GROW HALF A WHILE.", "WE LOST A THIRD OF FOOD.", "JOINED US: +5 ANTS!", "IS SWEET: EVERYONE +10.", "ONE OF OUR BUILDINGS.", "+30 AMBER.", "FARMS: FOOD AND FARMERS -.", "JOINED OUR GUARD: +25!"};
+  const char *L[6] = {EV1[e], EV2[e], 0, 0, 0, 0};
+  if (cht[2] && (e == 2 || e == 3 || e == 6 || e == 8)) e = 7;   // NO DISASTERS: only good news
+  L[0] = EV1[e]; L[1] = EV2[e];
+  switch (e) {
+  case 0: if (rf >= 30) { rf -= 30; radd(&ra, 25); } else radd(&ra, 10); break;
+  case 1: efarm_mod = 1; efarm_t = 8; break;
+  case 2: efarm_mod = -1; efarm_t = 8; break;
+  case 3: rf = (u16)(rf * 2 / 3); break;
+  case 4: pop = (u8)(pop + 5 > 250 ? 250 : pop + 5); break;
+  case 5: approval_all(10); break;
+  case 6: { u8 i; for (i = 0; i < nbl; i++) if (ebl[(u8)((i + rnd()) % nbl)].t != B_NEST) { EB *b = &ebl[(u8)((i + rnd()) % nbl)]; if (b->t != B_NEST) b->hp = (u8)(b->hp / 2 + 1); break; } } break;
+  case 7: radd(&ra, 30); break;
+  case 8: rf = rf > 15 ? rf - 15 : 0; apr_f(0, -10); break;
+  default: gw += 25; break;
+  }
+  music_stop(); fade(0, 16); DISPCNT = 0x80;
+  story_card(EVT[e], L, "\1 CONTINUE");
+}
+// ---------- diplomacy (Civ): peace, tribute, war ----------
+static void rivals_screen(void) {
+  u8 sel = 0, act = 0, i;
+  static const char *const ACT[3] = {"OFFER PEACE  ]20", "DEMAND TRIBUTE", "DECLARE WAR"};
+  ewait_clear();
+  for (;;) {
+    ov_fill(1, 3, 0, 19); ui_full(); big(0, "RIVALS");
+    if (!enriv) { ps(3, 4, "NO RIVALS ON THIS MAP", 3); }
+    for (i = 0; i < enriv; i++) { u8 y = (u8)(3 + i * 4);
+      if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
+      ps(3, y, RNAME[i], ralive[i] ? (i == sel ? 9 : 3) : 15);
+      ps(11, y, !ralive[i] ? "GONE" : rpeace[i] ? "AT PEACE" : "AT WAR", !ralive[i] ? 15 : rpeace[i] ? 13 : 8);
+      if (ralive[i]) { ps(3, (u8)(y + 1), "GUARDS", 10); p3(10, (u8)(y + 1), rgar[i], 3); ps(15, (u8)(y + 1), "NEST", 10); p3(20, (u8)(y + 1), rhp[i], 3);
+        if (rpeace[i]) { ps(3, (u8)(y + 2), "PEACE FOR", 10); p3(13, (u8)(y + 2), (u16)(rpeace[i] * 4 / 60 + 1), 3); ps(17, (u8)(y + 2), "MIN", 10); } }
+    }
+    pm_rule(15);
+    ps(1, 16, "YOUR TROOPS", 10); p3(13, 16, my_troops() > 999 ? 999 : my_troops(), 9);
+    ps(1, 17, "\3\4", 1); ps(4, 17, ACT[act], 9);
+    ps(1, 19, "\1 DO IT  UP DOWN WHO  \2 BACK", 10);
+    while (!ekey()) {}
+    if (emp_ & (J_B | J_START)) break;
+    if (enriv && (emp_ & J_UP)) sel = sel ? sel - 1 : enriv - 1;
+    if (enriv && (emp_ & J_DOWN)) sel = sel + 1 >= enriv ? 0 : sel + 1;
+    if (emp_ & (J_L | J_LEFT)) act = (u8)((act + 2) % 3);
+    if (emp_ & (J_R | J_RIGHT)) act = (u8)((act + 1) % 3);
+    if ((emp_ & J_A) && enriv && ralive[sel]) {
+      if (act == 0) {
+        if (rpeace[sel]) { say("ALREADY AT PEACE"); continue; }
+        if (ra < 20) { sfx_deny(); continue; }
+        ra -= 20;
+        if ((u32)(my_troops() + 20) * 100 / (rgar[sel] + 20) >= 50 || (rnd() & 3) == 0) {
+          u8 k; rpeace[sel] = 45; for (k = 0; k < EAN; k++) if (ea[k].alive && ea[k].team == sel + 1) ea[k].alive = 0;
+          say("PEACE! THEIR ARMIES GO HOME"); sfx_mana(); ach_get(26);
+        } else { say("THEY REFUSED. AMBER LOST"); sfx_deny(); }
+      } else if (act == 1) {
+        if (my_troops() > rgar[sel] * 2 + 20) { radd(&rf, 30); radd(&ra, 20); rwt[sel] = 3; say("THEY PAID: +30 FOOD +20 AMBER"); sfx_mana(); }
+        else { if (rwt[sel] > 3) rwt[sel] -= 2; say("THEY LAUGHED AT US"); sfx_deny(); }
+      } else { rpeace[sel] = 0; apr_f(2, 10); say("WAR! THE WARRIORS CHEER"); sfx_alarm(); }
+    }
+  }
+  ewait_clear();
+}
+// ---------- world map: the whole land on one screen (video mode 4) ----------
+static void world_map(void) {
+  volatile u16 *pg = (volatile u16 *)0x06000000; u8 x, y, sc, i, c; int ox, oy, a, b;
+  static const u16 WC[16] = {0, RGB(6,13,26), RGB(28,24,14), RGB(9,20,7), RGB(18,13,8), RGB(31,26,6), RGB(31,31,31), RGB(31,4,4), RGB(31,28,6), RGB(24,8,31),
+    RGB(2,1,0), RGB(20,24,31), RGB(14,30,8), 0, 0, 0};
+  sc = (u8)(240 / W < 136 / H ? 240 / W : 136 / H); if (!sc) sc = 1;
+  ox = (240 - W * sc) / 2; oy = 16 + (136 - H * sc) / 2;
+  music_stop(); fade(0, 16); hide_all(); oam_flush();
+  DISPCNT = 0x0404 | 0x80;
+  for (i = 0; i < 16; i++) BGPAL[i] = WC[i];
+  for (a = 0; a < 240 * 160 / 2; a++) pg[a] = 0x0A0A;
+  for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
+    c = (u8)(hgt[y][x] + 1);
+    if (ETER(y, x) == 1 && ter_edge(x, y, 1)) c = 11;
+    if (ebi[y][x]) c = 5;
+    for (b = 0; b < sc; b++) for (a = 0; a < sc; a++) vplot(pg, ox + x * sc + a, oy + y * sc + b, c);
+  }
+  for (i = 0; i < enriv; i++) if (ralive[i]) for (b = -1; b < sc + 1; b++) for (a = -1; a < sc + 1; a++) vplot(pg, ox + rx[i] * sc + a, oy + ry[i] * sc + b, (u8)(7 + i));
+  for (b = -1; b < sc + 1; b++) for (a = -1; a < sc + 1; a++) vplot(pg, ox + nestx[0] * sc + a, oy + nesty[0] * sc + b, 6);
+  for (i = 0; i < EAN; i++) if (ea[i].alive) for (b = 0; b < sc; b++) for (a = 0; a < sc; a++) vplot(pg, ox + ea[i].x * sc + a, oy + ea[i].y * sc + b, ea[i].team ? (u8)(6 + ea[i].team) : 12);
+  for (b = 0; b < sc; b++) for (a = 0; a < sc; a++) if (a == 0 || b == 0 || a == sc - 1 || b == sc - 1) vplot(pg, ox + cx * sc + a, oy + cy * sc + b, 6);
+  { const char *t = "WORLD MAP"; u8 gx, gy, g; int tx = 84; for (; *t; t++, tx += 8) { g = gi(*t); for (gy = 0; gy < 8; gy++) for (gx = 0; gx < 8; gx++) if ((FONT8[g][gy] >> (7 - gx)) & 1) vplot(pg, tx + gx, 4 + gy, 5); } }
+  { const char *t = "WHITE: YOU  GREEN: ARMY  A: BACK"; u8 gx, gy, g; int tx = 0; for (; *t; t++, tx += 7) { g = gi(*t); for (gy = 0; gy < 8; gy++) for (gx = 0; gx < 8; gx++) if ((FONT8[g][gy] >> (7 - gx)) & 1) vplot(pg, tx + gx + 8, 152 + gy, 6); } }
+  DISPCNT = 0x0404; fade(16, 0);
+  ewait_clear(); while (!(joy() & (J_A | J_B | J_START))) vsync(); ewait_clear();
+  fade(0, 16); DISPCNT = 0x80;
+  vram_reload();
+}
 static void emp_save(void);
 static u8 emp_menu(void) {                         // START: 0 resume, 1 quit
-  static const char *const IT[8] = {"RESUME", "RESEARCH", "EDICTS", "GROUPS AND VOTES", "COUNSELOR", "SPEED", "SAVE AND QUIT", "QUIT"};
+  static const char *const IT[10] = {"RESUME", "RESEARCH", "EDICTS", "GROUPS AND VOTES", "COUNSELOR", "SPEED", "SAVE AND QUIT", "QUIT", "RIVALS", "WORLD MAP"};
+  static const u8 ORD[10] = {0, 9, 1, 2, 8, 3, 4, 5, 6, 7};
   u8 sel = 0, i, r = 255;
   hide_all(); vsync(); oam_flush(); ewait_clear();
   while (r == 255) {
     ov_fill(1, 3, 0, 19); ui_full(); big(0, "EMPIRE");
     ps(1, 2, ERAN[era_now()], 9); ps(16, 2, echap == 255 ? "FREE PLAY" : "STORY", 10);
-    pm_rule(3);
-    for (i = 0; i < 8; i++) { u8 y = (u8)(5 + i * 1);
+    for (i = 0; i < 10; i++) { u8 y = (u8)(4 + i * 1), it = ORD[i];
       if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
-      ps(3, y, (i == 6 && echap != 255) ? "QUIT (STORY: NO SAVE)" : IT[i], i == sel ? 9 : 3);
-      if (i == 5) ps(20, y, SPNAME[spd], 9); }
-    pm_rule(14);
-    if (echap != 255) { ps(1, 15, CH[echap].name, 9); ps(1, 16, CH[echap].goal_txt, 3); }
+      ps(3, y, (it == 6 && echap != 255) ? "QUIT (STORY: NO SAVE)" : IT[it], i == sel ? 9 : 3);
+      if (it == 5) ps(20, y, SPNAME[spd], 9); }
+    pm_rule(15);
+    if (echap != 255) { ps(1, 16, CH[echap].name, 9); ps(1, 17, CH[echap].goal_txt, 3); }
     ps(1, 19, "\1 OK   \5 BACK", 10);
     while (!ekey()) {}
     if (emp_ & (J_B | J_START)) r = 0;
-    if (emp_ & J_UP) sel = sel ? sel - 1 : 7;
-    if (emp_ & J_DOWN) sel = sel >= 7 ? 0 : sel + 1;
-    if (sel == 5 && (emp_ & (J_LEFT | J_RIGHT))) spd_next((emp_ & J_LEFT) ? -1 : 1);
+    if (emp_ & J_UP) sel = sel ? sel - 1 : 9;
+    if (emp_ & J_DOWN) sel = sel >= 9 ? 0 : sel + 1;
+    if (ORD[sel] == 5 && (emp_ & (J_LEFT | J_RIGHT))) spd_next((emp_ & J_LEFT) ? -1 : 1);
     if (emp_ & J_A) {
-      if (sel == 0) r = 0; else if (sel == 1) research_menu(); else if (sel == 2) edict_menu(); else if (sel == 3) groups_screen();
-      else if (sel == 4) advisor_screen(); else if (sel == 5) spd_next(1);
-      else if (sel == 6) { if (echap == 255) emp_save(); r = 1; }
+      u8 it = ORD[sel];
+      if (it == 0) r = 0; else if (it == 1) research_menu(); else if (it == 2) edict_menu(); else if (it == 3) groups_screen();
+      else if (it == 4) advisor_screen(); else if (it == 5) spd_next(1);
+      else if (it == 6) { if (echap == 255) emp_save(); r = 1; }
+      else if (it == 8) rivals_screen();
+      else if (it == 9) { world_map(); r = 0; }
       else r = 1;
     }
   }
@@ -817,7 +937,7 @@ static void place_rivals(void) {
 }
 static void emp_setup_common(void) {
   u8 i, x, y;
-  emode = 1; nbl = 0; eend = 0; eplace = 0; etgt = 0; ezoom = 0; evote_ok = 0; erig = 0; edict = 255; lowhap = 0; ewv = 0; wprog = 0;
+  emode = 1; nbl = 0; eend = 0; rpeace[0] = rpeace[1] = rpeace[2] = 0; efarm_t = 0; efarm_mod = 0; ezbuilt = 0; ebeat = 0; evpend = 255; eplace = 0; etgt = 0; ezoom = 0; evote_ok = 0; erig = 0; edict = 255; lowhap = 0; ewv = 0; wprog = 0;
   for (i = 0; i < EAN; i++) ea[i].alive = 0;
   for (i = 0; i < EWN; i++) ew[i].alive = 0;
   for (i = 0; i < MAXA; i++) ant[i].alive = 0;
@@ -847,7 +967,11 @@ static void emp_newgame(void) {
   emp_setup_common();
   if (echap != 255) { enriv = CH[echap].nriv; eaggr = CH[echap].aggr; etech = CH[echap].techs; rf = CH[echap].f; rd = CH[echap].d; ra = CH[echap].a; edry = echap == 1; }
   else { etech = (1 << T_FUNGUS) | (1 << T_DIG) | (enriv ? (1 << T_SOLD) : 0); rf = 50; rd = 70; ra = 0; edry = 0; }
-  pop = 6; popcap = 8; gw = enriv ? 20 : 0; gs = gm = 0; eres = 255; erp = 0; era = era_now();
+  pop = 6; popcap = 8; gw = enriv ? 20 : 0; gs = gm = 0; eres = 255; erp = 0;
+  if (cht[4]) etech = 0xFFF;
+  if (cht[5]) { gw = 400; gs = 60; gm = 40; }
+  if (cht[3]) rf = rd = ra = 999;
+  era = era_now();
   place_rivals();
   bfs(0); bfs(1); pdirty = 0;
   add_b(nestx[0], nesty[0], B_NEST);
@@ -873,6 +997,7 @@ static void emp_save(void) {
   sw16(&o, rf); sw16(&o, rd); sw16(&o, ra); sb(&o, pop); sw16(&o, etech); sb(&o, eres); sw16(&o, erp);
   for (i = 0; i < 4; i++) sb(&o, fac[i]);
   sb(&o, edict); sb(&o, edt); sw16(&o, ecyc); sb(&o, elect_t); sw16(&o, wprog); sw16(&o, gw); sw16(&o, gs); sw16(&o, gm); sw16(&o, ewv);
+  for (i = 0; i < 3; i++) sb(&o, rpeace[i]);
   SRAM[ESO] = 'E'; SRAM[ESO + 1] = 'S'; SRAM[ESO + 2] = 'A'; SRAM[ESO + 3] = 'V';
   say("SAVED");
 }
@@ -890,6 +1015,7 @@ static void emp_load(void) {
   rf = lw16(&o); rd = lw16(&o); ra = lw16(&o); pop = lb(&o); etech = lw16(&o); eres = lb(&o); erp = lw16(&o);
   for (i = 0; i < 4; i++) fac[i] = lb(&o);
   edict = lb(&o); edt = lb(&o); ecyc = lw16(&o); elect_t = lb(&o); wprog = lw16(&o); gw = lw16(&o); gs = lw16(&o); gm = lw16(&o); ewv = lw16(&o);
+  for (i = 0; i < 3; i++) rpeace[i] = lb(&o);
   era = era_now(); popcap = (u8)(8 + 5 * nb_of[B_HOUSE]);
   bfs(0); bfs(1); pdirty = 0; terr_calc();
   for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team && (ea[i].ord == 1 || ea[i].ord == 3)) ea[i].ord = 0;
@@ -906,7 +1032,9 @@ static void emp_play(void) {
     BG0HOFS = BG2HOFS = (u16)(scx + shx); BG0VOFS = BG2VOFS = (u16)scy; oam_flush();
     BGPAL[176 + 3] = (frc & 32) ? RGB(14,22,31) : RGB(10,18,30); BGPAL[176 + 14] = (frc & 32) ? RGB(10,18,30) : RGB(14,22,31);
     OBJPAL[32 + 3] = RGB(31, 26 + ((frc >> 2) & 3), (frc & 16) ? 4 : 12);
+    party_tick();
     if (alt) alt--;
+    if (evpend != 255) { emp_event(evpend); evpend = 255; emp_show(); prev = joy(); continue; }
     k = joy(); p = k & ~prev; prev = k;
     dirs = (u8)(k & 15); mx = cx; my = cy;
     if (dirs != last) { rep = 0; last = dirs; }

@@ -76,3 +76,16 @@ Civilization + Age of Empires + Tropico + SimCity, played on the normal map scre
   500 ants a side. Towers, spitter nests, walls and spike pits defend. Rivals grow and send bigger and bigger armies.
 - STORY: 7 chapters with Counselor Chitin. FREE PLAY: 0-3 rivals (calm / normal / brutal), any map and size from the title.
   Win by conquest, the Great Mound, or prosperity (50 ants and 70 happiness at a vote). SAVE AND QUIT / CONTINUE in free play.
+
+## Extras (title: B)
+- ACHIEVEMENTS: 32 trophies for classic and Empire Mode, saved on the cartridge. Many unlock rewards.
+- UNLOCKABLES: ant colours GOLD, WHITE, PINK, SHADOW and menu styles AMBER, CRYSTAL (pick them in OPTIONS once unlocked).
+- CHEATS: infinite AP, god queen, no disasters, rich colony, all techs, mega army, party ants, turbo, peaceful rivals,
+  instant zones. Each is unlocked by an achievement, or all at once with UP DOWN LEFT RIGHT UP DOWN LEFT RIGHT SELECT
+  on the cheats tab. Trophies are not earned while a cheat is on (except CHEATER).
+- RECORDS: wins, best times and high scores per level, trophies, story progress.
+## Empire Mode additions
+- RIVALS screen (diplomacy): offer peace (20 amber), demand tribute, declare war.
+- WORLD MAP: the whole land on one screen with your nest, armies and rivals.
+- Random events with Counselor Chitin: traders, rain, drought, locusts, refugees, golden days, cave-ins, amber veins,
+  fungus blight, wandering warriors.

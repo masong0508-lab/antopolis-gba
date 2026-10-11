@@ -182,14 +182,18 @@ static const Opt OPTS[NOPT] = {
   {"ANT TRAILS",    "SHOW|HIDE",                0, "THE DOTS YOUR ANTS LEAVE", "ON THE GROUND"},
   {"SCREEN SHAKE",  "ON|OFF",                   0, "SHAKE ON FLOODS AND", "EARTHQUAKES"},
   {"POP UPS",       "ON|OFF",                   0, "LITTLE +1  SPLASH AND", "HEART PICTURES"},
-  {"MENU STYLE",    "SOIL|CLAY|MOSS|NIGHT",     0, "THE DIRT BEHIND MENUS", "AND UNDER THE MAP"},
-  {"YOUR ANTS",     "BLACK|BLUE|GREEN|PURPLE",  0, "THE COLOR OF YOUR ANTS", "AND YOUR QUEEN"},
+  {"MENU STYLE",    "SOIL|CLAY|MOSS|NIGHT|AMBER|CRYSTAL", 0, "THE DIRT BEHIND MENUS", "AND UNDER THE MAP"},
+  {"YOUR ANTS",     "BLACK|BLUE|GREEN|PURPLE|GOLD|WHITE|PINK|SHADOW", 0, "THE COLOR OF YOUR ANTS", "AND YOUR QUEEN"},
   {"MUSIC",         "ON|OFF",                   0, "THE SONGS", ""},
   {"SOUNDS",        "ON|OFF",                   0, "BEEPS  CRUNCHES AND", "SPLASHES"},
   {"ANT EYE SPEED", "SLOW|NORMAL|FAST",         1, "WALKING SPEED IN THE", "ANT EYE VIEW"},
   {"ANT EYE SKY",   "DAY|SUNSET|NIGHT",         0, "THE SKY IN THE ANT EYE", "VIEW"},
 };
 static u8 opt[NOPT];
+static u8 cht[10];                                // cheats switched on (EXTRAS > CHEATS)
+static void ach_get(u8 i);
+static u8 opt_locked(u8 i, u8 v);
+static u8 qlost, rdrown, ewins;                   // classic achievements: queen hurt, red ants drowned, elections won
 #define O(i) (opt[i])
 static u8 qbase = 5, nosfx;                       // queen hearts (from the options), sounds off
 void *memcpy(void *d, const void *s, unsigned n) { u8 *a = d; const u8 *b = s; while (n--) *a++ = *b++; return d; }
@@ -313,6 +317,12 @@ static void options_screen(void), pm_rule(u8 y), big(u8 y, const char *t);
 static u8 emp_unlocked(void);
 static const u8 CDLY[3] = {16, 10, 6}, CRAT[3] = {5, 3, 2};   // cursor repeat: delay and rate (slow / normal / fast)
 static u8 timeup;
+static u16 frc;
+static void party_tick(void) {                    // PARTY ANTS cheat: your ants cycle through the rainbow
+  static const u16 RB[8] = {RGB(31,4,4), RGB(31,18,2), RGB(31,31,4), RGB(6,28,6), RGB(4,24,31), RGB(10,8,31), RGB(24,6,31), RGB(31,8,20)};
+  if (!cht[6]) return;
+  OBJPAL[2] = RB[(frc >> 3) & 7]; OBJPAL[3] = RB[((frc >> 3) + 2) & 7]; OBJPAL[4] = RB[((frc >> 3) + 4) & 7];
+}
 static void say(const char *m) { msg = m; msgt = 12; }
 static u8 blen2(const char *s) { u8 n = 0; while (s[n]) n++; return n; }
 
@@ -322,12 +332,12 @@ static const char *const SPNAME[8] = {"PAUSED", "FRAME ADVANCE", "VERY SLOW", "S
 static const char *const SPTAG[8] = {"II", ">I", "1/4", "1/2", "", "X2", "X4", "X8"};
 static const u8 SPN[8] = {0, 0, 1, 1, 1, 2, 4, 8};          // ant slices per frame (8 slices = 1 game tick = 8 frames at NORMAL)
 static const u8 SPM[8] = {0, 0, 3, 1, 0, 0, 0, 0};          // run only when (frame & mask) == 0: VERY SLOW every 4th frame, SLOW every 2nd
-static u8 spd_ok(void) { return (u8)((u16)wins[0] + wins[1] + wins[2] >= 10); }
+static u8 spd_ok(void) { return (u8)((u16)wins[0] + wins[1] + wins[2] >= 10 || cht[7]); }
 static void spd_next(s8 dir) {                          // step through the speeds, skipping the two that are still locked
   u8 i;
   for (i = 0; i < 8; i++) { spd = (u8)((spd + dir + 8) & 7); if (spd_ok() || (spd != 1 && spd != 7)) break; }
 }
-static void spd_toggle(void) { spd = spd == 4 ? 6 : 4; say(spd == 6 ? "FAST FORWARD ON" : "NORMAL SPEED"); }
+static void spd_toggle(void) { spd = spd == 4 ? (cht[7] ? 7 : 6) : 4; say(spd >= 6 ? "FAST FORWARD ON" : "NORMAL SPEED"); }
 
 // ---------- HUD (BG1 rows 17-19) ----------
 // row 17: YOU hearts  ant-count   speed   RED hearts  ant-count
@@ -736,7 +746,7 @@ static u8 spawn(u8 team) {
 static void count(u8 *c) { u8 i; c[0] = c[1] = 0; for (i = 0; i < MAXA; i++) if (ant[i].alive) c[ant[i].team]++; }
 
 static void apr(s8 d) { s16 v = (s16)appr + d; appr = v < 0 ? 0 : v > 99 ? 99 : (u8)v; }
-static void die(Ant *a, u8 drown) { a->alive = 0; if (a->team == 0) apr(-2); fx_add(a->x, a->y, drown ? FX_SPLASH : FX_PUFF); }
+static void die(Ant *a, u8 drown) { a->alive = 0; if (a->team == 0) apr(-2); if (drown && a->team == 1 && ++rdrown >= 20) ach_get(3); fx_add(a->x, a->y, drown ? FX_SPLASH : FX_PUFF); }
 static void set_rules(void) {
   fcost = 8; hc0 = 3; hc1 = RCOST[diff]; tm = TRK[diff]; dm = 31; qbase = (u8)(3 + O(O_HEARTS)); qmax0 = qbase;
   if (O(O_REFILL) == 0) tm = (u8)((tm << 1) | 1); else if (O(O_REFILL) == 2) tm >>= 1;
@@ -778,13 +788,14 @@ static u8 dmask_dis(void) {
   return (perk & 8) ? (u8)((b << 1) | 1) : b;
 }
 static void disaster(void) {                     // hits both colonies alike, anywhere on the map
+  if (cht[2]) return;
   u8 q = (u8)(rnd() & 1), x = (u8)(rnd() % W), y = (u8)(rnd() % H);
   hit(x, y, q);
-  sfx_flood(); alx = x; aly = y; alt = 120; say(q ? "EARTHQUAKE!  \6 LOOK" : "FLASH FLOOD!  \6 LOOK");
+  sfx_flood(); alx = x; aly = y; alt = 120; (void)0; say(q ? "EARTHQUAKE!  \6 LOOK" : "FLASH FLOOD!  \6 LOOK");
 }
 static void election(void) {
   u8 ok = appr >= 25;                            // anything but a coup earns a perk offer
-  if (appr >= 50) { mana = (mana + 8 > MANA_MAX) ? MANA_MAX : mana + 8; sfx_mana(); say("ANTLECTION WON! +8 AP"); }
+  if (appr >= 50) { mana = (mana + 8 > MANA_MAX) ? MANA_MAX : mana + 8; sfx_mana(); say("ANTLECTION WON! +8 AP"); if (++ewins >= 3 && !tut) ach_get(11); }
   else if (appr >= 25) { sfx_deny(); say("ANTLECTION: NO BONUS"); }
   else { stock[0] >>= 1; mana = 0; appr = 40; sfx_qdead(); say("COUP! FOOD AND AP LOST"); }
   if (ok && !tut && !sandbox && !O(O_PERKS)) offer();
@@ -793,7 +804,7 @@ static void step_ant(Ant *a) {
   u8 d, t = a->team, e = t ^ 1, found = 0, bd = 0, tx, ty, px = a->ox, py = a->oy; u16 dh, de;
   s16 sc, best_sc = -32000;
   static const u8 RTH[3] = {12, 8, 5}, MTH[3] = {5, 8, 12};
-  u8 soldier = !a->carry && qhp[e] && ncnt[t] >= (t ? RTH[O(O_REDATK)] : MTH[O(O_MYATK)]) && a->sol;
+  u8 soldier = !a->carry && qhp[e] && ncnt[t] >= (t ? RTH[O(O_REDATK)] : MTH[O(O_MYATK)]) && a->sol && !(t && cht[8]);
   if (!a->carry && food[a->y][a->x]) { food[a->y][a->x] = 0; a->carry = 1; draw_dec(a->x, a->y); }
   if (a->carry) { u8 p = ph[a->y][a->x]; ph[a->y][a->x] = p > 215 ? 255 : p + 40; }
   for (d = 0; d < 4; d++) {
@@ -816,7 +827,7 @@ static void step_ant(Ant *a) {
   if (!a->carry && qhp[e] && a->x == nestx[e] && a->y == nesty[e]) {
     if (a->sol) {
       if (rnd() & 1) {
-        qhp[e]--; qfl[e] = 10; fx_add(a->x, a->y, FX_HEART);
+        qhp[e]--; qfl[e] = 10; fx_add(a->x, a->y, FX_HEART); if (!e) qlost = 1;
         if (e == 0) { apr(-3); alert(a->x, a->y, "QUEEN ATTACKED!  \6 LOOK"); }
         if (qhp[e]) sfx_hit(); else sfx_qdead();
       }
@@ -1052,7 +1063,7 @@ static void place16(u8 s, u8 tile, u8 pal, int px, int py, u8 flip) {   // 16x16
   int sx = px - 4 - scx - shx, sy = py - 4 - scy;
   if (sx > -16 && sx < 240 && sy > -16 && sy < VH * 8) { spr(s, sx, sy, tile, pal, 1, flip); oam[s * 4 + 1] |= 0x4000; } else spr_hide(s);
 }
-static u16 frc;                                    // frame counter (animation)
+
 static void draw_sprites(void) {
   u8 i, tl; Ant *a; Fx *f;
   for (i = 0; i < MAXA; i++) {
@@ -1091,7 +1102,7 @@ static void newgame(void) {
   for (k = 0; k < (O(O_ANTS) == 0 ? 3 : O(O_ANTS) == 1 ? 5 : O(O_ANTS) == 2 ? 8 : 12); k++) { spawn(0); spawn(1); }
   count(ncnt);
   perk = 0; pend = 0; set_rules(); spd = (u8)(3 + O(O_GSPD)); sf = 0; appr = 50; etk = 0; slice = 0; cheat = 0; cx = nestx[0] + 2; cy = nesty[0] - 2; mana = (u8)(5 + 5 * O(O_AP)); gt = 0; over = 0; msgt = 0; timeup = 0;
-  shk = 0; shx = 0; alt = 0; jmp = 0;
+  shk = 0; shx = 0; alt = 0; jmp = 0; qlost = 0; rdrown = 0; ewins = 0;
   camx = 0; camy = H - VH; follow(); scx = (s16)camx * 8; scy = (s16)camy * 8;
   win_all();
   bfs(0); bfs(1); pdirty = 0; bj_again = 0;
@@ -1178,10 +1189,12 @@ static void title_dyn(void) {
 static void title_scene(void) {
   u8 x, k;
   ov_fill(1, 3, 0, 19); ui_title(); (void)x; (void)k;
-  ps(0, 0, "\4 OPTIONS", 10); ps(19, 0, "\3 EMPIRE", emp_unlocked() ? 9 : 15);
+  ps(0, 0, "\4 OPTIONS", 10); ps(11, 0, "\2 EXTRAS", 10); ps(21, 0, "\3 EMPIRE", emp_unlocked() ? 9 : 15);
   title_dyn();
 }
 static u8 wx[5];
+static u8 kk_busy;
+static u8 kk_mid(void) { return kk_busy; }
 static u8 title(void) {                            // returns 0 = play, 1 = open the map editor
   u8 i, fr = 0, on = 255, bl, edit = 0, selused = 0, selprev = 0; u16 k, p, prev = 0;
   DISPCNT = 0x80; BLDY = 16;
@@ -1214,11 +1227,13 @@ static u8 title(void) {                            // returns 0 = play, 1 = open
     }
     if (p) {                                        // the Konami code unlocks EMPIRE MODE
       static const u16 KON[10] = {J_UP, J_UP, J_DOWN, J_DOWN, J_LEFT, J_RIGHT, J_LEFT, J_RIGHT, J_B, J_A}; static u8 kk;
-      if (p == KON[kk]) { if (++kk == 10) { kk = 0; SRAM[62] = 'U'; sfx_mana(); jingle(WIN_TUNE, 6); title_scene(); ov_fill(1, 3, 14, 14); ps(3, 14, "EMPIRE MODE UNLOCKED! \3", 9); continue; } }
+      if (p == KON[kk]) { if (++kk == 10) { kk = 0; SRAM[62] = 'U'; ach_get(31); sfx_mana(); jingle(WIN_TUNE, 6); title_scene(); ov_fill(1, 3, 14, 14); ps(3, 14, "EMPIRE MODE UNLOCKED! \3", 9); continue; } }
       else kk = (u8)(p == KON[0]);
+      kk_busy = (u8)(kk >= 8);
     }
     if (p & J_L) { if (emp_unlocked()) { edit = 2; break; } ov_fill(1, 3, 14, 14); ps(1, 14, "WIN ONE GAME TO UNLOCK \3", 8); sfx_deny(); }
     if (p & J_A) { tutor = 1; sandbox = 0; break; }          // A alone = guided tutorial
+    if ((p & J_B) && !kk_mid()) { edit = 3; break; }          // B = EXTRAS
     if (p & J_START) { selused = 1; tutor = 0; sandbox = (k & J_SEL) ? 1 : 0; if (mapt == MMY && !has_my) { edit = 1; sandbox = 0; } break; }
     if (p & J_SEL) selused = 0;
     if ((k & J_SEL) && (k & ~J_SEL)) selused = 1;               // SELECT + another button (SEL+START = sandbox) is not "edit"
@@ -1475,7 +1490,7 @@ static void eye(void) {                              // time stands still while 
   s16 fa = vang, fx, fy, tx, ty, da;
   s8 td, wd, tlast = 0, wlast = 0;
   u16 k, p, prev, sky = BGPAL[0];
-  tev |= 16;
+  tev |= 16; ach_get(7);
   for (i = 0; i < MAXA; i++) if (vok(i)) { d = (u8)(dist(ant[i].x, cx) + dist(ant[i].y, cy)); if (d < best) { best = d; vi = i; } }
   if (vi < MAXA) { vx = ant[vi].x; vy = ant[vi].y; vang = ant[vi].fl ? 128 : 0; } else { vx = nestx[0]; vy = nesty[0]; vang = 192; }
   fa = vang; fx = (s16)(vx * 256 + 128); fy = (s16)(vy * 256 + 128);
@@ -2101,9 +2116,11 @@ static void opt_val(u8 i, char *b) {                // the text of option i's cu
 static const char *opt_group(u8 i) { return i <= O_TIME ? "GAME RULES" : i <= O_ALERTS ? "CONTROLS" : i <= O_ANTCOL ? "LOOK" : i <= O_SFX ? "SOUND" : "ANT EYE"; }
 static void opts_apply(void) {                      // colours, sound and rules follow the options right away
 
-  static const u16 ANTC[4][4] = {{RGB(1,1,2), RGB(6,6,8), RGB(16,16,19), RGB(14,15,22)},
+  static const u16 ANTC[8][4] = {{RGB(1,1,2), RGB(6,6,8), RGB(16,16,19), RGB(14,15,22)},
     {RGB(1,2,9), RGB(4,9,23), RGB(14,20,31), RGB(10,14,28)}, {RGB(1,6,1), RGB(4,16,4), RGB(14,28,12), RGB(10,20,8)},
-    {RGB(6,1,8), RGB(15,5,21), RGB(25,17,31), RGB(19,11,27)}};
+    {RGB(6,1,8), RGB(15,5,21), RGB(25,17,31), RGB(19,11,27)}, {RGB(10,6,0), RGB(26,20,2), RGB(31,30,14), RGB(31,24,6)},
+    {RGB(12,12,14), RGB(26,26,28), RGB(31,31,31), RGB(22,24,30)}, {RGB(14,3,8), RGB(30,12,20), RGB(31,24,28), RGB(31,16,24)},
+    {RGB(0,0,0), RGB(2,1,4), RGB(8,4,12), RGB(6,2,10)}};
   u8 i; u16 sh = RGB(2, 1, 0);                      // every text shadow: near-black brown
   BGPAL[17] = BGPAL[33] = BGPAL[49] = BGPAL[65] = BGPAL[129] = BGPAL[145] = BGPAL[161] = BGPAL[209] = BGPAL[225] = BGPAL[241] = sh;
   for (i = 0; i < 12; i++) BGPAL[4 + i] = UIPAL[O(O_PANEL)][i];   // the soil theme (palette bank 0, colours 4..15)
@@ -2123,6 +2140,7 @@ static void opts_load(void) {
   u8 i, sum = 0, ok = SRAM[24] == 'O' && SRAM[25] == 'P';
   for (i = 0; i < NOPT; i++) { opt[i] = SRAM[26 + i]; sum = (u8)(sum + opt[i] + i); if (opt[i] >= opt_n(i)) ok = 0; }
   if (!ok || sum != SRAM[60]) for (i = 0; i < NOPT; i++) opt[i] = OPTS[i].def;
+  for (i = 0; i < NOPT; i++) if (opt_locked(i, opt[i])) opt[i] = OPTS[i].def;
 }
 static void opt_draw(u8 sel, u8 top) {
   u8 i, y; char b[10];
@@ -2159,7 +2177,7 @@ static void options_screen(void) {
     if (p & J_DOWN) { sel = sel == NOPT - 1 ? 0 : sel + 1; sfx_food(); }
     if (p & (J_LEFT | J_RIGHT | J_A)) {
       n = opt_n(sel);
-      opt[sel] = (u8)((p & J_LEFT) ? (opt[sel] + n - 1) % n : (opt[sel] + 1) % n);
+      do opt[sel] = (u8)((p & J_LEFT) ? (opt[sel] + n - 1) % n : (opt[sel] + 1) % n); while (opt_locked(sel, opt[sel]));
       if (sel == O_PRESET && opt[sel]) for (i = 1; i < O_TIME; i++) opt[i] = PRESETS[opt[sel] - 1][i];
       else if (sel >= 1 && sel < O_TIME) opt[O_PRESET] = 0;
       opts_apply(); sfx_mana();
@@ -2316,6 +2334,7 @@ static void end_card(void) {
     if (!sandbox && !cheat) {
       if (wins[diff] < 99) wins[diff]++;
       if (!best[diff] || s < best[diff]) { best[diff] = (u16)s; nb = 1; }
+      ach_get(0); if (s < 180) ach_get(1); if (diff == 2) ach_get(2); if (mw == 96 && mh == 96) ach_get(4); if (mapt == MINF) ach_get(5); if (!qlost) ach_get(8);
       if (sc = calc_score(s), sc > hiscore[diff]) { hiscore[diff] = sc; nh = 1; }
       save_write();
     }
@@ -2385,6 +2404,10 @@ static void play(void) {
     if (tut && (tev & TEV[tut - 1])) { sfx_mana(); tut++; tut_enter(); prev = joy(); }
     if (tut) { qhp[0] = qhp[1] = qbase; if (appr < 50) appr = 50; }          // no game over mid-lesson
     if (cheat) { mana = MANA_MAX; stock[0] = 99; appr = 99; }
+    if (cht[0]) mana = MANA_MAX;
+    if (cht[1] && qhp[0] < qmax0) qhp[0] = qmax0;
+    party_tick();
+    if (!(frc & 31) && !sandbox && !cheat && !tut) { if (appr >= 99) ach_get(9); if (ncnt[0] >= 24) ach_get(10); }
     if (sandbox) { mana = MANA_MAX; qhp[0] = qhp[1] = qbase; appr = 99; }
     follow(); scroll_step(); win_sync();
     bfs_tick(450);                                   // paths update in the background after the land changes
@@ -2537,7 +2560,7 @@ static void ed_store(void) {                        // the world -> MY MAP lette
     if (x == nestx[1] && y == nesty[1]) c = 'R';
     cmap[y * W + x] = c;
   }
-  myhm.w = mw; myhm.h = mh; my_save();
+  myhm.w = mw; myhm.h = mh; my_save(); ach_get(6);
 }
 static void ed_resize(u8 nw, u8 nh) {
   u8 x, y, i;
@@ -2654,6 +2677,7 @@ static u8 editor(void) {                            // returns 1 = play MY MAP n
   return 0;
 }
 
+#include "extras.c"
 #include "empire.c"
 
 int main(void) {
@@ -2662,11 +2686,12 @@ int main(void) {
   logo_play();                                        // Danny Steel boot logo (START skips)
   IO16(0x0C) = IO16(0x0E) = 0; IO16(0x14) = IO16(0x16) = 0; IO16(0x48) = IO16(0x4A) = 0;   // undo the logo's BG2/3, BG1 scroll, windows
   gfx_init();
-  save_load(); opts_load(); opts_apply(); vram_reload(); opts_apply();
+  save_load(); ach_load(); opts_load(); opts_apply(); vram_reload(); opts_apply();
   diff = 1;
   for (;;) {
     u8 r = title();
     if (r == 2) { empire_main(); continue; }
+    if (r == 3) { extras(); continue; }
     if (r == 1) { if (editor()) { newgame(); play(); } continue; }
     newgame(); play();
   }
