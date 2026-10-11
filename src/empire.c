@@ -12,6 +12,8 @@ static s32 cash;                                   // ANT CITY money
 static u16 city_tile(u8 x, u8 y); static const char *city_can(u8 t, u8 x, u8 y); static void city_tick(void), city_cycle(void); static u8 city_build_menu(void);
 static void vram_reload(void);
 #include "battle.c"
+#include "pz.h"
+static void mis_tick(void);                        // ANTVERSE missions (missions.c)
 
 // ---------- techs ----------
 enum { T_FUNGUS, T_DIG, T_BRICK, T_SOLD, T_SCENT, T_BARTER, T_SPORE, T_AMBER, T_PIONEER, T_SHELL, T_GENES, T_GREAT, T_N };
@@ -414,8 +416,8 @@ static void ecycle(void) {
   }
   if (edict != 255 && !--edt) { say("THE EDICT HAS ENDED"); edict = 255; }
   if (protest && !(ecyc & 3)) say("PROTESTS! WORK IS SLOW");
-  if (fac_avg() < 15 && edict != 2) { if (++lowhap >= 5) end_game(0, 1); else say("REVOLUTION IS NEAR!"); } else lowhap = 0;
-  if (!--elect_t) { elect_t = 45; eelection(); }
+  if (fac_avg() < 15 && edict != 2 && !PZ_.on) { if (++lowhap >= 5) end_game(0, 1); else say("REVOLUTION IS NEAR!"); } else lowhap = 0;
+  if (!--elect_t) { elect_t = 45; if (!PZ_.on) eelection(); }
   // SimCity zones: the colony builds what it needs on painted land, at half price
   if (!ecity) {
     u8 want[4] = {0, (u8)(pop + 1 >= popcap), (u8)(food_net < 3), (u8)(unemp == 0 && pop + 2 < popcap)}, built = 0; u16 tries;
@@ -460,7 +462,8 @@ static void ecycle(void) {
     else if (g == G_CONQUER) { ok = 1; for (i = 0; i < enriv; i++) if (ralive[i]) ok = 0; }
     else if (g == G_WONDER) ok = wprog >= 40;
     if (ok) end_game(1, 10);
-  } else if (enriv) { u8 ok = 1; for (i = 0; i < enriv; i++) if (ralive[i]) ok = 0; if (ok) end_game(1, 3); }
+  } else if (enriv && !mis_on) { u8 ok = 1; for (i = 0; i < enriv; i++) if (ralive[i]) ok = 0; if (ok) end_game(1, 3); }
+  if (!ecity) mis_tick();
 }
 static void eelection(void) {
   u8 avg = fac_avg(), i, all = 1, won;

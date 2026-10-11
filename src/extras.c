@@ -144,6 +144,7 @@ static void extras(void) {
       ps(2, 14, "EMPIRE MODE", 10); ps(14, 14, emp_unlocked() ? "OPEN" : "LOCKED", emp_unlocked() ? 13 : 15);
       ps(2, 15, "CITY GOALS", 10); pn(14, 15, scen_count(), 9); ps(17, 15, "OF 10 DONE", 10);
       ps(2, 16, "ANTVERSE", 10); ps(14, 16, verse_unlocked() ? "OPEN" : "LOCKED", verse_unlocked() ? 13 : 15);
+      ps(2, 17, "MISSIONS", 10); pn(14, 17, mis_count(), 9); ps(17, 17, "OF 50", 10); ps(22, 17, "FACTS", 10); { u16 f = fact_count(); pn(28, 17, (u8)(f > 99 ? 99 : f), 9); }
     }
     ps(1, 19, tab == 1 ? "\1 CHANGE \3\4 TABS \2 BACK" : "\3\4 TABS   \2 BACK", 10);
     DISPCNT = 0x1B40; BLDY = 0;

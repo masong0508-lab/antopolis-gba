@@ -305,11 +305,14 @@ static void blocks_calc(void) {                    // land value, smog, crime an
     v = (s16)(s / 3) - cpk[b][a] * 4;
     if (law(0)) v = (s16)(v * 7 / 10);
     if (law(3)) v = (s16)(v * 11 / 10);
+    if (PZ_.on) v += PZ_.m_smog;
     cpol[b][a] = (u8)(v < 0 ? 0 : v > 100 ? 100 : v);
     v = (s16)(cden[b][a] * 3 + cpol[b][a] / 4 - ((ccov[b][a] & CV_GUARD) ? 55 : 0) - (law(1) ? 20 : 0));
+    if (PZ_.on) { v += PZ_.m_crime; if (pz_mart()) v -= 30; }
     ccri[b][a] = (u8)(v < 0 ? 0 : v > 100 ? 100 : v);
     v = (s16)(40 + cwat[b][a] * 12 + (cpk[b][a] > 4 ? 4 : cpk[b][a]) * 8 + ((ccov[b][a] & CV_GUARD) ? 6 : 0) + ((ccov[b][a] & CV_CLINIC) ? 6 : 0)
       + ((ccov[b][a] & CV_SCHOOL) ? 8 : 0) + ((ccov[b][a] & CV_PUMP) ? 4 : 0) + (law(2) ? 6 : 0) - cpol[b][a] * 6 / 10 - ccri[b][a] * 4 / 10);
+    if (PZ_.on) v += PZ_.m_lv;
     clv[b][a] = (u8)(v < 0 ? 0 : v > 100 ? 100 : v);
     if (cden[b][a] || csrc[b][a]) { nb++; sp += cpol[b][a]; sc += ccri[b][a]; }
   }
@@ -340,12 +343,16 @@ static void city_cycle(void) {
   dR = clamp100(40 + (jobs * 2 - (s32)cpop) * 60 / ((s32)cpop + 40) - taxR * 3 - (chunger ? 40 : 0) + (law(7) ? 15 : 0) + (cmile >= 3 ? 5 : 0));
   dW = clamp100(40 + (workers * 6 / 10 - (s32)cjw) * 60 / (workers * 6 / 10 + 20) - taxW * 3 + (law(7) ? 15 : 0));
   dF = clamp100(25 + (need + 5 - (s32)cfood_p) * 60 / (need + 10) + (workers * 4 / 10 - (s32)cjf) * 20 / (workers * 4 / 10 + 20) - taxF * 3 + (law(7) ? 15 : 0) + (inc_x > 0 ? 10 : 0));
+  if (PZ_.on) { dR = clamp100(dR + PZ_.m_dr + (pz_ed(E_OPEN) ? 10 : 0) - (pz_ed(E_CLOSED) ? 10 : 0)); }
   // growth happens during the scan (grow_try); this sets how many squares may change next month
   cmaxc = (u8)(6 + cpop / 250 > 60 ? 60 : 6 + cpop / 250); if (cht[9]) cmaxc = (u8)(cmaxc * ZONEV[cht[9]] > 200 ? 200 : cmaxc * ZONEV[cht[9]]);
+  if (PZ_.on && PZ_.m_grow) { s16 g = (s16)(cmaxc * (100 + PZ_.m_grow) / 100); cmaxc = (u8)(g < 2 ? 2 : g > 200 ? 200 : g); }
   // money
   inc_r = (s16)(cpop * taxR / 150); inc_w = (s16)(cjw * taxW / 100); inc_f = (s16)(cjf * taxF / 120);
   if (law(7)) { inc_r = (s16)(inc_r * 8 / 10); inc_w = (s16)(inc_w * 8 / 10); inc_f = (s16)(inc_f * 8 / 10); }
   if (cht[18]) { inc_r = (s16)(inc_r * (1 + cht[18])); inc_w = (s16)(inc_w * (1 + cht[18])); inc_f = (s16)(inc_f * (1 + cht[18])); }
+  if (PZ_.on) { s16 m = (s16)(100 + PZ_.m_inc + (pz_ed(E_TAXRICH) ? 10 : 0) + (PZ_.con[4] == 1 ? 8 : 0)); if (m < 20) m = 20;
+    inc_r = (s16)(inc_r * m / 100); inc_f = (s16)(inc_f * m / 100); inc_w = (s16)(inc_w * (m - (pz_ed(E_GREEN) ? 10 : 0)) / 100); }
   if (law(4)) { u8 pk = 0; for (i = 0; i < nbl; i++) if (ebl[i].t == B_PARK || ebl[i].t == B_GARDEN || ebl[i].t == B_STADIUM) pk++; inc_x += (s16)(pk >= 3 ? cpop / 100 + pk * 3 : 0); }
   exp_s = 0; for (i = 0; i < nbl; i++) if (cash_paid(ebl[i].t) && ebl[i].t != B_NEST) exp_s += cupk(ebl[i].t);
   exp_t = (s16)(ctun / 10); exp_l = 0; for (i = 0; i < NLAW; i++) if (law(i)) exp_l += LAWC[i];
@@ -378,12 +385,13 @@ static void city_cycle(void) {
   }
   if (nh2 == 48) { for (i = 0; i < 47; i++) { hpop[i] = hpop[i + 1]; hcash[i] = hcash[i + 1]; } nh2 = 47; }
   hpop[nh2] = (u16)(cpop > 65000 ? 65000 : cpop); hcash[nh2] = (s16)(cash > 32000 ? 32000 : cash < -32000 ? -32000 : cash); nh2++;
-  if (ecity == 2 && nb_of[B_ARCO]) city_end(1, 5);
+  if (ecity == 2 && nb_of[B_ARCO] && !mis_on) city_end(1, 5);
   // trophies that fit the city
   if (cpop >= 2000) ach_get(14); if (ezbuilt >= 10) ach_get(25);
   if (cash >= 20000) ach_get(37); if (cmile >= 5) ach_get(38);
   if (cpop >= 2000 && csmog < 10) ach_get(39); if (cpop >= 2000 && ccrime < 10) ach_get(40);
   if (czn[1][3] >= 50) ach_get(50); if (inc_r + inc_w + inc_f + inc_x - exp_s - exp_t - exp_l - exp_n >= 500) ach_get(51);
+  pz_month(); mis_tick();
   scan_reset();
 }
 static u8 city_goal_ok(void);
@@ -447,8 +455,9 @@ static void chud(void) {
     pc(23, 18, 'H', dR > 15 ? 13 : dR < -15 ? 8 : 3); pc(24, 18, 'F', dF > 15 ? 13 : dF < -15 ? 8 : 3); pc(25, 18, 'W', dW > 15 ? 13 : dW < -15 ? 8 : 3);
   } else {
     dbar(1, 18, 'H', dR); dbar(8, 18, 'F', dF); dbar(15, 18, 'W', dW);
-    pc(22, 18, '%', chunger ? 8 : 13); p3(24, 18, rf, chunger ? 8 : 13);
+    pc(21, 18, '%', chunger ? 8 : 13); p3(23, 18, rf, chunger ? 8 : 13);
   }
+  pz_hud();
   if (msgt) { psx(0, 19, msg, 2); msgt--; return; }
   if (eplace) {
     const char *why = city_can(eplace, cx, cy);
@@ -820,7 +829,7 @@ static void city_newgame(void) {
   else { enriv = 0; etech = 0xFFF; rf = 100; rd = 0; ra = 0; gw = gs = gm = 0; }
   if (cht[4]) etech = 0xFFF;
   eres = 255; erp = 0; pop = 6; popcap = 10; edry = 0; era = era_now();
-  city_setup_common();
+  city_setup_common(); pz_setup(cscen);
   if (cscen != 255) { cash = SC[cscen].cash; cdis_on = 0; cyears_lim = (u16)(SC[cscen].years * 12); }
   if (cht[3]) cash = RICHV[cht[3]] * 20;
   if (ecity == 2) place_rivals();
@@ -845,6 +854,7 @@ static void city_save(void) {
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) sb(&o, (u8)(hgt[y][x] | (EZN(y, x) << 2) | (ELV(y, x) << 4) | (ETUN(y, x) << 6)));
   if (ecity == 1) { sb(&o, nbl); for (i = 0; i < nbl; i++) { sb(&o, ebl[i].x); sb(&o, ebl[i].y); sb(&o, ebl[i].t); sb(&o, ebl[i].hp); } }
   sw16(&o, (u16)(cash & 0xFFFF)); sw16(&o, (u16)((u32)cash >> 16)); sw16(&o, cmon); sb(&o, cmile); sb(&o, taxR); sb(&o, taxF); sb(&o, taxW); sw16(&o, claws); sb(&o, cloan); sw16(&o, rf);
+  { const u8 *q = (const u8 *)&PZ_; for (i = 0; i < sizeof PZ_; i++) sb(&o, q[i]); }
   SRAM[CSO] = 'C'; SRAM[CSO + 1] = 'S'; SRAM[CSO + 2] = 'A'; SRAM[CSO + 3] = 'V';
   say("SAVED");
 }
@@ -861,6 +871,7 @@ static void city_load(void) {
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) if (ebi[y][x]) { set_zn(y, x, 0); set_lv(y, x, 0); set_tun(y, x, 0); }
   lo = lw16(&o); hi = lw16(&o); cash = (s32)((u32)lo | ((u32)hi << 16));
   cmon = lw16(&o); cmile = lb(&o); taxR = lb(&o); taxF = lb(&o); taxW = lb(&o); claws = lw16(&o); cloan = lb(&o); rf = lw16(&o);
+  { u8 *q = (u8 *)&PZ_; for (i = 0; i < sizeof PZ_; i++) q[i] = lb(&o); }
   cscen = 255; echap = 255;
   bfs(0); bfs(1); pdirty = 0; efield(nestx[0], nesty[0]);
   city_terr(); terr_calc(); city_terr();
@@ -900,23 +911,31 @@ static u8 grid_menu(const char *title, const char *const *it, const char *const 
     if (emp_ & J_A) { sfx_mana(); *selp = sel; return sel; }
   }
 }
+#include "pz.c"
 static void city_goal_card(void) {
   const char *L[6] = {0, 0, 0, 0, 0, 0};
   if (cscen != 255) { u8 i; for (i = 0; i < 4; i++) L[i] = SC[cscen].s[i]; story_card(SC[cscen].name, L, "\1 OK"); }
-  else if (ecity == 2) { static const char *const V[6] = {"EVERYTHING AT ONCE!", "GROW A CITY, RULE AN EMPIRE,", "BEAT THE RIVALS, USE YOUR", "GOD POWERS. WIN: BEAT ALL", "RIVALS, OR BUILD SKY MOUND", 0}; story_card("ANTVERSE", V, "\1 OK"); }
+  else if (ecity == 2) { static const char *const V[6] = {"EVERYTHING AT ONCE!", "GROW A CITY, RULE AN EMPIRE,", "BEAT THE RIVALS, USE YOUR", "GOD POWERS. WIN: BEAT ALL", "RIVALS, OR BUILD SKY MOUND", 0};
+    static const char *const V2[6] = {"EVERYTHING AT ONCE!", "CITY EMPIRE WAR GOD POWERS", "AND THE PALACE: KEEP THE 8", "GROUPS HAPPY OR BE VOTED", "OUT. WIN: RIVALS OR SKY MOUND", 0}; story_card("ANTVERSE", PZ_.on ? V2 : V, "\1 OK"); }
   else { static const char *const F[6] = {"NO GOAL. NO LIMITS.", "GROW FROM OUTPOST TO", "MEGALOPOLIS: 15000 ANTS.", "HAVE FUN, MAYOR!", 0, 0}; story_card("FREE CITY", F, "\1 OK"); }
 }
 static u8 city_menu(void) {                        // 0 resume, 1 quit
-  static const char *const IT[15] = {"RESUME", "BUILD", "BUDGET", "MAPS", "LAWS", "ADVISORS", "GRAPHS", "CHAOS", "GOAL", "SPEED", "SAVE", "QUIT",
-    "SCIENCE", "RIVALS", "EDICTS"};
-  static const char *const IH[15] = {"BACK TO THE CITY", "ZONES TUNNELS AND BUILDINGS", "TAXES AND MONEY", "SEE LAND VALUE SMOG CRIME",
+  static const char *const IT[16] = {"RESUME", "BUILD", "BUDGET", "MAPS", "LAWS", "ADVISORS", "GRAPHS", "CHAOS", "GOAL", "SPEED", "SAVE", "QUIT",
+    "SCIENCE", "RIVALS", "EDICTS", "PALACE"};
+  static const char *const IH[16] = {"BACK TO THE CITY", "ZONES TUNNELS AND BUILDINGS", "TAXES AND MONEY", "SEE LAND VALUE SMOG CRIME",
     "CITY RULES THAT HELP", "WHAT THE CITY NEEDS", "ANTS AND MONEY OVER TIME", "FIRE FLOOD BEETLE...", "WHAT YOU MUST DO", "L SLOWER  A FASTER",
-    "SAVE AND GO TO THE MENU", "LEAVE THIS CITY", "LEARN NEW TECHS", "TALK TO OTHER COLONIES", "PASS LAWS FOR YOUR ANTS"};
-  u8 sel = cm_sel;
-  u8 n = ecity == 2 ? 15 : 12, r;
+    "SAVE AND GO TO THE MENU", "LEAVE THIS CITY", "LEARN NEW TECHS", "TALK TO OTHER COLONIES", "PASS LAWS FOR YOUR ANTS", "GROUPS VOTES EDICTS SPIES"};
+  const char *it[16], *ih[16]; u8 map[16];
+  u8 sel = cm_sel, i;
+  u8 n = 0, r;
+  for (i = 0; i < 12; i++) { it[n] = IT[i]; ih[n] = IH[i]; map[n++] = i; }
+  if (ecity == 2) { it[n] = IT[12]; ih[n] = IH[12]; map[n++] = 12; it[n] = IT[13]; ih[n] = IH[13]; map[n++] = 13; if (!PZ_.on) { it[n] = IT[14]; ih[n] = IH[14]; map[n++] = 14; } }
+  if (PZ_.on) { it[n] = IT[15]; ih[n] = IH[15]; map[n++] = 15; }   // EL PRESIDANTE: the palace (in ANTVERSE it holds the edicts too)
   for (;;) {
-    r = grid_menu(ecity == 2 ? "ANTVERSE" : "ANT CITY", IT, IH, n, &sel);
+    if (sel >= n) sel = 0;
+    r = grid_menu(ecity == 2 ? "ANTVERSE" : "ANT CITY", it, ih, n, &sel);
     if (r == 255 || r == 0) break;
+    r = map[r];
     switch (r) {
     case 1: { u8 b = city_build_menu(); if (b) { eplace = b; ewait_clear(); ov_clear(); cm_sel = sel; return 0; } break; }
     case 2: city_budget(); break;
@@ -933,6 +952,7 @@ static u8 city_menu(void) {                        // 0 resume, 1 quit
     case 12: research_menu(); break;
     case 13: rivals_screen(); break;
     case 14: edict_menu(); break;
+    case 15: pz_palace(); if (PZ_.pend) { ewait_clear(); ov_clear(); cm_sel = sel; return 0; } break;
     }
   }
   cm_sel = sel; ewait_clear(); ov_clear();
@@ -1046,6 +1066,7 @@ static void city_play(void) {
     if (alt) alt--;
     lk_focus = 2;
     if (cnews) { u8 m = (u8)(cnews - 1); cnews = 0; milestone_card(m); city_resume(); continue; }
+    if (PZ_.pend) { if (pz_cards()) { if (eend) break; city_resume(); continue; } }
     if (evpend != 255 && ecity == 2) { emp_event(evpend); evpend = 255; city_resume(); continue; }
     if (cscen != 255 && cmon) {
       if (city_goal_ok()) { city_end(1, 22); break; }
@@ -1086,7 +1107,7 @@ static void city_end_screen(void) {
     if (ecity == 2) ach_get(44);
     else ps(3, 5, ewhy == 5 ? "THE SKY MOUND RISES!" : ewhy == 2 ? "THE GREAT MOUND IS COMPLETE" : ewhy == 3 ? "ALL RIVALS ARE BEATEN" : "A GREAT CITY", 3);
     jingle(WIN_TUNE, 6);
-  } else { big(2, "GAME OVER"); ps(3, 5, ewhy == 20 ? WL[0] : ewhy == 21 ? WL[1] : ewhy == 1 ? WL[3] : "YOUR NEST WAS DESTROYED", 3); jingle(LOSE_TUNE, 4); }
+  } else { big(2, "GAME OVER"); ps(3, 5, ewhy == 20 ? WL[0] : ewhy == 21 ? WL[1] : ewhy == 1 ? WL[3] : ewhy == 30 ? "YOU WERE THROWN OUT OF THE PALACE" : "YOUR NEST WAS DESTROYED", 3); jingle(LOSE_TUNE, 4); }
   pm_rule(7);
   ps(3, 9, "ANTS", 10); pnum(14, 9, cpop, 3);
   ps(3, 10, "MONEY", 10); pcash(14, 10, cash, 3);
@@ -1098,12 +1119,14 @@ static void city_end_screen(void) {
   emode = 0; ecity = 0; fade(0, 16);
 }
 
+#include "missions.c"
+static const u16 *mis_lim_p(void) { return &MIS[mis_i].lim; }
 // ---------- CITY / ANTVERSE main menus ----------
 static u8 city_setup(u8 verse) {                   // FREE CITY / ANTVERSE settings with a live map preview. 1 = start
   static u8 sel = 0, nriv = 2, agg = 1;
   static const char *const MN[4] = {"EASY", "NORMAL", "HARD", "SANDBOX"};
   static const char *const AGN[3] = {"CALM", "NORM", "WILD"};
-  u8 nrow = verse ? 7 : 6, i; u16 fr = 0, k, p, prev = joy(); u8 dirty = 0;
+  u8 nrow = verse ? 8 : 7, i; u16 fr = 0, k, p, prev = joy(); u8 dirty = 0;
   hide_all(); oam_flush(); snap_take();
   for (;;) {
     ov_fill(1, 3, 0, 19); ui_full(); big(0, verse ? "ANTVERSE" : "FREE CITY"); pm_rule(2); pm_rule(18);
@@ -1115,6 +1138,7 @@ static u8 city_setup(u8 verse) {                   // FREE CITY / ANTVERSE setti
       else if (i == 2) { ps(3, y, "MONEY", c); ps(9, y, MN[cmoney], 9); }
       else if (i == 3) { ps(3, y, "DISASTERS", c); ps(13, y, cdis_on ? "ON" : "OFF", cdis_on ? 8 : 13); }
       else if (i == 4 && verse) { ps(3, y, "RIVALS", c); pc(10, y, (char)('0' + nriv), 9); ps(12, y, AGN[agg], 9); }
+      else if (i == nrow - 3) { static const char *const PW[3] = {"OPTIONS", "ON", "OFF"}; ps(3, y, "PALACE", c); ps(10, y, PW[pzw], pzw == 2 ? 15 : 13); }
       else if (i == nrow - 1) ps(3, y, "START!", i == sel ? 9 : 13);
       else if (i == nrow - 2) ps(3, y, "HOW TO PLAY", c);
     }
@@ -1136,6 +1160,7 @@ static u8 city_setup(u8 verse) {                   // FREE CITY / ANTVERSE setti
         else if (sel == 2) cmoney = (u8)((cmoney + 4 + dd) % 4);
         else if (sel == 3) cdis_on ^= 1;
         else if (sel == 4 && verse) { if (k & J_A) agg = (u8)((agg + 3 + dd) % 3); else nriv = (u8)(nriv + dd < 1 ? 3 : nriv + dd > 3 ? 1 : nriv + dd); }
+        else if (sel == nrow - 3) pzw = (u8)((pzw + 3 + dd) % 3);
         sfx_food();
         { u8 y = (u8)(4 + sel * 2); for (i = 2; i < 16; i++) BGMAP1[y * 32 + i] = (u16)(1 | (3 << 12)); }
         if (!dirty) break;
@@ -1160,9 +1185,10 @@ static void city_main(u8 verse) {
   }
   ecity = (u8)(verse ? 2 : 1);
   for (;;) {
-    const char *it[4]; u8 has = city_has_save(verse);
+    const char *it[5]; u8 has = city_has_save(verse);
     n = 0;
     if (!verse) it[n++] = "SCENARIOS";
+    if (verse) it[n++] = "MISSIONS";
     it[n++] = verse ? "NEW ANTVERSE" : "FREE CITY";
     if (has) it[n++] = "CONTINUE";
     it[n++] = "BACK";
@@ -1174,7 +1200,8 @@ static void city_main(u8 verse) {
     for (i = 0; i < n; i++) { u8 y = (u8)(6 + i * 2);
       if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
       ps(3, y, it[i], i == sel ? 9 : 3);
-      if (!verse && i == 0) { pn(17, y, scen_count(), 9); ps(20, y, "OF 10", 10); } }
+      if (!verse && i == 0) { pn(17, y, scen_count(), 9); ps(20, y, "OF 10", 10); }
+      if (verse && i == 0) { pn(17, y, mis_count(), 9); ps(20, y, "OF 50", 10); } }
     if (!verse) ps(1, 16, verse_unlocked() ? "ANTVERSE IS OPEN!" : "WIN ALL 10 TO OPEN ANTVERSE", verse_unlocked() ? 13 : 10);
     ps(1, 19, "\1 OK   \2 BACK", 10);
     DISPCNT = 0x1B40; BLDY = 0;
@@ -1186,6 +1213,7 @@ static void city_main(u8 verse) {
       const char *c = it[sel];
       if (c[0] == 'B') break;
       ecity = (u8)(verse ? 2 : 1);
+      if (c[0] == 'M') { missions_menu(); ecity = 2; continue; }
       if (c[0] == 'S') {                            // scenario list
         u8 s = 0, done = 0, top = 0; u16 dv = scen_done();
         for (i = 0; i < NSCEN; i++) if (!((dv >> i) & 1)) { s = i; break; }

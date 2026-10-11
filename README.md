@@ -82,6 +82,30 @@ Civilization + Age of Empires + Tropico + SimCity, played on the normal map scre
   dew pumps, parks, the stadium, the sky mound), set taxes and laws, read the advisors, data maps and graphs, and survive fires, floods and giant beetles.
 - 10 scenarios (campaigns) plus FREE CITY. Win all 10 to open ANTVERSE: the city, the empire, rivals and god powers all at once.
 
+## EL PRESIDANTE (Tropico mode for ANT CITY and ANTVERSE)
+- Switch it on in OPTIONS > EL PRESIDANTE (OFF / FREE CITY / ALWAYS), on the FREE CITY and ANTVERSE setup screens
+  (PALACE row), or per mission. The options group also sets how often the colony votes, rebels, coups, the superpowers,
+  the hidden hand, palace events, how demanding the groups are, and what happens when you fall (game over or exile).
+- The PALACE menu (START > PALACE): 8 GROUPS (workers, traders, mystics, soldiers, scholars, greens, natives, loyalists)
+  with support bars, sizes and leaders you can flatter, bribe, jail or exile; LIFE (9 parts of happiness, respect,
+  freedom); 15 EDICTS (food for all, literacy, martial law, festival, no spore juice, secret police, propaganda, tax the
+  rich, open / closed borders, green law, pensions, crackdown, cult of me, amnesty); the CHARTER (votes, speech, faith,
+  army, trade, ruler); VOTES (speeches, promises, rigging, call a vote); the two SUPERPOWERS (aid, trade deals, gifts,
+  alliances, raiders); the HONEY POT (skim the taxes, buy loyalty, hire guards, pay the rebels, fund a vote); ORDER
+  (rebels, coup defense); and the ADVISOR, who tells you what the groups are really doing.
+- The hidden hand: unhappy groups quietly push the city around (strikes trim income, prophets send ants away, greens burn
+  the works, natives feed the crime, soldiers plot). Happy groups help. The city never says who did it.
+- Votes with speeches and rigging, coups, uprisings, superpower raids, events with two choices, exile and a comeback.
+
+## ANTVERSE MISSIONS
+- 50 missions from the ANTVERSE menu. Some use a single mode (classic, ANT EYE, EMPIRE, ANT CITY, EL PRESIDANTE), the
+  rest mix everything. Goals, maps, twists (debt, fires, rebels, angry groups, hostile superpowers) and time limits.
+  The PALACE toggle is on the mission screen for missions that allow either way. Finished missions are saved.
+
+## Loading screens
+- While a world is built, a fact appears: ANT FACT, BUG FACT, LIFE FACT, HUGE NUMBER or LAME FACT (123 of them, all
+  checked). OPTIONS > LOADING FACTS switches them off.
+
 ## 2 PLAYERS (home screen: 2 PLAYER)
 - Every mode works for two: VERSUS (black ants against red ants), CO-OP CLASSIC (two gods, one colony), CO-OP EMPIRE,
   CO-OP CITY and CO-OP ANTVERSE.
@@ -92,12 +116,12 @@ Civilization + Age of Empires + Tropico + SimCity, played on the normal map scre
 - The link cable needs real hardware or an emulator with GBA link (multiplayer) support. SAME GBA works everywhere.
 
 ## Extras (home screen: EXTRAS)
-- ACHIEVEMENTS: 56 trophies for every mode (classic, ANT EYE, Empire, City, Antverse, 2 players), saved on the cartridge.
+- ACHIEVEMENTS: 64 trophies for every mode (classic, ANT EYE, Empire, City, Antverse, 2 players), saved on the cartridge.
   Many unlock rewards.
 - UNLOCKABLES: ant colours GOLD, WHITE, PINK, SHADOW and menu styles AMBER, CRYSTAL (pick them in OPTIONS once unlocked).
-- CHEATS (21, most with levels): infinite AP, god queen, weather, rich colony, all techs, mega army, party ants, turbo,
+- CHEATS (23, most with levels): infinite AP, god queen, weather, rich colony, all techs, mega army, party ants, turbo,
   peaceful rivals, instant zones, food rain, strong ants, big brood, super ant, iron jaws, money tree, no fires, giant floods,
-  and 3 secret cheats with their own button codes. Each is unlocked by a trophy, or all at once with
+  loyal masses, rigged votes, and 3 secret cheats with their own button codes. Each is unlocked by a trophy, or all at once with
   UP DOWN LEFT RIGHT UP DOWN LEFT RIGHT SELECT on the cheats tab. Trophies are not earned while a cheat is on (except CHEATER).
 - RECORDS: wins, best times and high scores per level, trophies, story progress, city goals, what is open.
 ## Empire Mode additions

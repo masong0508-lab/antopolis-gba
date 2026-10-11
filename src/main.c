@@ -208,6 +208,7 @@ static void ld_begin(const char *what, const char *sub); static void ld_end(void
 static void ach_get(u8 i);
 static u8 opt_locked(u8 i, u8 v);
 static u8 qlost, rdrown, ewins;                   // classic achievements: queen hurt, red ants drowned, elections won
+static u8 e_del, e_bit, e_sc, e_qk;               // ANT EYE counters: food delivered, bites, scent squares, red queen beaten (trophies, missions)
 #define O(i) (opt[i])
 static u8 qbase = 5, nosfx;                       // queen hearts (from the options), sounds off
 void *memcpy(void *d, const void *s, unsigned n) { u8 *a = d; const u8 *b = s; while (n--) *a++ = *b++; return d; }
@@ -1203,7 +1204,7 @@ static void newgame(void) {
   for (k = 0; k < (O(O_ANTS) == 0 ? 3 : O(O_ANTS) == 1 ? 5 : O(O_ANTS) == 2 ? 8 : 12); k++) { spawn(0); spawn(1); }
   count(ncnt);
   perk = 0; pend = 0; set_rules(); spd = (u8)(3 + O(O_GSPD)); sf = 0; appr = 50; etk = 0; slice = 0; cheat = 0; cx = nestx[0] + 2; cy = nesty[0] - 2; mana = (u8)(5 + 5 * O(O_AP)); gt = 0; over = 0; msgt = 0; timeup = 0;
-  shk = 0; shx = 0; alt = 0; jmp = 0; qlost = 0; rdrown = 0; ewins = 0;
+  shk = 0; shx = 0; alt = 0; jmp = 0; qlost = 0; rdrown = 0; ewins = 0; e_del = e_bit = e_sc = 0; e_qk = 0;
   st_food = st_kill = st_lost = st_flood = 0; st_peak = ncnt[0]; nhist = 0; hmask = 15; hist_add();
   camx = 0; camy = H - VH; follow(); scx = (s16)camx * 8; scy = (s16)camy * 8;
   win_all();
@@ -1422,7 +1423,7 @@ static u8 hsel, opts_go;
 static u8 card_x(u8 c) { return (u8)(1 + (c % 3) * 10); }
 static u8 card_y(u8 c) { return (u8)(c < 3 ? 4 : 11); }
 static u8 verse_unlocked(void);
-static u8 scen_count(void);
+static u8 scen_count(void); static u8 mis_count(void); static u16 fact_count(void);
 static u8 card_lock(u8 c) { return (c == 1 && !emp_unlocked()) || (c == 5 && !verse_unlocked()); }
 static void card_draw(u8 c) {                      // bark frame + dark tunnel inside; the chosen card uses the gold palette bank 6
   u8 x0 = card_x(c), y0 = card_y(c), x, y, pal = c == hsel ? 6 : 0; u16 t; const char *n = card_lock(c) ? "LOCKED" : CARDN[c];
@@ -1840,7 +1841,7 @@ static u8 eye_walk(s32 *px, s32 *py, s32 dx, s32 dy) {
   if (n >= 40 && n < (s32)H * 256 - 40) { u8 nc = (u8)(n >> 8); if (nc == cy0 || can_go(cx0, cy0, 0, (s8)(nc - cy0))) { *py = n; moved = 1; } }
   return moved;
 }
-static const char *emsg; static u8 emsgt, emsgc, e_del, e_bit, e_sc;   // message; food delivered, bites, scent squares (trophies)
+static const char *emsg; static u8 emsgt, emsgc;   // ANT EYE message (the counters e_del.. are declared near newgame)
 static void esay(const char *m, u8 c) { emsg = m; emsgt = 90; emsgc = c; }
 static void eye_panel(u8 vi, u8 php, u8 scent) {
   u8 i;
@@ -1859,7 +1860,7 @@ static void eye_panel(u8 vi, u8 php, u8 scent) {
 static void eye(void) {                              // play as one of your ants (the world goes on around you)
   u8 i, vi = MAXA, best = 255, d, cur = 0, jaw = 0, bite_cd = 0, hurt = 0, php = 3, bob = 0, scent = 0, dead = 0, prevcell = 0;
   s32 px, py; u16 a16, k, p, prev, sky = BGPAL[0], pic[16]; s16 tv = 0; u8 fa;
-  tev |= 16; ach_get(7); e_del = e_bit = e_sc = 0;
+  tev |= 16; ach_get(7);
   for (i = 0; i < 16; i++) pic[i] = BGPAL[112 + i];
   for (i = 0; i < MAXA; i++) if (vok(i)) { d = (u8)(dist(ant[i].x, cx) + dist(ant[i].y, cy)); if (d < best) { best = d; vi = i; } }
   if (vi < MAXA) { px = (s32)ant[vi].x * 256 + 128; py = (s32)ant[vi].y * 256 + 128; a16 = (u16)((ant[vi].fl ? 128 : 0) << 8); eye_ctl = vi; }
@@ -1942,7 +1943,7 @@ static void eye(void) {                              // play as one of your ants
           if (dd > -40 && dd < bdd && (sd < 0 ? -sd : sd) < 230) { bdd = dd; bj = i; }
         }
         if (bj != 255) { if (cht[17] || rnd() % 100 < 70) { die(&ant[bj], 0); esay("GOT HIM!", 13); sfx_hit(); if (++e_bit >= 10) ach_get(33); } else esay("MISSED! BITE AGAIN", 2); }
-        else if (dist(cxv, nestx[1]) <= 1 && dist(cyv, nesty[1]) <= 1 && qhp[1]) { qhp[1]--; qfl[1] = 10; sfx_hit(); esay(qhp[1] ? "THE RED QUEEN IS HURT!" : "THE RED QUEEN FALLS!", 13); if (!qhp[1]) ach_get(34); }
+        else if (dist(cxv, nestx[1]) <= 1 && dist(cyv, nesty[1]) <= 1 && qhp[1]) { qhp[1]--; qfl[1] = 10; sfx_hit(); esay(qhp[1] ? "THE RED QUEEN IS HURT!" : "THE RED QUEEN FALLS!", 13); if (!qhp[1]) { ach_get(34); e_qk = 1; } }
       }
       // red ants bite back
       if (hurt) hurt--;
@@ -2713,6 +2714,7 @@ static void tut_enter(void) {                        // show lessons until one n
 }
 
 // ---------- play ----------
+static u8 mis_on; static u8 mis_ok(void); static const u16 *mis_lim_p(void);   // ANTVERSE missions (missions.c): a goal checked while playing
 static u16 calc_score(u32 secs) {                 // 300/600/900 by level + speed bonus + 5 per ant + popularity + 10 per queen HP
   u16 sc = (u16)(300 * (diff + 1));
   if (secs < 600) sc = (u16)(sc + 600 - secs);
@@ -2943,10 +2945,11 @@ static void play(void) {
     if (O(O_TIME) && !tut && !sandbox && !over && (u32)gt * 2 / 15 >= (O(O_TIME) == 1 ? 300u : O(O_TIME) == 2 ? 600u : 1200u)) {
       timeup = 1; over = (u8)(ncnt[0] + qhp[0] * 3 >= ncnt[1] + qhp[1] * 3 ? 1 : 2);   // time is up: more ants (and hearts) wins
     }
+    if (mis_on && !over && !(frc & 15)) { if (mis_ok()) over = 4; else if (*mis_lim_p() && (u32)gt * 2 / 15 >= (u32)*mis_lim_p() * 60) over = 5; }   // a mission goal met / out of time
     draw_sprites();
   }
   music_stop();
-  if (over == 3) { fade(0, 16); return; }              // quit from the pause menu: straight back to the title
+  if (over >= 3) { fade(0, 16); return; }              // quit from the pause menu (3) or a mission decided (4, 5): no end card
   for (n = 0; n < 60; n++) { vsync(); frc++; draw_sprites(); oam_flush(); }   // a moment to see the queen fall
   end_card();
   if (over == 1) jingle(WIN_TUNE, 6); else jingle(LOSE_TUNE, 4);

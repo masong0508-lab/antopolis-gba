@@ -208,7 +208,7 @@ static u8 mp_link_start(u32 *seed) {               // 1 = linked; the host's set
   if (!lk_me) {
     v[n++] = mp_locked(mp_kind) ? 0xFFF : mp_kind;   // (0xFFF: a game the host has not opened yet: call it off)
     v[n++] = mp_sub; v[n++] = mapt; v[n++] = tw; v[n++] = th; v[n++] = mp_riv; v[n++] = cmoney; v[n++] = cdis_on;
-    v[n++] = (u16)(*seed & 0xFFF); v[n++] = (u16)((*seed >> 12) & 0xFFF); v[n++] = (u16)(*seed >> 24); v[n++] = diff;
+    v[n++] = (u16)(*seed & 0xFFF); v[n++] = (u16)((*seed >> 12) & 0xFFF); v[n++] = (u16)(*seed >> 24); v[n++] = (u16)(diff | (pzw << 8));
     for (i = 0; i < NOPT; i++) v[n++] = opt[i];
     for (i = 0; i < NCHT; i++) v[n++] = cht[i];
   } else n = (u8)(12 + NOPT + NCHT);
@@ -219,7 +219,7 @@ static u8 mp_link_start(u32 *seed) {               // 1 = linked; the host's set
   if (lk_me) {
     u8 j = 0;
     mp_kind = (u8)v[j++]; mp_sub = (u8)v[j++]; mapt = (u8)v[j++]; tw = (u8)v[j++]; th = (u8)v[j++]; mp_riv = (u8)v[j++]; cmoney = (u8)v[j++]; cdis_on = (u8)v[j++];
-    *seed = (u32)v[j] | ((u32)v[j + 1] << 12) | ((u32)v[j + 2] << 24); j += 3; diff = (u8)v[j++];
+    *seed = (u32)v[j] | ((u32)v[j + 1] << 12) | ((u32)v[j + 2] << 24); j += 3; diff = (u8)(v[j] & 0xFF); pzw = (u8)(v[j] >> 8); j++;
     for (i = 0; i < NOPT; i++) opt[i] = (u8)v[j++];
     for (i = 0; i < NCHT; i++) cht[i] = (u8)v[j++];
     opts_apply();
