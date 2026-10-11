@@ -754,6 +754,7 @@ static void hist_add(void) {
   if (nhist == 64) { for (i = 0; i < 32; i++) { hist[0][i] = hist[0][i * 2]; hist[1][i] = hist[1][i * 2]; } nhist = 32; hmask = (u8)(hmask * 2 + 1); }
   hist[0][nhist] = ncnt[0]; hist[1][nhist] = ncnt[1]; nhist++;
 }
+static u8 eye_ctl = 255;                          // the ant you are steering in the ANT EYE (the AI leaves it alone)
 static void apr(s8 d) { s16 v = (s16)appr + d; appr = v < 0 ? 0 : v > 99 ? 99 : (u8)v; }
 static void die(Ant *a, u8 drown) { a->alive = 0; if (a->team) st_kill++; else st_lost++; if (a->team == 0) apr(-2); if (drown && a->team == 1 && ++rdrown >= 20) ach_get(3); fx_add(a->x, a->y, drown ? FX_SPLASH : FX_PUFF); }
 static void set_rules(void) {
@@ -866,12 +867,13 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
   for (i = 0; i < MAXA; i++) if (ant[i].age < 8) ant[i].age++;
   for (i = slice; i < MAXA; i += 8) {
     if (!ant[i].alive) continue;
+    if (i == eye_ctl) continue;
     if (hgt[ant[i].y][ant[i].x] == 0) { die(&ant[i], 1); continue; }
     step_ant(&ant[i]);
   }
   for (i = slice; i < MAXA; i += 8)
     if (ant[i].alive) for (j = i + 1; j < MAXA; j++)
-      if (ant[j].alive && ant[i].team != ant[j].team && ant[i].x == ant[j].x && ant[i].y == ant[j].y)
+      if (ant[j].alive && ant[i].team != ant[j].team && ant[i].x == ant[j].x && ant[i].y == ant[j].y && i != eye_ctl && j != eye_ctl)
         { u8 iw = (u8)(rnd() & 1);
           if (cht[11] && ant[i].team != ant[j].team) {     // STRONG ANTS: your ant wins more often
             static const u8 SW[4] = {50, 67, 80, 100}; u8 mine_i = (u8)(ant[i].team == 0);
@@ -1195,6 +1197,7 @@ static u8 tsel;                                    // NEW GAME rows: 0 LEVEL, 1 
 #define BG3HOFS IO16(0x1C)
 #define BIGT 24
 #define ORN  764                                       // 764 rule, 765/766 centre diamond, 767/768 pip on/off, 769 arrow
+#define EY2T 192                                   // ANT EYE 2.0 sprites (see EYE2 in art2.h)
 #define ICNT_T 96                                  // OBJ tiles of the home screen icons: book 96, map 112, trophy 128, gear 144
 // ---------- MAP PICTURE: the whole world drawn into 12 x 12 BG tiles (96 x 96 pixels), palette bank 6 ----------
 // Used by the NEW GAME preview and the pause menu's MAP. Scale: 1, 2 or 3 pixels per cell so the map fills the box.
@@ -1485,7 +1488,7 @@ static u16 skyg[161];                                 // per scanline backdrop: 
 #endif
 typedef struct { u32 ab, cd; s32 x, y; } M7;          // PA|PB<<16, PC|PD<<16, BG2X, BG2Y = registers 0x04000020..2F
 static const char *const COMPASS[8] = {"EAST", "SOUTH EAST", "SOUTH", "SOUTH WEST", "WEST", "NORTH WEST", "NORTH", "NORTH EAST"};
-EWRAM static u8 occ[MAXH][MAXW]; static u8 vang;                            // vang = facing, 0..255
+static u8 vang;                            // vang = facing, 0..255
 static u16 KK[160], KQ[160], blt[160];                // per scanline: ground distance (cells * 2048), K * 4/3, BLDALPHA fog
 static M7 m7t[2][161];                                // double-buffered HBlank DMA tables
 static void view_init(void) {
@@ -1515,6 +1518,27 @@ IWRAM static void m7_build(M7 *t, u8 ang, s16 fx, s16 fy) {
     t[y].y = by + ((K * sn) >> 8) - pc * 120 + (pc >> 1);
   }
 }
+// the VBlank interrupt re-arms the HBlank DMAs every frame, even when a frame of game work runs long (no torn frames)
+static const M7 *volatile eye_tab;
+IWRAM static void eye_irq(void) {
+  u16 f = (u16)(IO16(0x202) & IO16(0x200));
+  if ((f & 1) && eye_tab) {
+    const M7 *t = eye_tab;
+    DMAR(0, 8) = 0; DMAR(1, 8) = 0; DMAR(2, 8) = 0;
+    *(volatile u32 *)0x04000020 = t[0].ab; *(volatile u32 *)0x04000024 = t[0].cd;
+    *(volatile u32 *)0x04000028 = (u32)t[0].x; *(volatile u32 *)0x0400002C = (u32)t[0].y;
+    IO16(0x52) = blt[0]; BGPAL[0] = skyg[0];
+    DMAR(0, 0) = (u32)(t + 1); DMAR(0, 4) = 0x04000020u; DMAR(0, 8) = DMA_ON | DMA_HBL | DMA_REP | DMA_W32 | DMA_RLD | 4;
+    DMAR(1, 0) = (u32)(blt + 1); DMAR(1, 4) = 0x04000052u; DMAR(1, 8) = DMA_ON | DMA_HBL | DMA_REP | DMA_FIX | 1;
+    DMAR(2, 0) = (u32)(skyg + 1); DMAR(2, 4) = 0x05000000u; DMAR(2, 8) = DMA_ON | DMA_HBL | DMA_REP | DMA_FIX | 1;
+  }
+  IO16(0x202) = f; *(volatile u16 *)0x03007FF8 |= f;
+}
+static void eye_irq_on(u8 on) {
+  IO16(0x208) = 0;
+  if (on) { *(volatile u32 *)0x03007FFC = (u32)eye_irq; IO16(0x200) = 1; IO16(0x04) = (u16)(IO16(0x04) | 8); IO16(0x208) = 1; }
+  else { IO16(0x200) = 0; IO16(0x04) = (u16)(IO16(0x04) & ~8); eye_tab = 0; }
+}
 static void m7_sky(M7 *t) { u8 y; for (y = 0; y < 161; y++) { t[y].ab = t[y].cd = 0; t[y].x = t[y].y = SKYC; } }
 static void eye_arm(const M7 *t) {                    // call right after vsync(): line 0 by hand, lines 1.. by HBlank DMA
   DMAR(0, 8) = 0; DMAR(1, 8) = 0;
@@ -1526,35 +1550,55 @@ static void eye_arm(const M7 *t) {                    // call right after vsync(
   DMAR(2, 8) = 0; BGPAL[0] = skyg[0];
   DMAR(2, 0) = (u32)(skyg + 1); DMAR(2, 4) = 0x05000000u; DMAR(2, 8) = DMA_ON | DMA_HBL | DMA_REP | DMA_FIX | 1;
 }
-// floor: 8bpp 8x8 tiles 180..188 (free space at the end of charblock 2), colours in palette bank 6 (96..110).
-// 180 water, 181/182 sand, 183/184 grass, 185/186 hill (two shades, chequered by cell so you can see yourself move), 187 nest, 188 outside
-#define FT8 180
+// floor: 8bpp 8x8 tiles 177..190 (free space after the decor tiles of charblock 2, before screenblock 22), colours 96..119.
+// 0-1 water, 2-4 sand, 5-8 grass (8 has flowers), 9-11 hill, 12-13 nest dirt (13 = the hole).
+#define FT8 177
+static u8 tex_rand(u8 x, u8 y, u8 s) { u16 h = (u16)(x * 31 + y * 17 + s * 101 + (x * y) * 7); h ^= h >> 3; h = (u16)(h * 0x2B9); return (u8)(h >> 4); }
 static void floor_tiles(void) {
-  static const u8 BASE[9] = {96, 98, 99, 101, 102, 104, 105, 107, 109}, SPEC[9] = {97, 100, 100, 103, 103, 106, 106, 107, 110};
-  volatile u32 *d = TILE32 + 0x2000 + FT8 * 16;
-  u8 t, p, k, px, py, hh, c; u32 w;
-  for (t = 0; t < 9; t++) for (p = 0; p < 16; p++) {
-    w = 0;
-    for (k = 0; k < 4; k++) {
-      px = (u8)((p & 1) * 4 + k); py = (u8)(p >> 1);
-      hh = (u8)((px * 37 + py * 91 + t * 53) & 15);
-      if (t == 0) c = ((py & 3) == 1 && ((px + py) & 7) < 3) ? SPEC[0] : BASE[0];
-      else if (t == 7) c = (px >= 2 && px <= 5 && py >= 2 && py <= 5) ? 108 : BASE[7];
-      else c = hh < 2 ? SPEC[t] : BASE[t];
-      w |= (u32)c << (k * 8);
+  volatile u16 *d = (volatile u16 *)(TILE32 + 0x2000) + FT8 * 32;
+  u8 t, x, y, c, r;
+  for (t = 0; t < 14; t++) for (y = 0; y < 8; y++) for (x = 0; x < 8; x += 2) {
+    u16 w = 0; u8 k;
+    for (k = 0; k < 2; k++) {
+      u8 xx = (u8)(x + k); r = tex_rand(xx, y, t);
+      if (t < 2) c = (u8)(((y + t * 4) & 3) == 1 && ((xx + y * 3 + t) & 7) < 4 ? 97 : r < 16 ? 98 : 96);
+      else if (t < 5) c = (u8)(r < 30 ? 100 : r < 52 ? 101 : r < 60 ? 102 : ((y + t) % 4 == 0 && r < 140) ? 100 : 99);
+      else if (t < 9) {
+        c = (u8)(r < 50 ? 105 : r < 95 ? 104 : 103);
+        if (((xx * 3 + t * 5) % 7) == 0 && (y + t) % 8 < 3) c = 106;             // grass blades
+        if (t == 8 && ((xx == 2 && y == 2) || (xx == 5 && y == 5))) c = 107;    // flowers
+        if (t == 8 && xx == 6 && y == 1) c = 108;
+      }
+      else if (t < 12) {
+        c = (u8)(r < 40 ? 111 : r < 90 ? 110 : 109);
+        if (((xx + y + t) & 7) == 0 && r & 1) c = 111;
+        if (t == 10 && xx >= 2 && xx <= 4 && y >= 3 && y <= 4) c = (u8)(y == 3 ? 113 : 112);   // a stone
+      }
+      else { c = (u8)(r < 45 ? 116 : r < 95 ? 115 : 114); if (t == 13 && xx >= 2 && xx <= 5 && y >= 2 && y <= 5) c = (u8)((xx == 2 || y == 2) ? 116 : 117); }
+      w |= (u16)c << (k * 8);
     }
-    d[t * 16 + p] = w;
+    d[t * 32 + y * 4 + x / 2] = w;
   }
 }
+static void floor_pal(void) {
+  static const u16 FP[24] = {RGB(5,12,24), RGB(12,20,30), RGB(22,27,31),                                        // water
+    RGB(27,23,14), RGB(30,27,18), RGB(22,18,10), RGB(17,15,13),                                                   // sand
+    RGB(8,20,6), RGB(12,24,8), RGB(5,15,4), RGB(18,29,10), RGB(31,8,8), RGB(31,28,6),                            // grass + flowers
+    RGB(19,13,8), RGB(23,17,11), RGB(14,9,5), RGB(16,16,17), RGB(24,24,25),                                      // hill + stones
+    RGB(15,9,4), RGB(19,12,6), RGB(10,6,2), RGB(1,1,1),                                                           // nest dirt + hole
+    RGB(11,10,9), RGB(8,7,6)};                                                                                    // outside
+  u8 i; for (i = 0; i < 24; i++) BGPAL[96 + i] = FP[i];
+}
 static void floor_map(volatile u16 *m) {              // 64x64 one-byte entries, read as halfwords
-  u8 x, y, k, h, wx, wy, c; u16 e;
+  u8 x, y, k, h, wx, wy, c, v; u16 e;
   for (y = 0; y < 64; y++) for (x = 0; x < 64; x += 2) {
     e = 0;
     for (k = 0; k < 2; k++) {
       wx = (u8)(x + k + fox); wy = (u8)(y + foy);
-      if (wx >= W || wy >= H) c = FT8 + 8;
-      else if (is_nest(wx, wy)) c = FT8 + 7;
-      else { h = hgt[wy][wx]; c = h == 0 ? FT8 : (u8)(FT8 - 1 + h * 2 + ((wx + wy) & 1)); }
+      v = (u8)((wx * 7 + wy * 13 + ((wx * wy) >> 2)) & 3);
+      if (wx >= W || wy >= H) c = (u8)(FT8 + 5 + (v % 3));        // past the edge: more meadow (you cannot walk there)
+      else if ((dist(wx, nestx[0]) <= 1 && dist(wy, nesty[0]) <= 1) || (dist(wx, nestx[1]) <= 1 && dist(wy, nesty[1]) <= 1)) c = (u8)(is_nest(wx, wy) ? FT8 + 13 : FT8 + 12);
+      else { h = hgt[wy][wx]; c = (u8)(h == 0 ? FT8 + (v & 1) : h == 1 ? FT8 + 2 + (v % 3) : h == 2 ? FT8 + 5 + (v % 3) + ((wx * 5 + wy * 3) % 11 == 0 ? 3 - (v % 3) : 0) : FT8 + 9 + (v % 3)); }
       e |= (u16)c << (k * 8);
     }
     m[y * 32 + x / 2] = e;
@@ -1581,196 +1625,282 @@ static void pano_init(void) {                          // skyline on BG0: tiles 
     BGPAL[80 + i] = RGB(r, g, b);
   }
 }
-static void occ_set(u8 on) {
-  u8 i;
-  for (i = 0; i < MAXA; i++) if (ant[i].alive) occ[ant[i].y][ant[i].x] = on ? ant[i].team + 1 : 0;
-  for (i = 0; i < 2; i++) if (qhp[i]) occ[nesty[i]][nestx[i]] = on ? 3 + i : 0;
-}
+// ---------- ANT EYE 2.0: you ARE the ant ----------
+// The world keeps running around you. Walk with the D-pad (smooth, not square by square), sidestep with L / R.
+// Walk over food to pick it up, carry it home to the nest for AP. A bites red ants (and the red queen!). Hold B to lay a scent
+// trail that your workers will follow. Your jaws are on screen; the ants, food, grass, flowers, rocks and nests stand on the
+// floor as scaled sprites with shadows, sorted by distance. Sprites share 16 scale steps x 2 (flipped) affine matrices,
+// so there is no limit of 32 things on screen.
 static u8 vok(u8 i) { return i < MAXA ? (ant[i].alive && ant[i].team == 0) : qhp[0] > 0; }
-static void eye_dir(s8 *dx, s8 *dy) {                // the grid direction the ant faces (the axis closest to its heading)
-  s16 fx = SINT[(vang + 64) & 255], fy = SINT[vang]; *dx = *dy = 0;
-  if ((fx < 0 ? -fx : fx) >= (fy < 0 ? -fy : fy)) *dx = fx < 0 ? -1 : 1; else *dy = fy < 0 ? -1 : 1;
-}
-static const char *eye_ahead(u8 vx, u8 vy) {         // what a step forward would run into
-  s8 dx, dy, a, b, d; u8 o;
-  eye_dir(&dx, &dy);
-  a = (s8)vx + dx; b = (s8)vy + dy;
-  if (a < 0 || b < 0 || a >= W || b >= H) return "MAP EDGE";
-  o = occ[b][a];
-  if (o) return o == 1 ? "FRIEND" : o == 2 ? "ENEMY!" : o == 3 ? "HOME" : "RED NEST";
-  if (hgt[b][a] == 0) return "WATER";
-  d = (s8)hgt[b][a] - (s8)hgt[vy][vx];
-  return d > 1 ? "CLIFF UP" : d < -1 ? "CLIFF DOWN" : d == 1 ? "STEP UP" : d == -1 ? "STEP DOWN" : "CLEAR";
-}
-// Status panel (rows 16-19):  ANT 3 OF 12        LEVEL 2 GRASS  /  FACING SOUTH   AHEAD STEP UP  /  the controls
-static void eye_status(u8 vi, u8 vx, u8 vy) {
-  static const char *const LN[4] = {"WATER", "SAND", "GRASS", "HILL"};
-  u8 i, n = 0, r = 0, x;
-  ov_fill(1, 1, 16, 19);
-  if (vi < MAXA) {
-    for (i = 0; i < MAXA; i++) if (vok(i)) { n++; if (i == vi) r = n; }
-    ps(0, 16, "ANT", 2); pn(4, 16, r, 1); ps(7, 16, "OF", 2); pn(10, 16, n, 1);
-  } else ps(0, 16, "YOUR QUEEN", 2);
-  ps(15, 16, "LEVEL", 2); pc(21, 16, (char)('0' + hgt[vy][vx]), 1); ps(23, 16, LN[hgt[vy][vx]], 1);
-  ps(0, 17, "FACING", 2); x = psx(7, 17, COMPASS[((vang + 16) >> 5) & 7], 1);
-  { const char *a = eye_ahead(vx, vy); u8 bad = a[0] == 'W' || a[0] == 'M' || (a[0] == 'E') || (a[0] == 'C' && a[1] == 'L' && a[2] == 'I');
-    ps(18, 17, ">", 2); ps(20, 17, a, bad ? 8 : 13); }
-  (void)x;
-  ps(0, 18, "UP/DOWN WALK  LEFT/RIGHT TURN", 1);
-  ps(0, 19, "\1 NEXT ANT \2 CURSOR \5 EXIT", 1);
-}
-static void eye_step(u8 *vx, u8 *vy, s8 dir) {
-  s8 dx, dy;
-  eye_dir(&dx, &dy);
-  dx *= dir; dy *= dir;
-  if (can_go(*vx, *vy, dx, dy)) { *vx += dx; *vy += dy; }
-}
-static const u8 EWK[3] = {28, 20, 12}, EGL[3] = {10, 14, 24};   // ant eye: frames per step, glide speed
-static s16 ease(s16 v, s16 t, s16 s) { s16 d = t - v; return d > s ? v + s : d < -s ? v - s : t; }
+static const u8 ESPD[3] = {14, 20, 28};                 // walking speed, 1/256 cell per frame
 static u8 bearing(s16 dx, s16 dy) {                   // angle (0..255, 0 = east, clockwise) that points along (dx, dy)
   u8 a, b = 0; s32 v, bv = -0x7FFFFFFF;
   for (a = 0; a < 64; a++) { v = (s32)dx * SINT[((a << 2) + 64) & 255] + (s32)dy * SINT[a << 2]; if (v > bv) { bv = v; b = (u8)(a << 2); } }
   return b;
 }
-static void eye_compass(u8 fa, u8 vx, u8 vy) {        // row 0: N E S W letters + the two nests where they are around you
+static void eye_mark(u8 fa, s16 dx, s16 dy, char c, u8 p) {
+  s16 r = (s16)(((bearing(dx, dy) - fa + 128) & 255) - 128); s8 x = (s8)(15 + r * 15 / 64);
+  if (x < 0) x = 0; if (x > 29) x = 29; pc((u8)x, 0, c, p);
+}
+static u8 efx, efy, eex, eey, ehas_f, ehas_e;           // the nearest food / enemy seen this frame (for the compass)
+static void eye_compass(u8 fa, u8 vx, u8 vy) {        // row 0: N E S W + home, red nest, the nearest food and enemy
   static const char CL[4] = {'E', 'S', 'W', 'N'};
   u8 k; s16 r; s8 c;
   ov_fill(1, 1, 0, 0);
   pc(15, 0, '+', 15);
-  for (k = 0; k < 4; k++) { r = (s16)(((k * 64 - fa + 128) & 255) - 128); c = (s8)(15 + r * 15 / 64); if (c >= 0 && c < 30) pc((u8)c, 0, CL[k], 2); }
-  for (k = 0; k < 2; k++) {
-    if (vx == nestx[k] && vy == nesty[k]) continue;
-    r = (s16)(((bearing((s16)nestx[k] - vx, (s16)nesty[k] - vy) - fa + 128) & 255) - 128);
-    c = (s8)(15 + r * 15 / 64); if (c < 0) c = 0; if (c > 29) c = 29;
-    pc((u8)c, 0, k ? '@' : '$', k ? 8 : 1);
-  }
+  for (k = 0; k < 4; k++) { r = (s16)(((k * 64 - fa + 128) & 255) - 128); c = (s8)(15 + r * 15 / 64); if (c >= 0 && c < 30) pc((u8)c, 0, CL[k], 15); }
+  if (ehas_f) eye_mark(fa, (s16)efx - vx, (s16)efy - vy, '%', 13);
+  if (ehas_e) eye_mark(fa, (s16)eex - vx, (s16)eey - vy, '!', 8);
+  if (vx != nestx[1] || vy != nesty[1]) eye_mark(fa, (s16)nestx[1] - vx, (s16)nesty[1] - vy, '@', 8);
+  if (vx != nestx[0] || vy != nesty[0]) eye_mark(fa, (s16)nestx[0] - vx, (s16)nesty[0] - vy, '$', 2);
 }
-// objects on the floor: up to 32, nearest drawn in front. kind: 0 black ant, 1 red ant, 2/3 carrying, 4 your queen, 5 red queen, 6 food
-static s16 obd[64]; static u8 obx[64], oby[64], obk[64], obf[64], obn;
-static void ob_add(u8 x, u8 y, u8 k, u8 f) { if (obn < 64) { obx[obn] = x; oby[obn] = y; obk[obn] = k; obf[obn] = f; obn++; } }
-static void eye_objs(u8 fa, s16 fx, s16 fy, u8 vi) {
-  s32 cs = SINT[(fa + 64) & 255], sn = SINT[fa], rx, ry, d, sd, sc, xx, yg, cy0;
-  u8 i, j, n, k, ord[64], t;
-  obn = 0;
-  for (i = 0; i < MAXA; i++) if (ant[i].alive && i != vi) ob_add(ant[i].x, ant[i].y, (u8)(ant[i].team + (ant[i].carry ? 2 : 0)), ant[i].fl);
-  for (i = 0; i < 2; i++) if (qhp[i]) ob_add(nestx[i], nesty[i], (u8)(4 + i), i);
-  { s16 x0 = (fx >> 8) - 14, y0 = (fy >> 8) - 14, xx2, yy2;      // food: only the cells around you
-    for (yy2 = y0; yy2 <= y0 + 28; yy2++) if (yy2 >= 0 && yy2 < H) for (xx2 = x0; xx2 <= x0 + 28; xx2++)
-      if (xx2 >= 0 && xx2 < W && food[yy2][xx2] && hgt[yy2][xx2]) ob_add((u8)xx2, (u8)yy2, 6, 0); }
-  for (i = 0, n = 0; i < obn; i++) {                  // distance ahead (1/256 cells); keep what is in front and not too far
-    rx = (s32)obx[i] * 256 + 128 - fx; ry = (s32)oby[i] * 256 + 128 - fy;
-    if (obk[i] < 4) { rx += (i * 37 & 63) - 32; ry += (i * 23 & 63) - 32; }   // ants on the same cell do not overlap exactly
-    d = (rx * cs + ry * sn) >> 8;
-    if (d < 220 || d > 16 * 256) continue;
-    obd[i] = (s16)d;
-    for (j = n; j > 0 && obd[ord[j - 1]] > d; j--) ord[j] = ord[j - 1];   // insertion sort, nearest first
-    ord[j] = i; n++;
+// ---- the things on the floor ----
+#define EOMAX 80
+typedef struct { s32 rx, ry; s16 d, sd; u8 kind, a, b, c; } EObj;   // rx, ry: world position (1/256 cell)
+// kind: 0 ant (a = team, b = view+flags), 2 queen (a = team), 3 mound, 4 food, 5 decor (a = type), 6 jaw-food (not sorted)
+EWRAM static EObj eo[EOMAX]; static u8 eon, eord[EOMAX];
+static const s16 SCB[16] = {20, 25, 31, 38, 47, 59, 73, 90, 112, 139, 172, 213, 264, 328, 406, 504};
+static u8 scb_of(s32 sc) { u8 i; for (i = 15; i && SCB[i] > sc; i--) {} if (i < 15 && sc - SCB[i] > SCB[i + 1] - sc) i++; return i; }
+static void eo_add(s32 rx, s32 ry, u8 kind, u8 a, u8 b, s32 fx, s32 fy, s32 cs, s32 sn) {
+  s32 dx = rx - fx, dy = ry - fy, d = (dx * cs + dy * sn) >> 8, sd;
+  u8 j, i;
+  if (d < 200 || d > 16 * 256 || eon >= EOMAX) return;
+  sd = (-dx * sn + dy * cs) >> 8;
+  if (sd > d * 3 / 2 + 256 || sd < -d * 3 / 2 - 256) return;       // well outside the view
+  i = eon++; eo[i].rx = rx; eo[i].ry = ry; eo[i].d = (s16)d; eo[i].sd = (s16)sd; eo[i].kind = kind; eo[i].a = a; eo[i].b = b;
+  for (j = i; j > 0 && eo[eord[j - 1]].d > d; j--) eord[j] = eord[j - 1];
+  eord[j] = i;
+}
+static u8 ehash(u8 x, u8 y) { u16 h = (u16)(x * 73 + y * 151 + (x ^ y) * 29); h ^= h >> 5; return (u8)(h * 157 >> 3); }
+static u8 eslot;
+static void espr(int cx, int cy, u16 tile, u8 pal, u8 sz, u8 m) {   // one affine double-size sprite centred at (cx, cy); sz 0 8x8, 1 16x16, 2 32x32
+  int half = 8 << sz;
+  if (eslot >= 128 || cx < -half || cx > 240 + half || cy < -half || cy > 128 + half) return;
+  oam[eslot * 4] = (u16)(((cy - half) & 0xFF) | 0x300);
+  oam[eslot * 4 + 1] = (u16)(((cx - half) & 0x1FF) | (m << 9) | (sz << 14));
+  oam[eslot * 4 + 2] = (u16)(tile | (1 << 10) | (pal << 12));
+  eslot++;
+}
+static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
+  s32 cs = SINT[(fa + 64) & 255], sn = SINT[fa];
+  u8 i, j, x0, y0, x1, y1, x, y;
+  eon = 0; ehas_f = 0; ehas_e = 0;
+  { u16 bd = 999, be = 999;
+    for (i = 0; i < MAXA; i++) if (ant[i].alive && i != vi) {
+      Ant *a = &ant[i]; s32 rx = (s32)a->ox * 256 + ((s32)a->x - a->ox) * 32 * a->age + 128, ry = (s32)a->oy * 256 + ((s32)a->y - a->oy) * 32 * a->age + 128;
+      s16 hx = (s16)(a->x - a->ox), hy = (s16)(a->y - a->oy); u8 mv = a->age < 8 && (hx || hy), view;
+      s32 along, side;
+      if (!hx && !hy) hx = a->fl ? -1 : 1;
+      along = hx * cs + hy * sn; side = -hx * sn + hy * cs;   // its heading against the view: away / toward / left / right
+      view = (along > 0 && (along > (side < 0 ? -side : side) * 2)) ? 1 : (along < 0 && (-along > (side < 0 ? -side : side) * 2)) ? 2 : (side < 0 ? 3 : 0);
+      rx += (i * 37 & 63) - 32; ry += (i * 23 & 63) - 32;
+      eo_add(rx, ry, 0, a->team, (u8)(view | (mv << 2) | (a->carry << 3)), ux, uy, cs, sn);
+      if (a->team) { u16 dd = (u16)(dist(a->x, (u8)(ux >> 8)) + dist(a->y, (u8)(uy >> 8))); if (dd < be && dd < 12) { be = dd; eex = a->x; eey = a->y; ehas_e = 1; } }
+    }
+    for (i = 0; i < 8; i++) if (fx[i].t) eo_add((s32)fx[i].x * 32 + 128, (s32)fx[i].y * 32 + 128, 7, fx[i].tile, fx[i].t, ux, uy, cs, sn);
+    for (i = 0; i < 2; i++) {
+      eo_add((s32)nestx[i] * 256 + 128, (s32)nesty[i] * 256 + 200, 3, i, 0, ux, uy, cs, sn);
+      if (qhp[i]) eo_add((s32)nestx[i] * 256 + 128, (s32)nesty[i] * 256 + 60, 2, i, 0, ux, uy, cs, sn);
+    }
+    x0 = (u8)((ux >> 8) > 10 ? (ux >> 8) - 10 : 0); y0 = (u8)((uy >> 8) > 10 ? (uy >> 8) - 10 : 0);
+    x1 = (u8)((ux >> 8) + 10 < W ? (ux >> 8) + 10 : W - 1); y1 = (u8)((uy >> 8) + 10 < H ? (uy >> 8) + 10 : H - 1);
+    for (y = y0; y <= y1; y++) for (x = x0; x <= x1; x++) {
+      u8 h = hgt[y][x], r = ehash(x, y), t = 255;
+      if (!h || is_nest(x, y)) continue;
+      if (food[y][x]) { eo_add((s32)x * 256 + 128, (s32)y * 256 + 128, 4, 0, 0, ux, uy, cs, sn);
+        { u16 dd = (u16)(dist(x, (u8)(ux >> 8)) + dist(y, (u8)(uy >> 8))); if (dd < bd) { bd = dd; efx = x; efy = y; ehas_f = 1; } } continue; }
+      if (h == 2) t = r < 50 ? 0 : r < 58 ? 1 : r < 62 ? 4 : 255;
+      else if (h == 1) t = r < 30 ? 2 : r > 235 ? 5 : 255;
+      else if (h == 3) t = r < 50 ? 3 : r < 80 ? 2 : 255;
+      if (t != 255) eo_add((s32)x * 256 + 40 + (r & 0x7F) + (r >> 3 & 15), (s32)y * 256 + 60 + ((r * 7) & 0x7F), 5, t, 0, ux, uy, cs, sn);
+    }
   }
   hide_all();
-  for (j = 0, t = 0; j < n && t < 32; j++) {
-    i = ord[j]; k = obk[i];
-    rx = (s32)obx[i] * 256 + 128 - fx; ry = (s32)oby[i] * 256 + 128 - fy;
-    if (k < 4) { rx += (i * 37 & 63) - 32; ry += (i * 23 & 63) - 32; }
-    d = obd[i]; sd = (-rx * sn + ry * cs) >> 8;
-    xx = 120 + 192 * sd / d; yg = 64 + 8064 / d; if (yg > 127) yg = 127;
-    sc = 251658 / d;                                  // sprite scale * 256 (an ant is ~0.6 cells long)
-    if (k >= 4 && k < 6) sc = sc * 3 / 2; else if (k == 6) sc = sc * 3 / 4;
-    if (sc > 512) sc = 512; if (sc < 24) sc = 24;
-    cy0 = yg - ((k == 6 ? 15 : 13) * sc >> 8);
-    if (xx < -40 || xx > 280) continue;
-    { s16 pa = (s16)(65536 / sc);                     // the ant looks the way it walks: its x heading against the view's right vector
-      if (k < 6 && ((obf[i] ? 1 : -1) * sn > 0)) pa = (s16)-pa;   // right = (-sn, cs): facing +x shows as facing right when sn < 0
-      oam[(t * 4) * 4 + 3] = (u16)pa; oam[(t * 4 + 1) * 4 + 3] = 0; oam[(t * 4 + 2) * 4 + 3] = 0; oam[(t * 4 + 3) * 4 + 3] = (u16)(65536 / sc); }
-    oam[t * 4] = (u16)(((cy0 - 32) & 0xFF) | 0x300);
-    oam[t * 4 + 1] = (u16)(((xx - 32) & 0x1FF) | (t << 9) | (2 << 14));
-    oam[t * 4 + 2] = (u16)((BIGT + (k == 6 ? 48 : k >= 4 ? 32 : k >= 2 ? 16 : 0)) | (1 << 10) | ((k == 6 ? 6 : (k & 1)) << 12));
-    t++;
+  for (i = 0; i < 16; i++) {                          // the 32 shared matrices: 16 sizes, normal and mirrored
+    s16 pa = (s16)(65536 / SCB[i]);
+    oam[(i * 4) * 4 + 3] = (u16)pa; oam[(i * 4 + 1) * 4 + 3] = 0; oam[(i * 4 + 2) * 4 + 3] = 0; oam[(i * 4 + 3) * 4 + 3] = (u16)pa;
+    oam[((16 + i) * 4) * 4 + 3] = (u16)-pa; oam[((16 + i) * 4 + 1) * 4 + 3] = 0; oam[((16 + i) * 4 + 2) * 4 + 3] = 0; oam[((16 + i) * 4 + 3) * 4 + 3] = (u16)pa;
+  }
+  // first-person overlay on top: the two jaws (and the food they hold)
+  eslot = 0;
+  { int open = 30 - jaw * 4;
+    oam[0] = (u16)((96 + bob) & 0xFF); oam[1] = (u16)(((88 - open) & 0x1FF) | (2 << 14)); oam[2] = (u16)((EY2T + 120) | (0 << 10)); 
+    oam[4] = (u16)((96 + bob) & 0xFF); oam[5] = (u16)(((120 + open) & 0x1FF) | 0x1000 | (2 << 14)); oam[6] = (u16)((EY2T + 120) | (0 << 10));
+    if (vi < MAXA && ant[vi].carry) { oam[8] = (u16)((86 + bob) & 0xFF); oam[9] = (u16)((104 & 0x1FF) | (2 << 14)); oam[10] = (u16)((BIGT + 48) | (6 << 12)); }
+    eslot = 3; }
+  for (j = 0; j < eon; j++) {
+    EObj *o = &eo[eord[j]]; s32 d = o->d, sc = 251658 / d, xx = 120 + 192 * (s32)o->sd / d, yg = 64 + 8064 / d; u8 m; u16 tile; u8 pal = 6;
+    if (yg > 127) yg = 127;
+    switch (o->kind) {
+    case 0: {
+      u8 view = o->b & 3, mv = (o->b >> 2) & 1, car = (o->b >> 3) & 1, fr = (u8)(((frc >> 3) + eord[j]) & 1);
+      m = scb_of(sc); pal = o->a;
+      if (view == 1) tile = EY2T + 48; else if (view == 2) tile = EY2T + 32;
+      else tile = (u16)(mv && fr ? EY2T + (car ? 16 : 0) : BIGT + (car ? 16 : 0));
+      if (view == 3) m = (u8)(m + 16);
+      espr(xx, yg - (13 * SCB[m & 15] >> 8) - (mv && view && view < 3 && fr ? 1 : 0), tile, pal, 2, m);
+      espr(xx, yg - (13 * SCB[m & 15] >> 8), EY2T + 64, 6, 2, m & 15);   // its shadow, just behind it
+      break; }
+    case 2: m = scb_of(sc * 3 / 2); espr(xx, yg - (13 * SCB[m] >> 8), BIGT + 32, o->a, 2, (u8)(o->a ? m + 16 : m)); break;
+    case 3: m = scb_of(sc * 5 / 2); espr(xx, yg - (12 * SCB[m] >> 8), EY2T + 80, 6, 2, m); break;
+    case 4: m = scb_of(sc * 3 / 4); espr(xx, yg - (10 * SCB[m] >> 8), BIGT + 48, 6, 2, m); espr(xx, yg - (13 * SCB[m] >> 8), EY2T + 64, 6, 2, m); break;
+    default: {
+      static const u8 DSC[6] = {5, 4, 3, 6, 4, 6};          // size of each decor kind, in quarters of an ant
+      m = scb_of(sc * DSC[o->a] / 4); tile = (u16)(EY2T + 96 + o->a * 4);
+      espr(xx, yg - (6 * SCB[m] >> 8), tile, 6, 1, (u8)((eord[j] & 1) ? m + 16 : m)); break; }
+    case 7: m = scb_of(sc * 2); espr(xx, yg - (8 * SCB[m] >> 8) - (30 - o->b) / 2, o->a, 3, 0, m); break;
+    }
   }
 }
-static void eye(void) {                              // time stands still while you look through a black ant's eyes
-  u8 i, vi = MAXA, best = 255, d, rep = 0, vx = 0, vy = 0, dirs, rt = 0, cur = 0, jump, chg;
-  s16 fa = vang, fx, fy, tx, ty, da;
-  s8 td, wd, tlast = 0, wlast = 0;
-  u16 k, p, prev, sky = BGPAL[0];
+// ---- moving: smooth steps; a square you cannot climb into stops you on that axis (so you slide along walls) ----
+static u8 eye_walk(s32 *px, s32 *py, s32 dx, s32 dy) {
+  u8 cx0 = (u8)(*px >> 8), cy0 = (u8)(*py >> 8), moved = 0; s32 n;
+  n = *px + dx;
+  if (n >= 40 && n < (s32)W * 256 - 40) { u8 nc = (u8)(n >> 8); if (nc == cx0 || can_go(cx0, cy0, (s8)(nc - cx0), 0)) { *px = n; cx0 = nc; moved = 1; } }
+  n = *py + dy;
+  if (n >= 40 && n < (s32)H * 256 - 40) { u8 nc = (u8)(n >> 8); if (nc == cy0 || can_go(cx0, cy0, 0, (s8)(nc - cy0))) { *py = n; moved = 1; } }
+  return moved;
+}
+static const char *emsg; static u8 emsgt, emsgc;
+static void esay(const char *m, u8 c) { emsg = m; emsgt = 90; emsgc = c; }
+static void eye_panel(u8 vi, u8 php, u8 scent) {
+  u8 i;
+  ov_fill(1, 1, 16, 19);
+  if (vi < MAXA) { ps(1, 16, "YOU", 2); for (i = 0; i < 3; i++) pc((u8)(5 + i), 16, '#', i < php ? 8 : 15); }
+  else ps(1, 16, "THE QUEEN", 2);
+  pc(10, 16, '%', 13); pn(11, 16, stock[0], 13);
+  pc(15, 16, '&', 14); pn(16, 16, mana, 14);
+  pc(20, 16, '@', 1); pn(21, 16, ncnt[0], 1); pc(25, 16, '@', 8); pn(26, 16, ncnt[1], 8);
+  if (emsgt) psx(1, 17, emsg, emsgc);
+  else if (scent) ps(1, 17, "LAYING SCENT: WORKERS FOLLOW", 13);
+  else if (vi < MAXA) ps(1, 17, ant[vi].carry ? "TAKE THE FOOD HOME: $" : ehas_e ? "ENEMY NEAR: \1 BITES" : "FIND FOOD: %", ant[vi].carry ? 2 : ehas_e ? 8 : 3);
+  ps(1, 18, "\1 BITE  \2 SCENT  \3\4 SIDESTEP", 10);
+  ps(1, 19, "\6 NEXT ANT       \5 MAP", 10);
+}
+static void eye(void) {                              // play as one of your ants (the world goes on around you)
+  u8 i, vi = MAXA, best = 255, d, cur = 0, jaw = 0, bite_cd = 0, hurt = 0, php = 3, bob = 0, scent = 0, dead = 0, prevcell = 0;
+  s32 px, py; u16 a16, k, p, prev, sky = BGPAL[0], pic[16]; s16 tv = 0; u8 fa;
   tev |= 16; ach_get(7);
+  for (i = 0; i < 16; i++) pic[i] = BGPAL[112 + i];
   for (i = 0; i < MAXA; i++) if (vok(i)) { d = (u8)(dist(ant[i].x, cx) + dist(ant[i].y, cy)); if (d < best) { best = d; vi = i; } }
-  if (vi < MAXA) { vx = ant[vi].x; vy = ant[vi].y; vang = ant[vi].fl ? 128 : 0; } else { vx = nestx[0]; vy = nesty[0]; vang = 192; }
-  fa = vang; fx = (s16)(vx * 256 + 128); fy = (s16)(vy * 256 + 128);
+  if (vi < MAXA) { px = (s32)ant[vi].x * 256 + 128; py = (s32)ant[vi].y * 256 + 128; a16 = (u16)((ant[vi].fl ? 128 : 0) << 8); eye_ctl = vi; }
+  else { px = (s32)nestx[0] * 256 + 128; py = (s32)nesty[0] * 256 + 128; a16 = 192 << 8; }
+  vang = (u8)(a16 >> 8);
   hide_all(); vsync(); oam_flush();
-  BGPAL[96] = RGB(6,13,26);   BGPAL[97] = RGB(13,21,31);                                   // water
-  BGPAL[98] = RGB(28,24,14);  BGPAL[99] = RGB(26,22,12);  BGPAL[100] = RGB(23,19,10);          // sand
-  BGPAL[101] = RGB(9,21,7);   BGPAL[102] = RGB(8,19,6);   BGPAL[103] = RGB(13,25,9);           // grass
-  BGPAL[104] = RGB(20,14,8);  BGPAL[105] = RGB(18,12,7);  BGPAL[106] = RGB(25,20,14);          // hill
-  BGPAL[107] = RGB(15,9,4);   BGPAL[108] = RGB(1,1,1);                                         // nest + hole
-  BGPAL[109] = RGB(11,10,9);  BGPAL[110] = RGB(8,7,6);                                         // outside the map
+  floor_pal();
   sky_init(); pano_init();
   ov_clear();
-  occ_set(1);
   floor_tiles();
-  fox = (s16)vx - 32; foy = (s16)vy - 32;
-  floor_map((volatile u16 *)0x0600B000);              // screenblock 22 (free space at the end of charblock 2), 64x64
+  fox = (s16)(px >> 8) - 32; foy = (s16)(py >> 8) - 32;
+  floor_map((volatile u16 *)0x0600B000);
   m7_sky(m7t[0]); m7_sky(m7t[1]);
-  m7_build(m7t[0], vang, fx, fy);
-  eye_status(vi, vx, vy); eye_compass((u8)fa, vx, vy);
-  eye_objs((u8)fa, fx, fy, vi);
+  fa = (u8)(a16 >> 8);
+  m7_build(m7t[0], fa, (s16)px, (s16)py);
+  eye_scene(fa, px, py, vi, 0, 0); eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8)); emsgt = 0;
+  esay(vi < MAXA ? "YOU ARE AN ANT! WALK AROUND" : "NO WORKERS LEFT: JUST LOOK", 2); eye_panel(vi, php, 0);
   while (joy()) vsync();
-  vsync(); eye_arm(m7t[0]); oam_flush();
-  BG2CNT = 0x8000 | (22 << 8) | (2 << 2) | 3 | 0x80;  // BG2: priority 3, charblock 2, screenblock 22, 512x512 affine, 8bpp
-  BLDCNT = 0x2044;                                    // alpha blend: BG2 over the backdrop (= sky colour)
-  BG0CNT = 3 | (27 << 8); BG0HOFS = (u16)(fa * 5 + (fa >> 2)); BG0VOFS = 0;   // BG0: skyline (charblock 0, screenblock 27)
-  DISPCNT = 0x1741;                                   // mode 1: BG0 + BG1 + BG2 + OBJ
-  prev = 0;
+  vsync(); eye_arm(m7t[0]); oam_flush(); eye_tab = m7t[0]; eye_irq_on(1);
+  BG2CNT = 0x8000 | (22 << 8) | (2 << 2) | 3 | 0x80;
+  BLDCNT = 0x2044;
+  BG0CNT = 3 | (27 << 8); BG0HOFS = (u16)(fa * 5 + (fa >> 2)); BG0VOFS = 0;
+  DISPCNT = 0x1741;
+  prev = joy();
   for (;;) {
+    s32 mvx = 0, mvy = 0; s32 cs, sn; u8 cxv, cyv, moving = 0;
     vsync();
-    eye_arm(m7t[cur]); oam_flush();                   // the table and sprites built last frame
+    oam_flush();
+    if (!(frc & 3)) { eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8)); eye_panel(vi, php, scent); }   // text while the screen is not drawn
+    frc++;
+    BGPAL[97] = (frc & 32) ? RGB(12,20,30) : RGB(9,17,29); BGPAL[98] = (frc & 16) ? RGB(22,27,31) : RGB(17,23,30);   // water ripples
     k = joy(); p = k & ~prev; prev = k;
+#ifdef EYETEST
+    if (vi < MAXA && !dead) {                          // test pilot: walk to food, then home; bite anything red in reach
+      u8 tx2 = ant[vi].carry ? nestx[0] : efx, ty2 = ant[vi].carry ? nesty[0] : efy; s16 want = bearing((s16)(tx2 * 256 + 128 - px), (s16)(ty2 * 256 + 128 - py)); s16 df = (s16)(((want - (a16 >> 8) + 128) & 255) - 128);
+      k = J_UP; if (df > 6) k |= J_RIGHT; else if (df < -6) k |= J_LEFT; if (ehas_e && (frc & 15) == 0) k |= J_A; if (!ehas_f && !ant[vi].carry) k = J_RIGHT | J_UP;
+      if ((frc & 63) < 8) k = (u16)(k | J_L);
+      p = k & ~prev; prev = k; }
+#endif
     if (p & J_START) break;
-    if (p & J_B) { cx = vx; cy = vy; break; }
-    jump = chg = 0;
-    if (p & J_A) {
-      i = 0; do { vi = (vi == MAXA) ? 0 : vi + 1; } while (!vok(vi) && ++i <= MAXA); sfx_food();
-      if (vi < MAXA) { vx = ant[vi].x; vy = ant[vi].y; } else { vx = nestx[0]; vy = nesty[0]; }
-      jump = chg = 1;
+    if (dead && !--dead) break;
+    if (over || !qhp[0] || !qhp[1]) break;
+    if ((p & J_SEL) && !dead) {                        // switch to the next ant
+      i = 0; do { vi = (vi == MAXA) ? 0 : vi + 1; } while (!vok(vi) && ++i <= MAXA);
+      if (vi < MAXA) { px = (s32)ant[vi].x * 256 + 128; py = (s32)ant[vi].y * 256 + 128; eye_ctl = vi; php = 3; } else { eye_ctl = 255; px = (s32)nestx[0] * 256 + 128; py = (s32)nesty[0] * 256 + 128; }
+      sfx_food(); esay("ANOTHER ANT", 2);
     }
-    dirs = (u8)((k & 15) | ((k & J_L) ? J_LEFT : 0) | ((k & J_R) ? J_RIGHT : 0));   // L / R turn too
-    td = (dirs & J_RIGHT) ? 1 : (dirs & J_LEFT) ? -1 : 0;   // turning and walking are independent: walk while you turn
-    wd = (dirs & J_UP) ? 1 : (dirs & J_DOWN) ? -1 : 0;
-    if (td != tlast) { rt = 0; tlast = td; }
-    if (wd != wlast) { rep = 0; wlast = wd; }
-    if (td) {
-      if (rt == 0) { vang = (u8)(vang + td * TURN); chg = 1; }          // a tap = one 11.25 degree click
-      else if (rt >= 14 && !(rt & 1)) { vang = (u8)(vang + td); chg = 1; }   // held = a slow, smooth sweep
-      if (rt < 250) rt++;
-    } else if (vang & 7) { vang = (u8)((vang + 4) & 0xF8); chg = 1; }   // let go: settle on the 8-unit grid so walking stays square
-    if (wd) {
-      if (rep == 0 || (rep >= EWK[O(O_EYESPD)] && !(rep % EWK[O(O_EYESPD)]))) {   // held = keep walking
-        u8 ox = vx, oy = vy; eye_step(&vx, &vy, wd);
-        if (vx != ox || vy != oy) { chg = 1; sfx_lower(); } else if (!(rep & 15)) sfx_deny();   // bumped into something: a thud
+    if (vi < MAXA && !vok(vi) && !dead) { esay("THIS ANT IS GONE...", 8); dead = 60; eye_ctl = 255; }
+    // turn (gets faster while held) and walk
+    if (k & (J_LEFT | J_RIGHT)) { if (tv < 520) tv = (s16)(tv + 40); } else tv = 0;
+    if (k & J_RIGHT) a16 = (u16)(a16 + 200 + tv); if (k & J_LEFT) a16 = (u16)(a16 - 200 - tv);
+    fa = (u8)(a16 >> 8); vang = fa;
+    cs = SINT[(fa + 64) & 255]; sn = SINT[fa];
+    if (vi < MAXA && !dead) {
+      s32 sp = ESPD[O(O_EYESPD)];
+      if (k & J_UP) { mvx += cs * sp >> 8; mvy += sn * sp >> 8; }
+      if (k & J_DOWN) { mvx -= cs * sp / 2 >> 8; mvy -= sn * sp / 2 >> 8; }
+      if (k & J_L) { mvx += sn * sp * 3 / 4 >> 8; mvy -= cs * sp * 3 / 4 >> 8; }
+      if (k & J_R) { mvx -= sn * sp * 3 / 4 >> 8; mvy += cs * sp * 3 / 4 >> 8; }
+      if (mvx || mvy) { moving = eye_walk(&px, &py, mvx, mvy); if (!moving && !(frc & 15)) sfx_deny(); }
+      cxv = (u8)(px >> 8); cyv = (u8)(py >> 8);
+      { Ant *a = &ant[vi]; if (a->x != cxv || a->y != cyv) { a->ox = a->x; a->oy = a->y; a->x = cxv; a->y = cyv; if (cxv != a->ox) a->fl = cxv < a->ox; } a->age = 8; }
+      if (!hgt[cyv][cxv]) { die(&ant[vi], 1); esay("SPLASH! YOU DROWNED", 8); dead = 60; eye_ctl = 255; }
+      // food: walk over it to pick it up, bring it home
+      if (!ant[vi].carry && food[cyv][cxv] && hgt[cyv][cxv]) { food[cyv][cxv] = 0; ant[vi].carry = 1; draw_dec(cxv, cyv); sfx_mana(); esay("GOT FOOD! TAKE IT HOME", 13); }
+      if (ant[vi].carry && dist(cxv, nestx[0]) <= 1 && dist(cyv, nesty[0]) <= 1) {
+        ant[vi].carry = 0; if (stock[0] < 99) stock[0]++; st_food++;
+        mana = (u8)(mana + 2 > MANA_MAX ? MANA_MAX : mana + 2); apr(2); sfx_spawn(); esay("FOOD DELIVERED! +2 AP", 13); if (php < 3) php++;
       }
-      if (rep < 250) rep++;
+      // scent trail
+      scent = (k & J_B) != 0;
+      if (scent) { ph[cyv][cxv] = 255; if (prevcell != (u8)(cxv * 7 + cyv)) { prevcell = (u8)(cxv * 7 + cyv); sfx_food(); } }
+      // bite
+      if (bite_cd) bite_cd--;
+      if ((p & J_A) && !bite_cd) {
+        u8 bj = 255; s32 bdd = 400;
+        jaw = 7; bite_cd = 16; sfx_fight();
+        for (i = 0; i < MAXA; i++) if (ant[i].alive && ant[i].team) {
+          s32 dx = (s32)ant[i].x * 256 + 128 - px, dy = (s32)ant[i].y * 256 + 128 - py, dd = (dx * cs + dy * sn) >> 8, sd = (-dx * sn + dy * cs) >> 8;
+          if (dd > -40 && dd < bdd && (sd < 0 ? -sd : sd) < 230) { bdd = dd; bj = i; }
+        }
+        if (bj != 255) { if (rnd() % 100 < 70) { die(&ant[bj], 0); esay("GOT HIM!", 13); sfx_hit(); } else esay("MISSED! BITE AGAIN", 2); }
+        else if (dist(cxv, nestx[1]) <= 1 && dist(cyv, nesty[1]) <= 1 && qhp[1]) { qhp[1]--; qfl[1] = 10; sfx_hit(); esay(qhp[1] ? "THE RED QUEEN IS HURT!" : "THE RED QUEEN FALLS!", 13); }
+      }
+      // red ants bite back
+      if (hurt) hurt--;
+      if (!hurt && !dead) for (i = 0; i < MAXA; i++) if (ant[i].alive && ant[i].team && dist(ant[i].x, cxv) + dist(ant[i].y, cyv) <= 1 && !(rnd() % 50)) {
+        hurt = 40; sfx_qdead();
+        if (php) php--;
+        if (!php) { die(&ant[vi], 0); esay("THE RED ANTS GOT YOU...", 8); dead = 90; eye_ctl = 255; } else esay("OUCH! BITE BACK WITH \1", 8);
+        break;
+      }
     }
-    tx = (s16)(vx * 256 + 128); ty = (s16)(vy * 256 + 128);
-    if (jump) { fx = tx; fy = ty; fa = vang; }        // jumping to another ant: no glide
-    if (chg) eye_status(vi, vx, vy);
-    da = (s16)(((vang - fa + 128) & 255) - 128);      // ease the camera toward the wanted pose
-    fa = (s16)((fa + (da > 2 ? 2 : da < -2 ? -2 : da)) & 255);
-    fx = ease(fx, tx, EGL[O(O_EYESPD)]); fy = ease(fy, ty, EGL[O(O_EYESPD)]);
-    if (vx - fox < 16 || vx - fox > 47 || vy - foy < 16 || vy - foy > 47) {   // walked far: re-centre the floor map
-      fox = (s16)vx - 32; foy = (s16)vy - 32; floor_map((volatile u16 *)0x0600B000);
+    { u8 q; for (q = 0; q < 8; q++) if (fx[q].t) { fx[q].t--; } }
+    if (jaw) jaw--;
+    if (moving && !(frc % 14)) noise(0x41, 0x26);   // footsteps
+    if (moving) bob = (u8)((frc >> 3) & 1); else bob = 0;
+    // the world goes on
+    tick_slice(); bfs_tick(250);
+    if (emsgt) emsgt--;
+    if ((px >> 8) - fox < 16 || (px >> 8) - fox > 47 || (py >> 8) - foy < 16 || (py >> 8) - foy > 47) {
+      fox = (s16)(px >> 8) - 32; foy = (s16)(py >> 8) - 32; floor_map((volatile u16 *)0x0600B000);
     }
-    cur ^= 1;
-    m7_build(m7t[cur], (u8)fa, fx, fy);               // next frame's table (the other buffer is being read by DMA)
-    eye_compass((u8)fa, vx, vy);
-    eye_objs((u8)fa, fx, fy, vi);
-    BG0HOFS = (u16)(fa * 5 + (fa >> 2));               // the skyline turns with you
+    cur = eye_tab == m7t[0] ? 1 : 0;
+    { s32 sx = px, sy = py; if (hurt > 30) { sx += (frc & 2) ? 24 : -24; }   // a jolt when you get bitten
+      m7_build(m7t[cur], fa, (s16)sx, (s16)sy); eye_tab = m7t[cur];
+      eye_scene(fa, sx, sy, vi, jaw > 3 ? (u8)(7 - jaw) : jaw, bob); }
+    BG0HOFS = (u16)(fa * 5 + (fa >> 2));
   }
-  vsync();
+  eye_irq_on(0); vsync();
   DMAR(0, 8) = 0; DMAR(1, 8) = 0; DMAR(2, 8) = 0;
-  occ_set(0);
+  if (vi < MAXA && vok(vi)) { cx = ant[vi].x; cy = ant[vi].y; }
+  eye_ctl = 255;
   hide_all(); oam_flush();
-  BGPAL[0] = sky;
-  BG0CNT = 2 | (2 << 2) | (28 << 8); BG2CNT = 1 | (2 << 2) | (30 << 8); DISPCNT = 0x1F40; BLDCNT = 0xFF;   // back to terrain + decor
-  ov_clear(); hud();
+  BGPAL[0] = sky; for (i = 0; i < 16; i++) BGPAL[112 + i] = pic[i];
+  DISPCNT = 0x0080; vsync();                          // blank, switch to mode 0, then set the layers (BG2 is a normal 16-colour layer again)
+  BG0CNT = 2 | (2 << 2) | (28 << 8); BG2CNT = 1 | (2 << 2) | (30 << 8); BLDCNT = 0xFF;
+  *(volatile u32 *)0x04000020 = 0x100; *(volatile u32 *)0x04000024 = 0x1000000; *(volatile u32 *)0x04000028 = 0; *(volatile u32 *)0x0400002C = 0;
+  win_all(); ov_clear(); hud();
+  vsync(); DISPCNT = 0x1F40;
   while (joy()) vsync();
 }
 
@@ -1826,12 +1956,12 @@ static const char *const TBODY[TN] = {
   "ARMIES BUT CAREFUL WITH\n"
   "YOUR OWN!",
   "HOLD *SEL* AND TAP *START*:\n"
-  "SEE THE WORLD AS AN ANT!\n"
+  "BECOME ONE OF YOUR ANTS!\n"
   "*UP DOWN* WALK *LEFT RIGHT* TURN\n"
-  "*A* NEXT ANT  *B* CURSOR HERE\n"
-  "TOP BAR: *N E S W* COMPASS\n"
-  "CROWN: HOME   RED ANT: ENEMY\n"
-  "TIME STOPS WHILE YOU LOOK",
+  "WALK OVER FOOD, TAKE IT HOME\n"
+  "*A* BITES RED ANTS  *B* SCENT\n"
+  "TOP BAR: CROWN = HOME\n"
+  "*START* BACK TO THE MAP",
   "*BLACK ANTS* FIND FOOD AND\n"
   "CARRY IT HOME: *3 FOOD*\n"
   "HATCHES A NEW ANT\n"
@@ -2721,7 +2851,8 @@ static void gfx_init(void) {                          // palettes, tiles, maps, 
   for (k = 0; k < 13 * 8; k++) TILE2[DEC * 8 + k] = DECO[k];                           // food, trails, nest mound
   for (k = 0; k < 24 * 8; k++) OBJT32[k] = SPRT[k];                                    // sprites
   for (k = 0; k < 64 * 8; k++) OBJT32[BIGT * 8 + k] = BIGS[k];                         // ANT EYE big sprites
-  for (k = 0; k < sizeof(ICNT) / 4; k++) OBJT32[ICNT_T * 8 + k] = ICNT[k];                       // home screen icons
+  for (k = 0; k < sizeof(ICNT) / 4; k++) OBJT32[ICNT_T * 8 + k] = ICNT[k];
+  for (k = 0; k < sizeof(EYE2) / 4; k++) OBJT32[EY2T * 8 + k] = EYE2[k];                 // ANT EYE 2.0 sprites                       // home screen icons
   for (i = 0; i < 16; i++) {
     BGPAL[176 + i] = PAL_TERR[i]; BGPAL[192 + i] = PAL_DEC[i];
     OBJPAL[i] = PAL_ANT0[i]; OBJPAL[16 + i] = PAL_ANT1[i]; OBJPAL[48 + i] = PAL_FX[i]; OBJPAL[96 + i] = PAL_DEC[i]; OBJPAL[64 + i] = RGB(31, 31, 31);

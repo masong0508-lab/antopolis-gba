@@ -170,6 +170,95 @@ def split32(img): return [[[img[ty * 8 + y][tx * 8 + x] for x in range(8)] for y
 BIG = split32(big_ant()) + split32(big_ant(carry=True)) + split32(big_ant(queen=True)) + split32(big_food())
 
 
+# ---------------- ANT EYE 2.0 sprites (OBJ tiles 192..), drawn for the first-person view ----------------
+def thick(img, x0, y0, x1, y1, r, c):
+    n = max(abs(x1 - x0), abs(y1 - y0), 1) * 2
+    for i in range(n + 1):
+        cx = x0 + (x1 - x0) * i / n; cy = y0 + (y1 - y0) * i / n
+        for y in range(32):
+            for x in range(32):
+                if (x - cx) ** 2 + (y - cy) ** 2 <= r * r: img[y][x] = c
+def ant_step(carry=False):                        # side view, the other leg pose (walk cycle frame 2)
+    A = big_ant(carry=carry)
+    for y in range(20, 32):
+        for x in range(32):
+            if A[y][x] == 1 and y >= 21 and not (ell_in(x, y, 7.5, 17.5, 7.0, 5.6) or ell_in(x, y, 15.5, 18.5, 3.6, 3.0) or ell_in(x, y, 23.5, 15.5, 5.0, 4.4)) and not (carry and ell_in(x, y, 29, 20.5, 2.6, 2.6)) and not (x >= 27 and y <= 21):
+                A[y][x] = 0
+    for (x0, x1) in [(13, 11), (15, 19), (17, 25)]:
+        line(A, x0, 20, (x0 + x1) // 2 + (2 if x1 > x0 else -2), 23, 1); line(A, (x0 + x1) // 2 + (2 if x1 > x0 else -2), 23, x1, 29, 1)
+    return A
+def ell_in(x, y, cx, cy, rx, ry):
+    dx, dy = (x - cx) / rx, (y - cy) / ry
+    return dx * dx + dy * dy <= 1.0
+def ant_front():
+    A = canvas()
+    for (sx, ex, ey) in [(14, 5, 23), (15, 4, 27), (16, 7, 30)]:
+        line(A, sx, 21, ex, ey - 4, 1); line(A, ex, ey - 4, ex - 1, ey, 1)
+        line(A, 31 - sx, 21, 31 - ex, ey - 4, 1); line(A, 31 - ex, ey - 4, 32 - ex, ey, 1)
+    ell(A, 15.5, 23, 4.5, 4, 1); ell(A, 15.5, 23, 3.5, 3, 2)
+    ell(A, 15.5, 14.5, 7.0, 6.2, 1); ell(A, 15.5, 14.5, 6.0, 5.2, 2); ell(A, 13.5, 11.5, 2.2, 1.2, 3)
+    for ex in (12, 19):
+        A[13][ex] = 6; A[13][ex + 1] = 6; A[14][ex] = 6; A[14][ex + 1] = 1
+    line(A, 12, 9, 9, 4, 1); line(A, 9, 4, 5, 2, 1); line(A, 19, 9, 22, 4, 1); line(A, 22, 4, 26, 2, 1)
+    line(A, 13, 19, 12, 23, 1); line(A, 12, 23, 14, 24, 1); line(A, 18, 19, 19, 23, 1); line(A, 19, 23, 17, 24, 1)
+    return A
+def ant_back():
+    A = canvas()
+    for (sx, ex, ey) in [(14, 4, 22), (15, 3, 26), (16, 6, 30)]:
+        line(A, sx, 17, ex, ey - 4, 1); line(A, ex, ey - 4, ex - 1, ey, 1)
+        line(A, 31 - sx, 17, 31 - ex, ey - 4, 1); line(A, 31 - ex, ey - 4, 32 - ex, ey, 1)
+    line(A, 13, 8, 9, 2, 1); line(A, 18, 8, 22, 2, 1)
+    ell(A, 15.5, 9.5, 4.0, 3.2, 1); ell(A, 15.5, 9.5, 3.0, 2.2, 2)
+    ell(A, 15.5, 20, 8.0, 7.5, 1); ell(A, 15.5, 20, 7.0, 6.5, 2); ell(A, 12.5, 16.5, 2.6, 1.8, 3)
+    for x in range(10, 22): A[21][x] = 1 if A[21][x] == 2 and x % 2 == 0 else A[21][x]
+    return A
+def shadow():
+    A = canvas()
+    for y in range(32):
+        for x in range(32):
+            if ell_in(x, y, 15.5, 29.0, 12.5, 2.8) and (x + y) % 2 == 0: A[y][x] = 1
+    return A
+def mound():
+    A = canvas()
+    ell(A, 15.5, 31, 15.5, 16, 1); ell(A, 15.5, 31, 14.5, 15, 6)
+    for (x, y) in [(6, 22), (24, 21), (12, 18), (20, 26), (9, 27), (17, 20)]: A[y][x] = 7; A[y][x + 1] = 7
+    ell(A, 15.5, 18, 3.5, 2.5, 1); ell(A, 15.5, 18.5, 2.5, 1.5, 8)
+    return A
+def small(rows):
+    t = [[0] * 16 for _ in range(16)]
+    for y, r in enumerate(rows):
+        for x, ch in enumerate(r):
+            if ch != '.': t[y][x] = int(ch, 16)
+    return [[[t[ty * 8 + y][tx * 8 + x] for x in range(8)] for y in range(8)] for ty in range(2) for tx in range(2)]
+TUFT = small(["................", "................", "................", "................", "........4.......", "...4....4...4...",
+  "...4...44..4....", "....4..4...4....", "....4..4..4..4..", ".4..44.4..4.4...", "..4..4.4.4..4...", "..44.4444..4....",
+  "...4.44444.4....", "....444444......", "......4444......", "................"])
+FLOWER = small(["................", "................", "................", "......5.5.......", ".....55555......", "......535.......",
+  ".....55555......", "......5.5.......", ".......4........", ".......4..4.....", "....4..4.44.....", ".....4.444......",
+  "......444.......", ".......4........", ".......4........", "................"])
+PEBBLE = small(["................", "................", "................", "................", "................", "................",
+  "................", "................", "................", "......1111......", "....11eeee11....", "...1eeddeeee1...",
+  "..1eeedeeeeee1..", "..1eeeeeeeeee1..", "...11111111111..", "................"])
+ROCK = small(["................", "................", "................", "......11111.....", "....11eeeee11...", "...1eedeeeeee1..",
+  "..1eeddeeeeeee1.", "..1eedeeeeeeee1.", ".1eeeeeeeeeeeee1", ".1eeeeeeeeaeee1.", ".1eeeeeeeeaaee1.", ".1eeeeeeeeeeee1.",
+  "..1eeeeeeeeeee1.", "..1eeeeeeeeee1..", "...11111111111..", "................"])
+MUSH = small(["................", "................", "................", "................", ".....111111.....", "...1155d5511....",
+  "..155d55555d51..", "..155555d55551..", "...1111111111...", "......1dd1......", "......1dd1......", "......1dd1......",
+  "......1dd1......", ".....11dd11.....", "....44444444....", "................"])
+REED = small(["....3...........", "....a...........", "....a......3....", "....4......a....", "....4..3...a....", "....4..a...4....",
+  "...44..a...4....", "...4...4..44....", "...4...4..4.....", "...4..44..4.....", "...4..4..44.....", "..44..4..4......",
+  "..4...4..4......", ".44..44.44......", ".4...4..4.......", "................"])
+def mandible():                                   # the left jaw, seen from inside the head (the right one is flipped)
+    A = canvas()
+    thick(A, 2, 34, 13, 18, 5.5, 1); thick(A, 13, 18, 24, 8, 4.0, 1); thick(A, 24, 8, 29, 6, 2.5, 1)
+    thick(A, 2, 34, 13, 18, 4.3, 2); thick(A, 13, 18, 24, 8, 2.8, 2); thick(A, 24, 8, 28, 6.5, 1.4, 2)
+    thick(A, 4, 27, 12, 17, 1.2, 3); thick(A, 12, 17, 20, 10, 0.8, 3)
+    for (x, y) in [(16, 17), (20, 14), (24, 11), (18, 16), (22, 12)]: A[y][x] = 1; A[y + 1][x - 1] = 1
+    return A
+EYE2 = (split32(ant_step()) + split32(ant_step(carry=True)) + split32(ant_front()) + split32(ant_back()) + split32(shadow()) + split32(mound())
+        + TUFT + FLOWER + PEBBLE + ROCK + MUSH + REED + split32(mandible()))
+
+
 # ---------------- ANT EYE panorama: 256x64 px, wraps around; far hills, trees, clouds (BG0 in the eye view, palette bank 5) ----------------
 import math, random
 random.seed(7)
@@ -477,6 +566,7 @@ with open(sys.argv[1], "w") as f:
     f.write("#define PANO_N %d\n" % len(PANO_TILES))
     f.write("static const u16 PANOM[256] = {" + ",".join(str(v & 0xFFFF) for v in PANO_MAP) + "};\n")
     f.write(emit_pal("PAL_PANO", PANO_PAL) + "\n")
+    f.write("// EYE2: ANT EYE 2.0 sprites (OBJ tiles 192..343): ant walk 2 (16), carrying walk 2 (16), front (16), back (16) [ant palette];\n//   shadow (16), nest mound (16), 6 small decor 16x16 (tuft flower pebble rock mushroom reed, 4 each) [decor palette]; jaw (16) [ant palette]\n" + emit("EYE2", EYE2) + "\n")
     f.write("// ICNT: home screen icons 32x32: book, map, trophy, gear, city, antverse (OBJ tiles 96..191, decor palette)\n" + emit("ICNT", ICONS) + "\n")
     f.write("// ARMT: EMPIRE MODE army banner 16x16 (OBJ tiles 88..91, ant palettes)\n" + emit("ARMT", ARMY) + "\n")
     f.write("// EMPT: EMPIRE MODE building tiles (decor palette), loaded at charblock 2 tile 512+\n" + emit("EMPT", EMP) + "\n")
