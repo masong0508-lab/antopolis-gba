@@ -828,34 +828,64 @@ static void world_map(void) {
   vram_reload();
 }
 static void emp_save(void);
-static u8 emp_menu(void) {                         // START: 0 resume, 1 quit
-  static const char *const IT[10] = {"RESUME", "RESEARCH", "EDICTS", "GROUPS AND VOTES", "COUNSELOR", "SPEED", "SAVE AND QUIT", "QUIT", "RIVALS", "WORLD MAP"};
-  static const u8 ORD[10] = {0, 9, 1, 2, 8, 3, 4, 5, 6, 7};
-  u8 sel = 0, i, r = 255;
+static u8 emp_menu(void) {                         // START: 0 resume, 1 quit. A 3 x 4 board of bark buttons, D-pad moves freely
+  static const char *const IT[12] = {"RESUME", "BUILD", "MAP", "SCIENCE", "EDICTS", "RIVALS", "GROUPS", "ADVICE", "GOAL", "SPEED", "SAVE", "QUIT"};
+  static const char *const IH[12] = {"BACK TO YOUR EMPIRE", "PICK SOMETHING TO BUILD", "SEE THE WHOLE WORLD", "LEARN NEW TECHS",
+    "PASS LAWS FOR YOUR ANTS", "TALK TO OTHER COLONIES", "WHAT YOUR ANTS THINK", "CHITIN GIVES ADVICE", "WHAT YOU MUST DO", "", "SAVE AND GO TO THE MENU", "LEAVE THIS EMPIRE"};
+  static u8 sel = 0;
+  u8 i, x, y, x0, y0, w, pal, r = 255, conf = 0, fr = 0; u16 t;
   hide_all(); vsync(); oam_flush(); ewait_clear();
   while (r == 255) {
     ov_fill(1, 3, 0, 19); ui_full(); big(0, "EMPIRE");
-    ps(1, 2, ERAN[era_now()], 9); ps(16, 2, echap == 255 ? "FREE PLAY" : "STORY", 10);
-    for (i = 0; i < 10; i++) { u8 y = (u8)(4 + i * 1), it = ORD[i];
-      if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
-      ps(3, y, (it == 6 && echap != 255) ? "QUIT (STORY: NO SAVE)" : IT[it], i == sel ? 9 : 3);
-      if (it == 5) ps(20, y, SPNAME[spd], 9); }
-    pm_rule(15);
+    for (i = 0; i < 16; i++) BGPAL[96 + i] = BGPAL[i];
+    ps(1, 2, ERAN[era_now()], 9); ps(echap == 255 ? 20 : 24, 2, echap == 255 ? "FREE PLAY" : "STORY", 10);
+    for (i = 0; i < 12; i++) {
+      const char *n = IT[i];
+      if (i == 10 && echap != 255) n = "-";
+      if (conf && i == sel) n = "SURE?";
+      x0 = (u8)(1 + (i % 3) * 9); w = (u8)(i % 3 == 2 ? 10 : 9); y0 = (u8)(4 + (i / 3) * 3); pal = i == sel ? 6 : 0;
+      for (y = y0; y < y0 + 3; y++) for (x = x0; x < x0 + w; x++) {
+        if (y == y0) t = x == x0 ? UIB + 4 : x == x0 + w - 1 ? UIB + 6 : UIB + 5;
+        else if (y == y0 + 2) t = x == x0 ? UIB + 9 : x == x0 + w - 1 ? UIB + 11 : UIB + 10;
+        else t = x == x0 ? UIB + 7 : x == x0 + w - 1 ? UIB + 8 : UIB + 31;
+        BGMAP3[y * 32 + x] = (u16)(t | (pal << 12)); BGMAP1[y * 32 + x] = 0;
+      }
+      ps((u8)(x0 + (w - blen2(n)) / 2), (u8)(y0 + 1), n, conf && i == sel ? 8 : (i == 10 && echap != 255) ? 15 : i == sel ? 9 : 3);
+    }
     if (echap != 255) { ps(1, 16, CH[echap].name, 9); ps(1, 17, CH[echap].goal_txt, 3); }
-    ps(1, 19, "\1 OK   \5 BACK", 10);
-    while (!ekey()) {}
+    if (conf) ps(1, 18, "QUIT WITHOUT SAVING?", 8);
+    else if (sel == 9) { ps(1, 18, "SPEED:", 10); ps(8, 18, SPNAME[spd], 9); }
+    else if (sel == 10 && echap != 255) ps(1, 18, "STORY GAMES DO NOT SAVE", 15);
+    else ps(1, 18, IH[sel], 2);
+    ps(1, 19, conf ? "\1 YES   \2 NO" : "\1 OK   \5 BACK", 10);
+    while (!ekey()) hub_glow(fr++);
+    if (conf) { if (emp_ & J_A) r = 1; conf = 0; continue; }
     if (emp_ & (J_B | J_START)) r = 0;
-    if (emp_ & J_UP) sel = sel ? sel - 1 : 9;
-    if (emp_ & J_DOWN) sel = sel >= 9 ? 0 : sel + 1;
-    if (ORD[sel] == 5 && (emp_ & (J_LEFT | J_RIGHT))) spd_next((emp_ & J_LEFT) ? -1 : 1);
+    if (emp_ & J_UP)    sel = (u8)((sel + 9) % 12);
+    if (emp_ & J_DOWN)  sel = (u8)((sel + 3) % 12);
+    if (emp_ & J_LEFT)  sel = (u8)(sel % 3 ? sel - 1 : sel + 2);
+    if (emp_ & J_RIGHT) sel = (u8)(sel % 3 == 2 ? sel - 2 : sel + 1);
+    if (emp_ & (J_UP | J_DOWN | J_LEFT | J_RIGHT)) sfx_food();
+    if ((emp_ & J_L) && sel == 9) spd_next(-1);
     if (emp_ & J_A) {
-      u8 it = ORD[sel];
-      if (it == 0) r = 0; else if (it == 1) research_menu(); else if (it == 2) edict_menu(); else if (it == 3) groups_screen();
-      else if (it == 4) advisor_screen(); else if (it == 5) spd_next(1);
-      else if (it == 6) { if (echap == 255) emp_save(); r = 1; }
-      else if (it == 8) rivals_screen();
-      else if (it == 9) { world_map(); r = 0; }
-      else r = 1;
+      sfx_mana();
+      switch (sel) {
+      case 0: r = 0; break;
+      case 1: { u8 b = build_menu(); if (b) { eplace = b; r = 0; } break; }
+      case 2: world_map(); r = 0; break;
+      case 3: research_menu(); break;
+      case 4: edict_menu(); break;
+      case 5: rivals_screen(); break;
+      case 6: groups_screen(); break;
+      case 7: advisor_screen(); break;
+      case 8:
+        if (echap != 255) { char t1[12] = "CHAPTER "; t1[8] = (char)('1' + echap); t1[9] = 0; story_card(t1, CH[echap].s1, CH[echap].name); }
+        else { static const char *const FL[6] = {"FREE PLAY HAS NO GOAL.", "BUILD A BIG CITY,", "MAKE FRIENDS OR WAR,", "AND RULE HOW YOU LIKE!", 0, 0}; story_card("FREE PLAY", FL, "\1 OK"); }
+        hide_all(); vsync(); oam_flush(); ewait_clear(); break;
+      case 9: spd_next(1); break;
+      case 10: if (echap == 255) { emp_save(); r = 1; } else sfx_deny(); break;
+      default: conf = 1; sfx_deny(); break;
+      }
     }
   }
   ewait_clear(); ov_clear();
@@ -1155,7 +1185,7 @@ static void empire_main(void) {
         if (k == 2) { pc(18, y, '<', 10); pc(20, y, (char)('0' + nriv_sel), 9); pc(22, y, '>', 10); }
         if (k == 3) { pc(18, y, '<', 10); ps(20, y, AGN[agg_sel], 9); pc(27, y, '>', 10); }
       }
-      ps(1, 18, "MAP AND SIZE: TITLE SCREEN", 10);
+      ps(1, 18, "MAP + SIZE: PLAY > NEW GAME", 10);
       ps(1, 19, "\1 OK  LEFT RIGHT SET  \2 BACK", 10);
       DISPCNT = 0x1B40; BLDY = 0;
       while (!ekey()) {}

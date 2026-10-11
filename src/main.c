@@ -121,7 +121,7 @@ static HandMap myhm = {"MY MAP", "MADE BY YOU", 32, 32, cmap};
 static const char *const MNAME[NSTYLE] = {"MEADOW", "RIVER", "LAKES", "CANYON"};
 static const char *const MDESC[NSTYLE] = {"GENTLE HILLS AND PONDS", "FIND THE FORDS", "WALK AROUND THE WATER", "CLIFFS AND RAMPS"};
 static const char *mname(u8 i) { return i < NSTYLE ? MNAME[i] : i < MINF ? HMAPS[i - NSTYLE].name : i == MINF ? "INFINITE" : "MY MAP"; }
-static const char *mdesc(u8 i) { return i < NSTYLE ? MDESC[i] : i < MINF ? HMAPS[i - NSTYLE].desc : i == MINF ? "A NEW WORLD EVERY GAME" : has_my ? "MADE BY YOU" : "NOT MADE YET: \6 TO MAKE IT"; }
+static const char *mdesc(u8 i) { return i < NSTYLE ? MDESC[i] : i < MINF ? HMAPS[i - NSTYLE].desc : i == MINF ? "A NEW WORLD EVERY GAME" : has_my ? "MADE BY YOU" : "NOT MADE YET: \1 TO MAKE IT"; }
 static const HandMap *hmap(u8 i) { return i == MMY ? (has_my ? &myhm : 0) : (i >= NSTYLE && i < MINF) ? &HMAPS[i - NSTYLE] : 0; }
 static u8 tw = 48, th = 48, newgame_gen_only;                                       // chosen world size (the hand-made maps are always 32x32)
 static Ant ant[MAXA];
@@ -1182,88 +1182,179 @@ static void logo_line(const char *s, u8 x0, u8 y0) {   // blocky 3D lettering fr
         if ((g >> (3 * (4 - gy))) & (4 >> gx)) BGMAP1[(y0 + gy + k) * 32 + x0 + i * 4 + gx + k] = (u16)(2 | ((k ? 4 : 2) << 12));
     }
 }
-static u8 tsel;                                    // title rows: 0 LEVEL, 1 MAP, 2 WIDTH, 3 HEIGHT
-static void title_dyn(void) {
-  const HandMap *hm = hmap(mapt); u8 hand = (u8)(hm != 0), x;
-  ov_fill(1, 3, 14, 17);
-  ps((u8)(15 - (blen2(mdesc(mapt)) + 1) / 2), 14, mdesc(mapt), 10);
-  ps(1, 15, tsel == 0 ? ">" : " ", 9); ps(3, 15, "LEVEL", tsel == 0 ? 9 : 3); ps(10, 15, "<", 10); ps(12, 15, DNAME[diff], 9); ps(17, 15, ">", 10);
-  if (wins[diff]) { pn(20, 15, wins[diff], 3); ps(23, 15, "WINS", 10); }
-  ps(1, 16, tsel == 1 ? ">" : " ", 9); ps(3, 16, "MAP", tsel == 1 ? 9 : 3); ps(10, 16, "<", 10); ps(12, 16, mname(mapt), 9);
-  ps((u8)(12 + blen2(mname(mapt)) + 1), 16, ">", 10);
-  ps(1, 17, tsel >= 2 ? ">" : " ", 9); ps(3, 17, "SIZE", tsel >= 2 ? 9 : 3);
-  if (hand) { pn(11, 17, hm->w, 3); ps(14, 17, "X", 10); pn(16, 17, hm->h, 3); ps(20, 17, mapt == MMY ? "\6 EDIT" : "FIXED", 10); }
+static u8 tsel;                                    // NEW GAME rows: 0 LEVEL, 1 MAP, 2 WIDTH, 3 HEIGHT, 4 SANDBOX, 5 START
+#define BG1HOFS IO16(0x14)
+#define BG3HOFS IO16(0x1C)
+#define BIGT 24
+#define ORN  764                                       // 764 rule, 765/766 centre diamond, 767/768 pip on/off, 769 arrow
+#define ICNT_T 96                                  // OBJ tiles of the home screen icons: book 96, map 112, trophy 128, gear 144
+// ---------- NEW GAME: pick the level, the map, its size and sandbox, then go ----------
+static void ng_draw(void) {
+  const HandMap *hm = hmap(mapt); u8 hand = (u8)(hm != 0), s;
+  ov_fill(1, 3, 0, 19); ui_full();
+  big(1, "NEW GAME"); pm_rule(4);
+  #define NGR(s) ((u8)((s) == 0 ? 6 : (s) == 1 ? 8 : (s) <= 3 ? 11 : (s) == 4 ? 13 : 16))
+  for (s = 0; s < 6; s++) if (s != 3 && tsel == s) BGMAP1[NGR(s) * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
+  if (tsel == 3) BGMAP1[NGR(3) * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
+  ps(3, 6, "LEVEL", tsel == 0 ? 9 : 3); ps(11, 6, "<", 10); ps(13, 6, DNAME[diff], 9); ps(18, 6, ">", 10);
+  if (wins[diff]) { pn(21, 6, wins[diff], 13); ps(24, 6, "WINS", 10); }
+  ps(3, 8, "MAP", tsel == 1 ? 9 : 3); ps(11, 8, "<", 10); ps(13, 8, mname(mapt), 9); ps((u8)(13 + blen2(mname(mapt)) + 1), 8, ">", 10);
+  ps((u8)(15 - (blen2(mdesc(mapt)) + 1) / 2), 9, mdesc(mapt), 10);
+  ps(3, 11, "SIZE", tsel == 2 || tsel == 3 ? 9 : 3);
+  if (hand) { pn(12, 11, hm->w, 3); ps(15, 11, "X", 10); pn(17, 11, hm->h, 3); ps(21, 11, "FIXED", 10); }
   else {
-    x = 10;
-    pc(x, 17, '<', 10); pn((u8)(x + 1), 17, tw, tsel == 2 ? 9 : 3); pc((u8)(x + 3), 17, '>', 10);
-    ps((u8)(x + 5), 17, "X", 3);
-    pc((u8)(x + 7), 17, '<', 10); pn((u8)(x + 8), 17, th, tsel == 3 ? 9 : 3); pc((u8)(x + 10), 17, '>', 10);
-    ps((u8)(x + 12), 17, tsel == 2 ? "WIDE" : tsel == 3 ? "TALL" : "", 10);
+    pc(11, 11, '<', 10); pn(12, 11, tw, tsel == 2 ? 9 : 3); pc(14, 11, '>', 10); ps(16, 11, "X", 3);
+    pc(18, 11, '<', 10); pn(19, 11, th, tsel == 3 ? 9 : 3); pc(21, 11, '>', 10);
+    ps(23, 11, tsel == 2 ? "WIDE" : tsel == 3 ? "TALL" : "", 10);
   }
-  logo_line("EMPIRE", 3, 2); logo_line("ANTS", 7, 8);
+  ps(3, 13, "SANDBOX", tsel == 4 ? 9 : 3); ps(13, 13, sandbox ? "ON" : "OFF", sandbox ? 13 : 10);
+  ps(3, 14, sandbox ? "NO LIMITS: JUST PLAY" : "BEAT THE RED ANTS TO WIN", 10);
+  ps(3, 16, mapt == MMY && !has_my ? "MAKE YOUR MAP FIRST" : "START THE GAME!", tsel == 5 ? 9 : 13);
+  pm_rule(18);
+  ps(1, 19, "< > CHANGE  \1 GO  \2 BACK", 10);
 }
-static void title_scene(void) {
-  u8 x, k;
-  ov_fill(1, 3, 0, 19); ui_title(); (void)x; (void)k;
-  ps(0, 0, "\4 OPTIONS", 10); ps(11, 0, "\2 EXTRAS", 10); ps(21, 0, "\3 EMPIRE", emp_unlocked() ? 9 : 15);
-  title_dyn();
-}
-static u8 wx[5];
-static u8 kk_busy;
-static u8 kk_mid(void) { return kk_busy; }
-static u8 title(void) {                            // returns 0 = play, 1 = open the map editor
-  u8 i, fr = 0, on = 255, bl, edit = 0, selused = 0, selprev = 0; u16 k, p, prev = 0;
-  DISPCNT = 0x80; BLDY = 16;
-  ov_clear(); title_scene();
-  wx[0] = 14; wx[1] = 62; wx[2] = 112; wx[3] = 200; wx[4] = 150;
+static u8 newgame_menu(void) {                     // 0 = back, 1 = play, 2 = open the editor (to make MY MAP first)
+  u16 k, p, prev = joy();
   hide_all(); oam_flush();
-  DISPCNT = 0x1B40;
-  tm_start();                                      // the title has its own stereo theme
-  fade(16, 0);
+  if (tsel > 5) tsel = 5;
+  ng_draw();
   for (;;) {
-    vsync(); oam_flush();
-    fr++; rs ^= fr + (u32)VCOUNT * 2654435761u; if (!rs) rs = 1;
-    k = joy(); p = k & ~prev; prev = k;
-    pool_mix(fr ^ ((u32)VCOUNT << 8) ^ ((u32)k << 20));   // stir the INFINITE seed with time and buttons
-    if (p) pool_mix(rs);
-    if (p & J_DOWN) { tsel = (u8)((tsel + 1) & 3); sfx_food(); title_dyn(); }
-    if (p & J_UP)   { tsel = (u8)((tsel + 3) & 3); sfx_food(); title_dyn(); }
-    if (p & J_R) {                                  // OPTIONS
-      options_screen(); title_scene(); prev = joy(); on = 255;
-      if (!nomus && !tmu) tm_start();
-      continue;
-    }
-    if (p & (J_RIGHT | J_LEFT)) {
+    vsync(); k = joy(); p = k & ~prev; prev = k;
+    rs ^= (u32)VCOUNT * 2654435761u + k; if (!rs) rs = 1; pool_mix(rs ^ k);
+    if (!p) continue;
+    if (p & J_B) { sfx_food(); return 0; }
+    if (p & J_DOWN) { tsel = (u8)(tsel == 5 ? 0 : tsel + 1); if (tsel == 3 && hmap(mapt)) tsel = 4; sfx_food(); ng_draw(); }
+    if (p & J_UP)   { tsel = (u8)(tsel == 0 ? 5 : tsel - 1); if (tsel == 3 && hmap(mapt)) tsel = 2; sfx_food(); ng_draw(); }
+    if (p & (J_LEFT | J_RIGHT)) {
       s8 dd = (p & J_RIGHT) ? 1 : -1;
       if (tsel == 0) diff = (u8)((diff + 3 + dd) % 3);
       else if (tsel == 1) mapt = (u8)((mapt + MAPN + dd) % MAPN);
       else if (tsel == 2) tw = (u8)(tw + dd * 8 < 32 ? 96 : tw + dd * 8 > 96 ? 32 : tw + dd * 8);
-      else th = (u8)(th + dd * 8 < 32 ? 96 : th + dd * 8 > 96 ? 32 : th + dd * 8);
-      sfx_food(); title_dyn();
+      else if (tsel == 3) th = (u8)(th + dd * 8 < 32 ? 96 : th + dd * 8 > 96 ? 32 : th + dd * 8);
+      else if (tsel == 4) sandbox ^= 1;
+      else continue;
+      sfx_food(); ng_draw();
     }
+    if (p & J_A && tsel == 4) { sandbox ^= 1; sfx_food(); ng_draw(); continue; }
+    if ((p & J_START) || ((p & J_A) && tsel != 4)) {
+      tutor = 0; sfx_mana();
+      if (mapt == MMY && !has_my) { sandbox = 0; return 2; }
+      return 1;
+    }
+  }
+}
+// ---------- the HOME screen: six picture cards, move freely with the D-pad ----------
+#define NCARD 6
+static const char *const CARDN[NCARD] = {"PLAY", "EMPIRE", "LEARN", "EDITOR", "EXTRAS", "OPTIONS"};
+static const char *const CARDD[NCARD] = {"FIGHT THE RED ANTS", "BUILD A WHOLE ANT CITY", "LEARN TO PLAY STEP BY STEP",
+  "DRAW YOUR OWN MAP", "TROPHIES  CHEATS  RECORDS", "SOUND  SPEED  COLORS"};
+static u8 hsel;
+static u8 card_x(u8 c) { return (u8)(1 + (c % 3) * 10); }
+static u8 card_y(u8 c) { return (u8)(c < 3 ? 4 : 11); }
+static u8 card_lock(u8 c) { return c == 1 && !emp_unlocked(); }
+static void card_draw(u8 c) {                      // bark frame + dark tunnel inside; the chosen card uses the gold palette bank 6
+  u8 x0 = card_x(c), y0 = card_y(c), x, y, pal = c == hsel ? 6 : 0; u16 t; const char *n = card_lock(c) ? "LOCKED" : CARDN[c];
+  for (y = y0; y <= y0 + 6; y++) for (x = x0; x <= x0 + 8; x++) {
+    if (y == y0) t = x == x0 ? UIB + 4 : x == x0 + 8 ? UIB + 6 : UIB + 5;
+    else if (y == y0 + 6) t = x == x0 ? UIB + 9 : x == x0 + 8 ? UIB + 11 : UIB + 10;
+    else if (x == x0) t = UIB + 7; else if (x == x0 + 8) t = UIB + 8;
+    else t = UIB + 31;
+    BGMAP3[y * 32 + x] = (u16)(t | (pal << 12));
+    if (y > y0 && y < y0 + 6 && x > x0 && x < x0 + 8) BGMAP1[y * 32 + x] = 0;
+  }
+  ps((u8)(x0 + 1 + (7 - blen2(n)) / 2), (u8)(y0 + 5), n, card_lock(c) ? 15 : c == hsel ? 9 : 3);
+}
+static void hub_desc(void) {
+  const char *d = card_lock(hsel) ? "WIN ONE GAME TO UNLOCK" : CARDD[hsel];
+  ov_fill(0, 0, 18, 18); ps((u8)(15 - (blen2(d) + 1) / 2), 18, d, card_lock(hsel) ? 8 : 2);
+}
+static void hub_scene(void) {
+  u8 x, y, c;
+  for (y = 0; y < 20; y++) for (x = 0; x < 32; x++) {
+    BGMAP3[y * 32 + x] = ((x * 11 + y * 5) % 17 == 0) ? UIB + 30 : uisoil(x, y);
+    BGMAP1[y * 32 + x] = 0;
+  }
+  big(0, "EMPIRE ANTS");
+  ps(5, 2, "DIPPINN PRODUCTIONS", 10);
+  for (c = 0; c < NCARD; c++) card_draw(c);
+  hub_desc();
+  ps(2, 19, "\1 OPEN  \3 EMPIRE  \4 OPTIONS", 10);
+  for (x = 0; x < 16; x++) BGPAL[96 + x] = BGPAL[x];
+}
+static void hub_glow(u8 fr) {                      // the chosen card's bark frame shines gold and pulses
+  u8 t = (u8)(fr & 63), s = (u8)(t < 32 ? t : 63 - t);   // 0..31..0
+  BGPAL[96 + 8] = RGB(12 + s / 6, 7 + s / 8, 1);
+  BGPAL[96 + 9] = RGB(22 + s / 6, 15 + s / 6, 2);
+  BGPAL[96 + 10] = RGB(31, 25 + s / 6, 6 + s / 3);
+}
+static u8 wx[5];
+static u8 kk_busy;
+static u8 kk_mid(void) { return kk_busy; }
+static u8 title(void) {                            // returns 0 = play, 1 = open the map editor, 2 = empire, 3 = extras
+  static const s8 BOB[16] = {0, -1, -2, -3, -3, -4, -4, -4, -4, -4, -3, -3, -2, -1, 0, 0};
+  static const u16 ICO[NCARD] = {BIGT, BIGT + 32, ICNT_T, ICNT_T + 16, ICNT_T + 32, ICNT_T + 48};
+  u8 i, fr = 0, edit = 0, old; u16 k, p, prev = joy();
+  (void)kk_mid;
+  DISPCNT = 0x80; BLDY = 16;
+  hide_all(); oam_flush();
+  hub_scene(); hub_glow(0);
+  BG1HOFS = 4; BG3HOFS = 4;                        // centre the 3 columns of cards
+  wx[0] = 14; wx[1] = 62; wx[2] = 112; wx[3] = 200; wx[4] = 150;
+  DISPCNT = 0x1B40;
+  tm_start();
+  fade(16, 0);
+  for (;;) {
+    vsync(); oam_flush(); hub_glow(fr);
+    fr++; rs ^= fr + (u32)VCOUNT * 2654435761u; if (!rs) rs = 1;
+    k = joy(); p = k & ~prev; prev = k;
+    pool_mix(fr ^ ((u32)VCOUNT << 8) ^ ((u32)k << 20));
+    if (p) pool_mix(rs);
     if (p) {                                        // the Konami code unlocks EMPIRE MODE
       static const u16 KON[10] = {J_UP, J_UP, J_DOWN, J_DOWN, J_LEFT, J_RIGHT, J_LEFT, J_RIGHT, J_B, J_A}; static u8 kk;
-      if (p == KON[kk]) { if (++kk == 10) { kk = 0; SRAM[62] = 'U'; ach_get(31); sfx_mana(); jingle(WIN_TUNE, 6); title_scene(); ov_fill(1, 3, 14, 14); ps(3, 14, "EMPIRE MODE UNLOCKED! \3", 9); continue; } }
+      if (p == KON[kk]) { if (++kk == 10) { kk = 0; SRAM[62] = 'U'; ach_get(31); sfx_mana(); jingle(WIN_TUNE, 6);
+          hsel = 1; hub_scene(); ov_fill(0, 0, 18, 18); ps(4, 18, "EMPIRE MODE UNLOCKED! \3", 9); continue; } }
       else kk = (u8)(p == KON[0]);
       kk_busy = (u8)(kk >= 8);
     }
-    if (p & J_L) { if (emp_unlocked()) { edit = 2; break; } ov_fill(1, 3, 14, 14); ps(1, 14, "WIN ONE GAME TO UNLOCK \3", 8); sfx_deny(); }
-    if (p & J_A) { tutor = 1; sandbox = 0; break; }          // A alone = guided tutorial
-    if ((p & J_B) && !kk_mid()) { edit = 3; break; }          // B = EXTRAS
-    if (p & J_START) { selused = 1; tutor = 0; sandbox = (k & J_SEL) ? 1 : 0; if (mapt == MMY && !has_my) { edit = 1; sandbox = 0; } break; }
-    if (p & J_SEL) selused = 0;
-    if ((k & J_SEL) && (k & ~J_SEL)) selused = 1;               // SELECT + another button (SEL+START = sandbox) is not "edit"
-    if (selprev && !(k & J_SEL) && !selused) { edit = 1; break; }   // SELECT tapped alone: open the map editor
-    selprev = (u8)(k & J_SEL);
-    bl = (fr & 63) < 44;
-    if (bl != on) { on = bl; ov_fill(1, 3, 1, 1); if (on) ps(2, 1, "\5 PLAY  \1 LEARN  \6 EDITOR", 9); }
-    for (i = 0; i < 5; i++) {                      // 3 black ants march right, 2 red ants left, along the grass
+    old = hsel;
+    if (p & J_LEFT)  hsel = (u8)(hsel % 3 ? hsel - 1 : hsel + 2);
+    if (p & J_RIGHT) hsel = (u8)(hsel % 3 == 2 ? hsel - 2 : hsel + 1);
+    if (p & (J_UP | J_DOWN)) hsel = (u8)((hsel + 3) % 6);
+    if (hsel != old) { sfx_food(); card_draw(old); card_draw(hsel); hub_desc(); }
+    if (p & J_L) hsel = 1, p |= J_A;                // shortcuts: L = EMPIRE, R = OPTIONS
+    if (p & J_R) hsel = 5, p |= J_A;
+    if (p & (J_A | J_START)) {
+      if (hsel == 0) {                              // PLAY: the NEW GAME screen
+        u8 r;
+        BG1HOFS = 0; BG3HOFS = 0; sfx_mana();
+        r = newgame_menu();
+        if (r == 1) { edit = 0; break; }
+        if (r == 2) { edit = 1; break; }
+        hide_all(); oam_flush(); hub_scene(); BG1HOFS = 4; BG3HOFS = 4; prev = joy(); continue;
+      }
+      if (hsel == 1) { if (emp_unlocked()) { edit = 2; break; } sfx_deny(); card_draw(1); hub_desc(); continue; }
+      if (hsel == 2) { tutor = 1; sandbox = 0; break; }
+      if (hsel == 3) { edit = 1; break; }
+      if (hsel == 4) { edit = 3; break; }
+      BG1HOFS = 0; BG3HOFS = 0; sfx_mana();         // OPTIONS
+      options_screen(); hide_all(); oam_flush();
+      DISPCNT = 0x1B40; hub_scene(); BG1HOFS = 4; BG3HOFS = 4; prev = joy();
+      if (!nomus && !tmu) tm_start();
+      continue;
+    }
+    for (i = 0; i < NCARD; i++) {                   // the card pictures: 32x32 sprites; the chosen one bobs
+      int sx = card_x(i) * 8 - 4 + 20, sy = card_y(i) * 8 + 8 + (i == hsel ? BOB[(fr >> 2) & 15] : 0);
+      u8 pal = card_lock(i) ? 10 : i < 2 ? 0 : 6;
+      spr((u8)(8 + i), sx, sy, (u8)ICO[i], pal, 0, 0); oam[(8 + i) * 4 + 1] |= 0x8000;
+    }
+    for (i = 0; i < 5; i++) {                      // 3 black ants march right, 2 red ants left, under the logo
       if (!(fr & 1)) { if (i < 3) { if (++wx[i] >= 248) wx[i] = 0; } else wx[i] = wx[i] ? wx[i] - 1 : 247; }
-      spr(i, (int)wx[i] - 8, 148, (u8)(3 + (((fr >> 3) + i) & 1)), i < 3 ? 0 : 1, 0, i >= 3);
+      spr(i, (int)wx[i] - 8, 24, (u8)(3 + (((fr >> 3) + i) & 1)), i < 3 ? 0 : 1, 0, i >= 3);
     }
   }
   fade(0, 16);
   tm_stop();
+  BG1HOFS = 0; BG3HOFS = 0;
   hide_all(); oam_flush();
   ov_clear();
   while (joy()) vsync();
@@ -1291,7 +1382,7 @@ static u16 skyg[161];                                 // per scanline backdrop: 
 #define DMA_W32 0x04000000u
 #define DMA_RLD 0x00600000u                           // dest increment + reload each HBlank
 #define DMA_FIX 0x00400000u
-#define BIGT 24                                       // OBJ tiles of the big sprites: ant 24, carrying ant 40, queen 56, food 72
+// BIGT (24): OBJ tiles of the big sprites: ant 24, carrying ant 40, queen 56, food 72
 #ifdef __arm__
 #define IWRAM __attribute__((section(".data.iwram"), long_call, noinline))   // hot code runs from IWRAM (ROM is ~6x slower)
 #else
@@ -1672,7 +1763,7 @@ static const char *const TBODY[TN] = {
 // ----- card tiles (built once at boot, above the ANT EYE overlay tiles) and the picture canvas -----
 #define BIGF 544                                       // 2x gold title font, 2 tiles per glyph (top, bottom): 544..623
 #define BAND 624                                       // the picture: BW x BH tiles: 624..763
-#define ORN  764                                       // 764 rule, 765/766 centre diamond, 767/768 pip on/off, 769 arrow
+// ORN 764:                                      // 764 rule, 765/766 centre diamond, 767/768 pip on/off, 769 arrow
 #define BW 28
 #define BH 5
 enum { C_SKY = 1, C_CREAM, C_GOLD, C_WATER, C_SAND, C_GRASS, C_HILL, C_RED, C_DARK, C_GRAY, C_STEEL, C_PINK, C_WHITE, C_LEAF, C_NAVY };
@@ -2211,7 +2302,7 @@ static void options_screen(void) {
 #define PM_N 9
 #define PM_MUS 6
 #define PM_SPD 7
-static const char *const PITEM[PM_N] = {"RESUME", "ANT EYE VIEW", "TRADE FOOD FOR AP", "OPTIONS", "CONTROLS", "HOW TO PLAY", "MUSIC", "SPEED", "QUIT TO TITLE"};
+static const char *const PITEM[PM_N] = {"RESUME", "ANT EYE VIEW", "TRADE FOOD FOR AP", "OPTIONS", "CONTROLS", "HOW TO PLAY", "MUSIC", "SPEED", "QUIT TO MENU"};
 static const char *const PHINT[PM_N] = {"BACK TO THE GAME", "SEE THE WORLD AS AN ANT", "2 FOOD BECOMES 4 AP", "RULES  LOOK  SOUND AND MORE", "BUTTONS AND RULES",
   "REPLAY THE LESSON CARDS", "MUSIC ON OR OFF", "LEFT RIGHT CHANGES SPEED", "GIVE UP AND LEAVE"};
 static u8 pm_do;                                       // what to do after the menu closes: 1 ant eye, 2 trade
@@ -2242,41 +2333,50 @@ static void pm_draw(void) {                            // everything except the 
   if (!c) ps(7, 8, "NONE YET", 10);
 
 }
-static void pm_menu(u8 sel, u8 conf) {
-  u8 i, x, y;
+static const char *const PBTN[PM_N] = {"RESUME", "ANT EYE", "TRADE", "OPTIONS", "HELP", "LESSONS", "MUSIC", "SPEED", "QUIT"};
+static void pm_menu(u8 sel, u8 conf) {                 // a 3 x 3 board of bark buttons (rows 10-18); the chosen one glows gold
+  u8 i, x, y, x0, y0, w, pal; u16 t; const char *n;
   for (i = 0; i < PM_N; i++) {
-    y = (u8)(10 + i);
-    for (x = 1; x < 29; x++) BGMAP1[y * 32 + x] = (u16)(1 | (3 << 12));
-    if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
-    ps(3, y, (conf && i == sel) ? "SURE? A YES   B NO" : PITEM[i], i == sel ? 9 : 3);
-    if (i == PM_MUS) ps(23, y, nomus ? "OFF" : "ON", 9);
-    if (i == PM_SPD) ps(15, y, SPNAME[spd], 9);
+    x0 = (u8)(1 + (i % 3) * 9); w = (u8)(i % 3 == 2 ? 10 : 9); y0 = (u8)(10 + (i / 3) * 3); pal = i == sel ? 6 : 0;
+    for (y = y0; y < y0 + 3; y++) for (x = x0; x < x0 + w; x++) {
+      if (y == y0) t = x == x0 ? UIB + 4 : x == x0 + w - 1 ? UIB + 6 : UIB + 5;
+      else if (y == y0 + 2) t = x == x0 ? UIB + 9 : x == x0 + w - 1 ? UIB + 11 : UIB + 10;
+      else t = x == x0 ? UIB + 7 : x == x0 + w - 1 ? UIB + 8 : UIB + 31;
+      BGMAP3[y * 32 + x] = (u16)(t | (pal << 12)); BGMAP1[y * 32 + x] = 0;
+    }
+    n = (conf && i == sel) ? "SURE?" : PBTN[i];
+    ps((u8)(x0 + (w - blen2(n)) / 2), (u8)(y0 + 1), n, (conf && i == sel) ? 8 : i == sel ? 9 : 3);
   }
-  for (x = 1; x < 29; x++) BGMAP1[19 * 32 + x] = (u16)(1 | (3 << 12));
-  ps(1, 19, (sel == PM_SPD && !spd_ok() && !conf) ? "10 WINS UNLOCK 2 SPEEDS" : PHINT[sel], 10);
+  for (x = 1; x < 30; x++) BGMAP1[19 * 32 + x] = (u16)(1 | (3 << 12));
+  if (conf) ps(1, 19, "QUIT THE GAME?  \1 YES  \2 NO", 8);
+  else if (sel == PM_MUS) { ps(1, 19, "MUSIC IS", 10); ps(10, 19, nomus ? "OFF" : "ON", 9); ps(15, 19, "\1 SWITCH", 10); }
+  else if (sel == PM_SPD) { ps(1, 19, SPNAME[spd], 9); ps(17, 19, spd_ok() ? "\1 UP \3 DOWN" : "\1 CHANGE", 10); }
+  else ps(1, 19, PHINT[sel], 10);
 }
 static void pause_menu(void) {
   u8 sel = 0, conf = 0, run = 1, act, i; u16 k, p, prev = 0;
   hide_all(); vsync(); oam_flush();
   while (joy()) vsync();
-  pm_draw(); pm_menu(sel, conf);
+  pm_draw(); for (i = 0; i < 16; i++) BGPAL[96 + i] = BGPAL[i]; pm_menu(sel, conf);
   while (run) {
-    vsync(); k = joy(); p = k & ~prev; prev = k;
+    vsync(); k = joy(); p = k & ~prev; prev = k; hub_glow((u8)frc++);
     if (!p) continue;
     if (conf) {                                        // quit confirmation: A = yes, anything else cancels
       if (p & J_A) { over = 3; tut = 0; break; }
       conf = 0; pm_menu(sel, conf); continue;
     }
     if (p & (J_START | J_B)) break;
-    if (p & J_UP)   { sel = sel ? sel - 1 : PM_N - 1; sfx_food(); }
-    if (p & J_DOWN) { sel = sel == PM_N - 1 ? 0 : sel + 1; sfx_food(); }
-    act = (u8)((p & J_A) || ((p & (J_LEFT | J_RIGHT)) && (sel == PM_MUS || sel == PM_SPD)));
+    if (p & J_UP)    { sel = (u8)((sel + 6) % 9); sfx_food(); }
+    if (p & J_DOWN)  { sel = (u8)((sel + 3) % 9); sfx_food(); }
+    if (p & J_LEFT)  { sel = (u8)(sel % 3 ? sel - 1 : sel + 2); sfx_food(); }
+    if (p & J_RIGHT) { sel = (u8)(sel % 3 == 2 ? sel - 2 : sel + 1); sfx_food(); }
+    act = (u8)((p & J_A) || ((p & J_L) && sel == PM_SPD));
     if (act) {
       switch (sel) {
       case 0: run = 0; break;
       case 1: pm_do = 1; run = 0; break;
       case 2: pm_do = 2; run = 0; break;
-      case 3: options_screen(); if (!nomus && !mus_on) music_start(); pm_draw(); prev = joy(); break;
+      case 3: options_screen(); if (!nomus && !mus_on) music_start(); pm_draw(); for (i = 0; i < 16; i++) BGPAL[96 + i] = BGPAL[i]; prev = joy(); break;
       case 4: help_show(); pm_draw(); prev = joy(); break;
       case 5: {
         u8 sv = tut; tview = 1; tut = 1;               // browse the lesson cards without changing the game
@@ -2284,7 +2384,7 @@ static void pause_menu(void) {
         tut = sv; tview = 0; pm_draw(); prev = joy(); break;
       }
       case PM_MUS: nomus ^= 1; opt[O_MUSIC] = nomus; if (nomus) music_stop(); else music_start(); sfx_mana(); break;
-      case PM_SPD: spd_next((p & J_LEFT) ? -1 : 1); sfx_mana(); break;
+      case PM_SPD: spd_next((p & J_L) ? -1 : 1); sfx_mana(); break;
       default: conf = 1; sfx_deny(); break;
       }
     }
@@ -2498,6 +2598,7 @@ static void gfx_init(void) {                          // palettes, tiles, maps, 
   for (k = 0; k < 13 * 8; k++) TILE2[DEC * 8 + k] = DECO[k];                           // food, trails, nest mound
   for (k = 0; k < 24 * 8; k++) OBJT32[k] = SPRT[k];                                    // sprites
   for (k = 0; k < 64 * 8; k++) OBJT32[BIGT * 8 + k] = BIGS[k];                         // ANT EYE big sprites
+  for (k = 0; k < 64 * 8; k++) OBJT32[ICNT_T * 8 + k] = ICNT[k];                       // home screen icons
   for (i = 0; i < 16; i++) {
     BGPAL[176 + i] = PAL_TERR[i]; BGPAL[192 + i] = PAL_DEC[i];
     OBJPAL[i] = PAL_ANT0[i]; OBJPAL[16 + i] = PAL_ANT1[i]; OBJPAL[48 + i] = PAL_FX[i]; OBJPAL[96 + i] = PAL_DEC[i]; OBJPAL[64 + i] = RGB(31, 31, 31);
