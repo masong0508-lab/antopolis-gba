@@ -747,8 +747,15 @@ static u8 spawn(u8 team) {
 }
 static void count(u8 *c) { u8 i; c[0] = c[1] = 0; for (i = 0; i < MAXA; i++) if (ant[i].alive) c[ant[i].team]++; }
 
+static u16 st_food, st_kill, st_lost, st_flood; static u8 st_peak, nhist, hmask;   // end-of-game stats
+static u8 hist[2][64];                            // colony sizes over time (yours, red) for the end graph
+static void hist_add(void) {
+  u8 i;
+  if (nhist == 64) { for (i = 0; i < 32; i++) { hist[0][i] = hist[0][i * 2]; hist[1][i] = hist[1][i * 2]; } nhist = 32; hmask = (u8)(hmask * 2 + 1); }
+  hist[0][nhist] = ncnt[0]; hist[1][nhist] = ncnt[1]; nhist++;
+}
 static void apr(s8 d) { s16 v = (s16)appr + d; appr = v < 0 ? 0 : v > 99 ? 99 : (u8)v; }
-static void die(Ant *a, u8 drown) { a->alive = 0; if (a->team == 0) apr(-2); if (drown && a->team == 1 && ++rdrown >= 20) ach_get(3); fx_add(a->x, a->y, drown ? FX_SPLASH : FX_PUFF); }
+static void die(Ant *a, u8 drown) { a->alive = 0; if (a->team) st_kill++; else st_lost++; if (a->team == 0) apr(-2); if (drown && a->team == 1 && ++rdrown >= 20) ach_get(3); fx_add(a->x, a->y, drown ? FX_SPLASH : FX_PUFF); }
 static void set_rules(void) {
   fcost = 8; hc0 = 3; hc1 = RCOST[diff]; tm = TRK[diff]; dm = 31; qbase = (u8)(3 + O(O_HEARTS)); qmax0 = qbase;
   if (O(O_REFILL) == 0) tm = (u8)((tm << 1) | 1); else if (O(O_REFILL) == 2) tm >>= 1;
@@ -824,7 +831,7 @@ static void step_ant(Ant *a) {
   if (found) { a->x += DX[bd]; a->y += DY[bd]; a->age = 0; if (DX[bd]) a->fl = DX[bd] < 0; }
   if (a->carry && a->x == nestx[t] && a->y == nesty[t]) {
     a->carry = 0; if (stock[t] < 99) stock[t]++;
-    if (t == 0) { mana = (mana + MANA_PER_FOOD > MANA_MAX) ? MANA_MAX : mana + MANA_PER_FOOD; apr(1); sfx_food(); fx_add(a->x, a->y, FX_PLUS); }
+    if (t == 0) { st_food++; mana = (mana + MANA_PER_FOOD > MANA_MAX) ? MANA_MAX : mana + MANA_PER_FOOD; apr(1); sfx_food(); fx_add(a->x, a->y, FX_PLUS); }
   }
   if (!a->carry && qhp[e] && a->x == nestx[e] && a->y == nesty[e]) {
     if (a->sol) {
@@ -873,7 +880,7 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
   if ((gt & 3) == 0) for (y = slice; y < H; y += 8) for (x = 0; x < W; x++) if (ph[y][x]) ph[y][x]--;
   if (++slice < 8) return;
   slice = 0; gt++;
-  count(ncnt);
+  count(ncnt); if (ncnt[0] > st_peak) st_peak = ncnt[0]; if ((gt & hmask) == 0) hist_add();
   for (i = 0; i < 2; i++) {
     if (!qhp[i]) continue;
     cst = i ? hc1 : hc0;
@@ -1119,6 +1126,7 @@ static void newgame(void) {
   count(ncnt);
   perk = 0; pend = 0; set_rules(); spd = (u8)(3 + O(O_GSPD)); sf = 0; appr = 50; etk = 0; slice = 0; cheat = 0; cx = nestx[0] + 2; cy = nesty[0] - 2; mana = (u8)(5 + 5 * O(O_AP)); gt = 0; over = 0; msgt = 0; timeup = 0;
   shk = 0; shx = 0; alt = 0; jmp = 0; qlost = 0; rdrown = 0; ewins = 0;
+  st_food = st_kill = st_lost = st_flood = 0; st_peak = ncnt[0]; nhist = 0; hmask = 15; hist_add();
   camx = 0; camy = H - VH; follow(); scx = (s16)camx * 8; scy = (s16)camy * 8;
   win_all();
   bfs(0); bfs(1); pdirty = 0; bj_again = 0;
@@ -1152,7 +1160,7 @@ static void offering(void) {
 static void flood(void) {
   s8 x, y;
   if (mana < fcost) { sfx_deny(); say(fcost == 4 ? "FLOOD NEEDS 4 AP" : "FLOOD NEEDS 8 AP"); return; }
-  mana -= fcost; sfx_flood(); tev |= 8; shk = 10;
+  mana -= fcost; sfx_flood(); tev |= 8; shk = 10; st_flood++;
   for (y = (s8)cy - 1; y <= (s8)cy + 1; y++) for (x = (s8)cx - 1; x <= (s8)cx + 1; x++)
     if (x >= 0 && y >= 0 && x < W && y < H && hgt[y][x] && !is_nest(x, y)) { hgt[y][x]--; if (!hgt[y][x]) food[y][x] = 0; }
   for (y = (s8)cy - 2; y <= (s8)cy + 2; y++) for (x = (s8)cx - 2; x <= (s8)cx + 2; x++)
@@ -2488,6 +2496,7 @@ static u16 calc_score(u32 secs) {                 // 300/600/900 by level + spee
   if (secs < 600) sc = (u16)(sc + 600 - secs);
   return (u16)(sc + ncnt[0] * 5 + appr + qhp[0] * 10);
 }
+static void pu(u8 x, u8 y, u16 v, u8 p) { u8 i; for (i = 4; i--; v /= 10) pc(x + i, y, (i < 3 && !v) ? ' ' : (char)('0' + v % 10), p); }   // no leading zeros
 static void pd(u8 x, u8 y, u16 v, u8 p) { u8 i; for (i = 4; i--; v /= 10) pc(x + i, y, (char)('0' + v % 10), p); }
 static void big(u8 y, const char *t) {             // centred 2x gold title (letters, digits, : ! / only)
   u8 n = blen2(t), x, g, i;
@@ -2519,7 +2528,7 @@ static void perk_card(void) {
   ov_clear(); hud();
 }
 static void end_card(void) {
-  u32 s = (u32)gt * 2 / 15; u8 nb = 0, nh = 0; u16 sc = 0;
+  u32 s = (u32)gt * 2 / 15; u8 nb = 0, nh = 0, i; u16 sc = 0;
   hide_all(); oam_flush();
   ov_fill(1, 3, 0, 19); ui_full();
   if (over == 1) {
@@ -2533,14 +2542,45 @@ static void end_card(void) {
     if (!sc) sc = calc_score(s);
     big(2, "VICTORY!"); ps(5, 5, timeup ? "TIME UP: YOUR COLONY WINS" : "THE RED QUEEN HAS FALLEN", 3);
   } else { big(2, "DEFEAT"); ps(5, 5, timeup ? "TIME UP: THE RED ANTS WIN" : "YOUR QUEEN HAS FALLEN", 3); }
-  pm_rule(7);
-  ps(5, 9, "TIME", 9);   pn(16, 9, (u8)(s / 60 > 99 ? 99 : s / 60), 3); pc(18, 9, ':', 3); pz(19, 9, (u8)(s % 60), 3); if (nb) ps(22, 9, "BEST!", 9);
-  ps(5, 10, "ANTS LEFT", 9); pn(16, 10, ncnt[0], 3);
-  ps(5, 11, "MAP", 9); ps(16, 11, mname(mapt), 3); pn(5, 12, mw, 3); ps(8, 12, "X", 10); pn(10, 12, mh, 3);
-  ps(16, 12, DNAME[diff], 3);
-  if (over == 1) { ps(5, 13, "SCORE", 9); pd(16, 13, sc, 3); if (nh) ps(22, 13, "HIGH!", 9); }
-  pm_rule(15);
-  ps(7, 17, "PRESS \5 START", 9);
+  pm_rule(6);
+  ps(2, 7, "TIME", 10); pn(9, 7, (u8)(s / 60 > 99 ? 99 : s / 60), 3); pc(11, 7, ':', 3); pz(12, 7, (u8)(s % 60), 3); if (nb) ps(2, 8, "NEW BEST!", 9);
+  ps(16, 7, "FOOD", 10); pu(24, 7, st_food, 3);
+  ps(16, 8, "BEATEN", 10); pu(24, 8, st_kill, 3);
+  ps(16, 9, "LOST", 10); pu(24, 9, st_lost, 3);
+  ps(16, 10, "BIGGEST", 10); pn(26, 10, st_peak, 3);
+  ps(2, 9, "FLOODS", 10); pn(12, 9, (u8)(st_flood > 99 ? 99 : st_flood), 3);
+  ps(2, 10, DNAME[diff], 9); ps(7, 10, mname(mapt), 3);
+  if (over == 1) { ps(2, 11, "SCORE", 10); pu(9, 11, sc, 9); if (nh) ps(2, 12, "HIGH SCORE!", 9); }
+  {                                                // the colony graph: your ants (white) and red ants over the whole game
+    u8 x, y, tx, ty, i, mx2 = 1, n = nhist < 2 ? 2 : nhist; u32 w;
+    for (i = 0; i < nhist; i++) { if (hist[0][i] > mx2) mx2 = hist[0][i]; if (hist[1][i] > mx2) mx2 = hist[1][i]; }
+    mv_pal();
+    for (ty = 0; ty < 4; ty++) for (tx = 0; tx < 12; tx++) {
+      for (y = 0; y < 8; y++) {
+        u8 py = (u8)(ty * 8 + y); w = 0;
+        for (x = 0; x < 8; x++) {
+          u8 px = (u8)(tx * 8 + x), c = (py == 31 || px == 0) ? 11 : (py & 7) == 0 && (px & 1) ? 12 : 1;
+          u8 k = (u8)((u16)px * (n - 1) / 95), k0 = (u8)((u16)(px ? px - 1 : 0) * (n - 1) / 95), j;
+          for (j = 0; j < 2; j++) if (k < nhist) {      // a line: from the last column's height to this one's
+            u8 v = (u8)(31 - (u16)hist[j][k] * 30 / mx2), v0 = (u8)(31 - (u16)hist[j][k0] * 30 / mx2);
+            u8 lo = v < v0 ? v : v0, hi = v < v0 ? v0 : v;
+            if (py >= lo && py <= hi) c = j ? 7 : 6; }
+          w |= (u32)c << (4 * x);
+        }
+        TILE32[(MAPT + ty * 12 + tx) * 8 + y] = w;
+      }
+      BGMAP1[(13 + ty) * 32 + 16 + tx] = (u16)((MAPT + ty * 12 + tx) | (6 << 12));
+    }
+    ps(16, 12, "ANTS", 3); ps(21, 12, "YOU", 1); ps(25, 12, "RED", 8);
+  }
+  if (over == 1) {                                 // medals: winning, a safe queen, and speed
+    u8 m = (u8)(1 + !qlost + (s < 300));
+    ps(2, 14, "CROWNS", 10);
+    for (i = 0; i < 3; i++) ps((u8)(2 + i * 4), 15, "$", i < m ? 9 : 15);
+    ps(2, 16, m == 3 ? "PERFECT!" : !qlost ? "QUEEN SAFE" : "TRY FASTER", m == 3 ? 13 : 3);
+  }
+  pm_rule(18);
+  ps(9, 19, "PRESS \5 START", 9);
 }
 static void play(void) {
   u16 k, prev, p, last = 0; u8 dirs, rep = 0, fire, t = 4, ki = 0, selused = 0, selprev = 0, n, mx, my;
