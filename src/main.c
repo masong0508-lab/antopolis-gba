@@ -1188,56 +1188,136 @@ static u8 tsel;                                    // NEW GAME rows: 0 LEVEL, 1 
 #define BIGT 24
 #define ORN  764                                       // 764 rule, 765/766 centre diamond, 767/768 pip on/off, 769 arrow
 #define ICNT_T 96                                  // OBJ tiles of the home screen icons: book 96, map 112, trophy 128, gear 144
-// ---------- NEW GAME: pick the level, the map, its size and sandbox, then go ----------
-static void ng_draw(void) {
-  const HandMap *hm = hmap(mapt); u8 hand = (u8)(hm != 0), s;
-  ov_fill(1, 3, 0, 19); ui_full();
-  big(1, "NEW GAME"); pm_rule(4);
-  #define NGR(s) ((u8)((s) == 0 ? 6 : (s) == 1 ? 8 : (s) <= 3 ? 11 : (s) == 4 ? 13 : 16))
-  for (s = 0; s < 6; s++) if (s != 3 && tsel == s) BGMAP1[NGR(s) * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
-  if (tsel == 3) BGMAP1[NGR(3) * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
-  ps(3, 6, "LEVEL", tsel == 0 ? 9 : 3); ps(11, 6, "<", 10); ps(13, 6, DNAME[diff], 9); ps(18, 6, ">", 10);
-  if (wins[diff]) { pn(21, 6, wins[diff], 13); ps(24, 6, "WINS", 10); }
-  ps(3, 8, "MAP", tsel == 1 ? 9 : 3); ps(11, 8, "<", 10); ps(13, 8, mname(mapt), 9); ps((u8)(13 + blen2(mname(mapt)) + 1), 8, ">", 10);
-  ps((u8)(15 - (blen2(mdesc(mapt)) + 1) / 2), 9, mdesc(mapt), 10);
-  ps(3, 11, "SIZE", tsel == 2 || tsel == 3 ? 9 : 3);
-  if (hand) { pn(12, 11, hm->w, 3); ps(15, 11, "X", 10); pn(17, 11, hm->h, 3); ps(21, 11, "FIXED", 10); }
-  else {
-    pc(11, 11, '<', 10); pn(12, 11, tw, tsel == 2 ? 9 : 3); pc(14, 11, '>', 10); ps(16, 11, "X", 3);
-    pc(18, 11, '<', 10); pn(19, 11, th, tsel == 3 ? 9 : 3); pc(21, 11, '>', 10);
-    ps(23, 11, tsel == 2 ? "WIDE" : tsel == 3 ? "TALL" : "", 10);
+// ---------- MAP PICTURE: the whole world drawn into 12 x 12 BG tiles (96 x 96 pixels), palette bank 6 ----------
+// Used by the NEW GAME preview and the pause menu's MAP. Scale: 1, 2 or 3 pixels per cell so the map fills the box.
+#define MAPT 832                                   // BG tiles 832..975
+static u8 mv_m, mv_ox, mv_oy;                      // the longer side in cells (it fills 96 pixels), image offset in the box
+static void mv_pal(void) {
+  static const u16 MP[16] = {0, RGB(3,2,1), RGB(4,9,20), RGB(26,23,13), RGB(8,19,6), RGB(17,12,7), RGB(31,31,31), RGB(31,5,4),
+    RGB(2,2,4), RGB(31,10,8), RGB(31,27,6), RGB(26,20,4), RGB(10,8,6), RGB(6,14,28), RGB(12,24,9), RGB(31,31,12)};
+  u8 i; for (i = 0; i < 16; i++) BGPAL[96 + i] = MP[i];
+}
+// colours: 1 frame, 2 water, 3 sand, 4 grass, 5 hill, 6 your nest, 7 red nest, 8 your ant, 9 red ant, 10 food, 11 gold frame
+static u8 mv_cell(u8 cx2, u8 cy2) {                // the colour of one world cell
+  u8 h;
+  if (dist(cx2, nestx[0]) <= 1 && dist(cy2, nesty[0]) <= 1) return 6;
+  if (dist(cx2, nestx[1]) <= 1 && dist(cy2, nesty[1]) <= 1) return 7;
+  h = hgt[cy2][cx2];
+  if (food[cy2][cx2] && h) return 10;
+  return (u8)(h == 0 ? 2 : h == 1 ? 3 : h == 2 ? 4 : 5);
+}
+static void map_img(u8 col0, u8 row0, u8 objs) {  // draw it, with the tiles placed on BG1 at (col0, row0)
+  u8 tx, ty, y, x, i; u32 w; u16 m = (u16)(W > H ? W : H);
+  mv_m = (u8)m;
+  mv_ox = (u8)((96 - W * 96 / m) / 2); mv_oy = (u8)((96 - H * 96 / m) / 2);
+  mv_pal();
+  for (ty = 0; ty < 12; ty++) {                    // one pixel row at a time: work out its 96 colours once, then pack 12 tiles
+    for (y = 0; y < 8; y++) {
+      static u8 row[96]; u8 py = (u8)(ty * 8 + y); s16 wy = (s16)py - mv_oy;
+      u8 cyy = (u8)(wy * mv_m / 96), in_y = (u8)(wy >= 0 && cyy < H && wy < 96 - 2 * mv_oy), x2;
+      for (x2 = 0; x2 < 96; x2++) {
+        s16 wx2 = (s16)x2 - mv_ox;
+        u8 cxx = (u8)(wx2 * mv_m / 96);
+        row[x2] = (u8)(in_y && wx2 >= 0 && wx2 < 96 - 2 * mv_ox && cxx < W ? mv_cell(cxx, cyy) : 0);
+      }
+      for (tx = 0; tx < 12; tx++) {
+        w = 0; for (x = 0; x < 8; x++) w |= (u32)row[tx * 8 + x] << (4 * x);
+        TILE32[(MAPT + ty * 12 + tx) * 8 + y] = w;
+      }
+    }
+    for (tx = 0; tx < 12; tx++) BGMAP1[(row0 + ty) * 32 + col0 + tx] = (u16)((MAPT + ty * 12 + tx) | (6 << 12));
   }
-  ps(3, 13, "SANDBOX", tsel == 4 ? 9 : 3); ps(13, 13, sandbox ? "ON" : "OFF", sandbox ? 13 : 10);
-  ps(3, 14, sandbox ? "NO LIMITS: JUST PLAY" : "BEAT THE RED ANTS TO WIN", 10);
-  ps(3, 16, mapt == MMY && !has_my ? "MAKE YOUR MAP FIRST" : "START THE GAME!", tsel == 5 ? 9 : 13);
-  pm_rule(18);
-  ps(1, 19, "< > CHANGE  \1 GO  \2 BACK", 10);
+  if (objs) for (i = 0; i < MAXA; i++) if (ant[i].alive) {        // ants: one dot each (written straight into the tiles)
+    u8 px = (u8)(mv_ox + (ant[i].x * 2 + 1) * 48 / mv_m), py = (u8)(mv_oy + (ant[i].y * 2 + 1) * 48 / mv_m);
+    u16 t = (u16)(MAPT + (py >> 3) * 12 + (px >> 3)); u8 sh = (u8)(4 * (px & 7));
+    TILE32[t * 8 + (py & 7)] = (TILE32[t * 8 + (py & 7)] & ~(15u << sh)) | ((u32)(ant[i].team ? 9 : 8) << sh);
+  }
+}
+// the random number state, saved so the NEW GAME preview is exactly the map you then play
+static u32 snap_rs, snap_mst[10]; static u8 snap_mpi;
+static void snap_take(void) { u8 i; snap_rs = rs; for (i = 0; i < 10; i++) snap_mst[i] = mst[i]; snap_mpi = mpi; }
+static void snap_put(void) { u8 i; rs = snap_rs; for (i = 0; i < 10; i++) mst[i] = snap_mst[i]; mpi = snap_mpi; }
+static void map_view(void) {                       // pause menu > MAP: the whole world; move the box, A jumps there
+  u16 k, p, prev = joy(), fr = 0; u8 mx = cx, my = cy, rep = 0;
+  hide_all(); oam_flush();
+  ov_fill(0, 0, 0, 19); ui_full();
+  ps(1, 0, "THE WHOLE MAP", 9);
+  map_img(9, 2, 1);
+  ps(1, 15, "\1 GO THERE  \2 BACK", 10);
+  ps(1, 17, "BLACK: YOUR ANTS  RED: FOES", 3); ps(1, 18, "YELLOW: FOOD  WHITE: HOME", 3);
+  for (;;) {
+    vsync(); fr++; k = joy(); p = k & ~prev; prev = k;
+    if (k & (J_UP | J_DOWN | J_LEFT | J_RIGHT)) { if (++rep > 12 && (fr & 1)) p |= k; } else rep = 0;
+    if (p & J_LEFT && mx) mx--; if (p & J_RIGHT && mx < W - 1) mx++;
+    if (p & J_UP && my) my--; if (p & J_DOWN && my < H - 1) my++;
+    if (p & J_B) break;
+    if (p & J_A) { cx = mx; cy = my; follow(); sfx_spawn(); break; }
+    {
+      int sx = 9 * 8 + mv_ox + (mx * 2 + 1) * 48 / mv_m - 8, sy = 2 * 8 + mv_oy + (my * 2 + 1) * 48 / mv_m - 8;
+      if (fr & 8) { spr(0, sx, sy, 20, 2, 0, 0); oam[1] |= 0x4000; } else spr_hide(0);   // the cursor box
+      oam_flush();
+    }
+  }
+  hide_all(); oam_flush();
+  while (joy()) vsync();
+}
+// ---------- NEW GAME: pick the level, the map, its size and sandbox, then go ----------
+static void ng_preview(void) {                     // build the map now (from the saved random state) and show it
+  { u8 x, y; for (y = 4; y < 16; y++) for (x = 17; x < 29; x++) BGMAP1[y * 32 + x] = 0; }
+  if (mapt == MMY && !has_my) { ps(18, 9, "NOT MADE", 15); ps(18, 10, "YET", 15); return; }
+  ps(19, 9, "DIGGING", 10);
+  snap_put(); gen_world(); snap_put();
+  map_img(17, 4, 0);
+}
+static void ng_text(void) {                        // the settings on the left (cols 1-16), the map picture on the right
+  const HandMap *hm = hmap(mapt); u8 hand = (u8)(hm != 0), s, x, y;
+  static const u8 NGR[6] = {4, 7, 10, 11, 13, 16};
+  for (y = 3; y < 18; y++) for (x = 1; x < 17; x++) BGMAP1[y * 32 + x] = (u16)(1 | (3 << 12));
+  ov_fill(1, 3, 16, 17);
+  for (s = 0; s < 6; s++) if (tsel == s) BGMAP1[NGR[s] * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
+  ps(3, 4, "LEVEL", tsel == 0 ? 9 : 3); if (wins[diff]) { pn(10, 4, wins[diff], 13); ps(13, 4, "WON", 10); }
+  ps(3, 5, "<", 10); ps((u8)(9 - blen2(DNAME[diff]) / 2), 5, DNAME[diff], 9); ps(14, 5, ">", 10);
+  ps(3, 7, "MAP", tsel == 1 ? 9 : 3);
+  ps(2, 8, "<", 10); ps((u8)(9 - blen2(mname(mapt)) / 2), 8, mname(mapt), 9); ps(15, 8, ">", 10);
+  ps(3, 10, "WIDE", tsel == 2 ? 9 : 3); ps(3, 11, "TALL", tsel == 3 ? 9 : 3);
+  if (hand) { pn(10, 10, hm->w, 15); pn(10, 11, hm->h, 15); ps(13, 10, "SET", 15); }
+  else { pc(8, 10, '<', 10); pn(10, 10, tw, 9); pc(13, 10, '>', 10); pc(8, 11, '<', 10); pn(10, 11, th, 9); pc(13, 11, '>', 10); }
+  ps(3, 13, "SANDBOX", tsel == 4 ? 9 : 3); ps(11, 13, sandbox ? "ON" : "OFF", sandbox ? 13 : 10);
+  ps(3, 14, sandbox ? "NO LIMITS" : "BEAT THE RED", 15);
+  ps((u8)(15 - (blen2(mdesc(mapt)) + 1) / 2), 17, mdesc(mapt), 10);
+  ps(3, 16, mapt == MMY && !has_my ? "MAKE IT FIRST" : "START GAME!", tsel == 5 ? 9 : 13);
+}
+static void ng_draw(void) {
+  ov_fill(1, 3, 0, 19); ui_full();
+  big(0, "NEW GAME"); pm_rule(2); pm_rule(18);
+  ps(1, 19, "\1 GO  \2 BACK  \6 NEW MAP", 10);
+  ng_text(); ng_preview();
 }
 static u8 newgame_menu(void) {                     // 0 = back, 1 = play, 2 = open the editor (to make MY MAP first)
-  u16 k, p, prev = joy();
+  u16 k, p, prev = joy(), fr = 0; u8 dirty = 0;
   hide_all(); oam_flush();
   if (tsel > 5) tsel = 5;
-  ng_draw();
+  snap_take(); ng_draw();
   for (;;) {
-    vsync(); k = joy(); p = k & ~prev; prev = k;
-    rs ^= (u32)VCOUNT * 2654435761u + k; if (!rs) rs = 1; pool_mix(rs ^ k);
-    if (!p) continue;
+    vsync(); fr++; k = joy(); p = k & ~prev; prev = k;
+    if (!p) { if (dirty && ++dirty > 30) { dirty = 0; ng_preview(); } continue; }   // re-dig the picture once you stop pressing
     if (p & J_B) { sfx_food(); return 0; }
-    if (p & J_DOWN) { tsel = (u8)(tsel == 5 ? 0 : tsel + 1); if (tsel == 3 && hmap(mapt)) tsel = 4; sfx_food(); ng_draw(); }
-    if (p & J_UP)   { tsel = (u8)(tsel == 0 ? 5 : tsel - 1); if (tsel == 3 && hmap(mapt)) tsel = 2; sfx_food(); ng_draw(); }
+    if (p & J_SEL) { pool_mix(fr * 2654435761u ^ VCOUNT); rs ^= (u32)fr * 40503u + VCOUNT; if (!rs) rs = 1; snap_take(); sfx_mana(); ng_preview(); continue; }
+    if (p & J_DOWN) { tsel = (u8)(tsel == 5 ? 0 : tsel + 1); if (hmap(mapt) && (tsel == 2 || tsel == 3)) tsel = 4; sfx_food(); ng_text(); }
+    if (p & J_UP)   { tsel = (u8)(tsel == 0 ? 5 : tsel - 1); if (hmap(mapt) && (tsel == 2 || tsel == 3)) tsel = 1; sfx_food(); ng_text(); }
     if (p & (J_LEFT | J_RIGHT)) {
       s8 dd = (p & J_RIGHT) ? 1 : -1;
       if (tsel == 0) diff = (u8)((diff + 3 + dd) % 3);
-      else if (tsel == 1) mapt = (u8)((mapt + MAPN + dd) % MAPN);
-      else if (tsel == 2) tw = (u8)(tw + dd * 8 < 32 ? 96 : tw + dd * 8 > 96 ? 32 : tw + dd * 8);
-      else if (tsel == 3) th = (u8)(th + dd * 8 < 32 ? 96 : th + dd * 8 > 96 ? 32 : th + dd * 8);
+      else if (tsel == 1) { mapt = (u8)((mapt + MAPN + dd) % MAPN); dirty = 1; }
+      else if (tsel == 2 && !hmap(mapt)) { tw = (u8)(tw + dd * 8 < 32 ? 96 : tw + dd * 8 > 96 ? 32 : tw + dd * 8); dirty = 1; }
+      else if (tsel == 3 && !hmap(mapt)) { th = (u8)(th + dd * 8 < 32 ? 96 : th + dd * 8 > 96 ? 32 : th + dd * 8); dirty = 1; }
       else if (tsel == 4) sandbox ^= 1;
       else continue;
-      sfx_food(); ng_draw();
+      sfx_food(); ng_text();
     }
-    if (p & J_A && tsel == 4) { sandbox ^= 1; sfx_food(); ng_draw(); continue; }
+    if ((p & J_A) && tsel == 4) { sandbox ^= 1; sfx_food(); ng_text(); continue; }
     if ((p & J_START) || ((p & J_A) && tsel != 4)) {
-      tutor = 0; sfx_mana();
+      tutor = 0; sfx_mana(); snap_put();
       if (mapt == MMY && !has_my) { sandbox = 0; return 2; }
       return 1;
     }
@@ -2304,7 +2384,7 @@ static void options_screen(void) {
 #define PM_SPD 7
 static const char *const PITEM[PM_N] = {"RESUME", "ANT EYE VIEW", "TRADE FOOD FOR AP", "OPTIONS", "CONTROLS", "HOW TO PLAY", "MUSIC", "SPEED", "QUIT TO MENU"};
 static const char *const PHINT[PM_N] = {"BACK TO THE GAME", "SEE THE WORLD AS AN ANT", "2 FOOD BECOMES 4 AP", "RULES  LOOK  SOUND AND MORE", "BUTTONS AND RULES",
-  "REPLAY THE LESSON CARDS", "MUSIC ON OR OFF", "LEFT RIGHT CHANGES SPEED", "GIVE UP AND LEAVE"};
+  "SEE THE WHOLE WORLD", "MUSIC ON OR OFF", "LEFT RIGHT CHANGES SPEED", "GIVE UP AND LEAVE"};
 static u8 pm_do;                                       // what to do after the menu closes: 1 ant eye, 2 trade
 static void pm_rule(u8 y) {
   u8 x; for (x = 1; x < 29; x++) BGMAP1[y * 32 + x] = (u16)(ORN | (9 << 12));
@@ -2333,7 +2413,7 @@ static void pm_draw(void) {                            // everything except the 
   if (!c) ps(7, 8, "NONE YET", 10);
 
 }
-static const char *const PBTN[PM_N] = {"RESUME", "ANT EYE", "TRADE", "OPTIONS", "HELP", "LESSONS", "MUSIC", "SPEED", "QUIT"};
+static const char *const PBTN[PM_N] = {"RESUME", "ANT EYE", "TRADE", "OPTIONS", "HELP", "MAP", "MUSIC", "SPEED", "QUIT"};
 static void pm_menu(u8 sel, u8 conf) {                 // a 3 x 3 board of bark buttons (rows 10-18); the chosen one glows gold
   u8 i, x, y, x0, y0, w, pal; u16 t; const char *n;
   for (i = 0; i < PM_N; i++) {
@@ -2378,11 +2458,7 @@ static void pause_menu(void) {
       case 2: pm_do = 2; run = 0; break;
       case 3: options_screen(); if (!nomus && !mus_on) music_start(); pm_draw(); for (i = 0; i < 16; i++) BGPAL[96 + i] = BGPAL[i]; prev = joy(); break;
       case 4: help_show(); pm_draw(); prev = joy(); break;
-      case 5: {
-        u8 sv = tut; tview = 1; tut = 1;               // browse the lesson cards without changing the game
-        for (i = 0; i < TN && tut; i++) tut_card(i);
-        tut = sv; tview = 0; pm_draw(); prev = joy(); break;
-      }
+      case 5: map_view(); run = 0; break;
       case PM_MUS: nomus ^= 1; opt[O_MUSIC] = nomus; if (nomus) music_stop(); else music_start(); sfx_mana(); break;
       case PM_SPD: spd_next((p & J_L) ? -1 : 1); sfx_mana(); break;
       default: conf = 1; sfx_deny(); break;
