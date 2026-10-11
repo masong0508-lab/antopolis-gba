@@ -811,7 +811,7 @@ static void city_terr(void) { u8 x, y; if (ecity == 1) for (y = 0; y < H; y++) f
 static void city_newgame(void) {
   u8 sm = mapt, sw = tw, sh = th, x;
   if (cscen != 255) { mapt = SC[cscen].map; tw = SC[cscen].w; th = SC[cscen].h; }
-  DISPCNT = 0x80; BLDY = 0; ov_fill(1, 1, 0, 19); ui_full(); ps(5, 8, "DIGGING THE CITY...", 2); vsync(); DISPCNT = 0x0A00;
+  ld_begin(ecity == 2 ? "MAKING THE ANTVERSE..." : "DIGGING THE CITY...", cscen != 255 ? SC[cscen].name : mname(mapt));
   gen_world();
   mapt = sm; tw = sw; th = sh;
   emp_setup_common();
@@ -834,6 +834,7 @@ static void city_newgame(void) {
   { u8 r; for (r = 0; r < H; r++) scan_rows(1); }
   cquiet = 1; city_cycle(); cquiet = 0; cmon = 0; nh2 = 0;
   if (cscen != 255 && SC[cscen].starter == 4) { u8 k; for (k = 0; k < 4; k++) fire_any(); }
+  ld_end();
   msgt = 0;
 }
 #define CSO 20480

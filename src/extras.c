@@ -1,8 +1,8 @@
 // ===================== EXTRAS (included from main.c): achievements, unlockables, cheats, records =====================
-// 56 achievements: bits 0-31 in SRAM 56..59, bits 32-55 in SRAM 9300..9303 ('X' 'A' at 9304 marks them valid).
+// 64 achievements: bits 0-31 in SRAM 56..59, bits 32-63 in SRAM 9300..9303 ('X' 'A' at 9304 marks them valid).
 // Many unlock rewards: ant colours, menu styles and cheats. Cheats are switched on in EXTRAS > CHEATS and last until you
 // switch them off (not saved). While any cheat is on, achievements are not earned (except CHEATER, of course).
-#define NACH 56
+#define NACH 64
 static const char *const ACN[NACH] = {
   "FIRST BLOOD", "SPEED QUEEN", "HARD SHELL", "FLOOD MASTER", "BIG LAND", "TO INFINITY", "ARCHITECT", "TOURIST",
   "FLAWLESS", "POPULAR", "FULL COLONY", "DEMOCRAT", "SETTLER", "CITY BUILDER", "METROPOLIS", "SCHOLAR",
@@ -10,7 +10,8 @@ static const char *const ACN[NACH] = {
   "CHAPTER ONE", "ZONED OUT", "DIPLOMAT", "SURVIVOR", "RICH", "CHEATER", "COMPLETIONIST", "OLD SCHOOL",
   "ANT HERO", "JAWS", "QUEENSLAYER", "TRAILBLAZER", "MAYOR", "TYCOON", "MEGA MAYOR", "CLEAN CITY",
   "SAFE STREETS", "FIREFIGHTER", "BEETLE BUSTER", "ALL TEN", "ANTVERSE HERO", "GOD OF ANTS", "BEST FRIENDS", "RIVALS",
-  "LINKED UP", "PASS THE GBA", "SKYSCRAPERS", "BIG BUDGET", "BUSY EMPIRE", "SECRET HUNTER", "BIG MAP MAKER", "LEGEND"};
+  "LINKED UP", "PASS THE GBA", "SKYSCRAPERS", "BIG BUDGET", "BUSY EMPIRE", "SECRET HUNTER", "BIG MAP MAKER", "LEGEND",
+  "EL PRESIDANTE", "LANDSLIDE", "HONEY POT", "IRON FIST", "PEOPLES HERO", "FACT FAN", "AGENT ANT", "MISSION MASTER"};
 static const char *const ACD[NACH] = {
   "WIN A CLASSIC GAME", "WIN IN UNDER 3 MINUTES", "WIN ON HARD", "DROWN 20 RED ANTS IN A GAME", "WIN ON A 96 X 96 MAP",
   "WIN AN INFINITE MAP", "SAVE A MAP IN THE EDITOR", "LOOK THROUGH THE ANT EYE", "WIN WITHOUT LOSING A HEART",
@@ -24,7 +25,9 @@ static const char *const ACD[NACH] = {
   "CITY: 2000 ANTS, CRIME UNDER 10", "DEW PUMPS SAVE 10 FIRES", "GUARDS BEAT A GIANT BEETLE", "FINISH ALL 10 SCENARIOS",
   "WIN AN ANTVERSE GAME", "USE ALL 5 GOD POWERS", "WIN A 2 PLAYER CO-OP GAME", "WIN A VERSUS GAME",
   "PLAY ON A LINK CABLE", "PASS THE GBA TO A FRIEND", "CITY: 50 LEVEL 3 HOMES", "CITY: EARN 500 A MONTH",
-  "EMPIRE: 80 BUILDINGS", "FIND ALL 3 SECRET CHEATS", "SAVE A 96 X 96 MAP", "GET 50 ACHIEVEMENTS"};
+  "EMPIRE: 80 BUILDINGS", "FIND ALL 3 SECRET CHEATS", "SAVE A 96 X 96 MAP", "GET 50 ACHIEVEMENTS",
+  "CITY: WIN 3 VOTES IN A GAME", "WIN A VOTE WITH 80 PERCENT", "HIDE *10000 IN THE HONEY POT", "STOP A COUP OR AN UPRISING",
+  "REACH 90 RESPECT", "READ 50 LOADING FACTS", "FINISH 10 ANTVERSE MISSIONS", "FINISH ALL 50 MISSIONS"};
 static const char *const ACR[NACH] = {     // what each one unlocks ("" = just the trophy)
   "GOLD ANTS", "CHEAT: WEATHER", "CHEAT: STRONG ANTS", "CHEAT: INFINITE AP", "CHEAT: FOOD RAIN", "", "", "",
   "CHEAT: GOD QUEEN", "PINK ANTS", "CHEAT: TURBO", "", "", "CHEAT: RICH COLONY", "", "CHEAT: ALL TECHS  WHITE ANTS",
@@ -32,9 +35,9 @@ static const char *const ACR[NACH] = {     // what each one unlocks ("" = just t
   "", "CHEAT: INSTANT ZONES", "CHEAT: PEACEFUL RIVALS", "CHEAT: BIG BROOD", "", "", "", "",
   "CHEAT: SUPER ANT", "CHEAT: IRON JAWS", "", "", "", "CHEAT: MONEY TREE", "", "",
   "", "CHEAT: NO FIRES", "", "", "", "", "", "CHEAT: GIANT FLOODS",
-  "", "", "", "", "", "", "", ""};
+  "", "", "", "", "", "", "", "",
+  "CHEAT: LOYAL MASSES", "", "CHEAT: RIGGED VOTES", "", "", "", "", ""};
 static u32 ach, ach2;
-#define NCHT 21
 static u8 any_cheat(void) { u8 i; for (i = 0; i < NCHT; i++) if (cht[i]) return 1; return 0; }
 static void ach_save(void) {
   SRAM[56] = (u8)ach; SRAM[57] = (u8)(ach >> 8); SRAM[58] = (u8)(ach >> 16); SRAM[59] = (u8)(ach >> 24);
@@ -66,19 +69,20 @@ static void ach_get(u8 i) {
 #define NSEC 13                                     // first secret cheat (13, 14, 15)
 static const char *const CHN[NCHT] = {"INFINITE AP", "GOD QUEEN", "WEATHER", "RICH COLONY", "ALL TECHS", "MEGA ARMY", "PARTY ANTS", "TURBO",
   "PEACEFUL RIVALS", "INSTANT ZONES", "FOOD RAIN", "STRONG ANTS", "BIG BROOD", "FAST RESEARCH", "FREE BUILD", "SLEEPY REDS",
-  "SUPER ANT", "IRON JAWS", "MONEY TREE", "NO FIRES", "GIANT FLOODS"};
+  "SUPER ANT", "IRON JAWS", "MONEY TREE", "NO FIRES", "GIANT FLOODS", "LOYAL MASSES", "RIGGED VOTES"};
 static const char *const CHD[NCHT] = {"CLASSIC: AP NEVER RUNS OUT", "YOUR QUEEN AND NEST CANT DIE", "CALM: NONE  CHAOS: LOTS",
   "EMPIRE: LOTS OF EVERYTHING", "EMPIRE: START KNOWING ALL", "EMPIRE: START WITH GUARDS", "YOUR ANTS CHANGE COLOR", "R SWITCHES TO X8 SPEED",
   "RED ANTS NEVER ATTACK", "EMPIRE: ZONES GROW FAST", "CLASSIC: FOOD FALLS FROM SKY", "YOUR ANTS WIN MORE FIGHTS", "MORE BABIES EACH HATCH",
   "EMPIRE: LEARN TECHS FASTER", "EMPIRE: BUILDINGS COST LESS", "CLASSIC: RED ANTS HATCH LESS",
-  "ANT EYE: NO BITES, RUN FAST", "ANT EYE: EVERY BITE WINS", "CITY: TAXES BRING MORE", "CITY: NOTHING CATCHES FIRE", "CLASSIC: FLOODS ARE 5 X 5"};
-static const u8 CHMAX[NCHT] = {1, 1, 2, 3, 1, 3, 3, 1, 1, 3, 3, 3, 2, 3, 2, 2, 1, 1, 2, 1, 1};
+  "ANT EYE: NO BITES, RUN FAST", "ANT EYE: EVERY BITE WINS", "CITY: TAXES BRING MORE", "CITY: NOTHING CATCHES FIRE", "CLASSIC: FLOODS ARE 5 X 5",
+  "PALACE: EVERY GROUP LOVES YOU", "PALACE: YOU WIN EVERY VOTE"};
+static const u8 CHMAX[NCHT] = {1, 1, 2, 3, 1, 3, 3, 1, 1, 3, 3, 3, 2, 3, 2, 2, 1, 1, 2, 1, 1, 1, 1};
 static const char *const CHV[NCHT][4] = {
   {"OFF", "ON"}, {"OFF", "ON"}, {"OFF", "CALM", "CHAOS"}, {"OFF", "250", "500", "999"}, {"OFF", "ON"}, {"OFF", "100", "250", "500"},
   {"OFF", "SLOW", "FAST", "STROBE"}, {"OFF", "ON"}, {"OFF", "ON"}, {"OFF", "X2", "X5", "X10"}, {"OFF", "LIGHT", "HEAVY", "STORM"},
   {"OFF", "X2", "X4", "SUPER"}, {"OFF", "TWINS", "TRIPLE"}, {"OFF", "X2", "X5", "INSTANT"}, {"OFF", "HALF", "FREE"}, {"OFF", "FEWER", "NONE"},
-  {"OFF", "ON"}, {"OFF", "ON"}, {"OFF", "X2", "X3"}, {"OFF", "ON"}, {"OFF", "ON"}};
-static const u8 CHA[NCHT] = {3, 8, 1, 13, 15, 18, 21, 10, 26, 25, 4, 2, 27, 255, 255, 255, 32, 33, 37, 41, 47};   // trophy that unlocks each (255 = secret code)
+  {"OFF", "ON"}, {"OFF", "ON"}, {"OFF", "X2", "X3"}, {"OFF", "ON"}, {"OFF", "ON"}, {"OFF", "ON"}, {"OFF", "ON"}};
+static const u8 CHA[NCHT] = {3, 8, 1, 13, 15, 18, 21, 10, 26, 25, 4, 2, 27, 255, 255, 255, 32, 33, 37, 41, 47, 56, 58};   // trophy that unlocks each (255 = secret code)
 static const u16 SECC[3][8] = {                    // the secret codes (no A, B, L or R: those do other things on the page)
   {J_UP, J_UP, J_UP, J_DOWN, J_DOWN, J_DOWN, J_START, J_SEL},
   {J_LEFT, J_LEFT, J_RIGHT, J_RIGHT, J_LEFT, J_RIGHT, J_START, J_START},
@@ -105,7 +109,7 @@ static void extras(void) {
     ps(1, 0, "\3", 1); ps((u8)(15 - (blen2(XTN[tab]) + 1) / 2), 0, XTN[tab], 9); ps(28, 0, "\4", 1);
     pm_rule(1);
     if (tab == 0) {
-      ps(2, 2, "EARNED", 10); pn(9, 2, ach_count(), 9); ps(12, 2, "OF 56", 10);
+      ps(2, 2, "EARNED", 10); pn(9, 2, ach_count(), 9); ps(12, 2, "OF", 10); pn(15, 2, NACH, 10);
       if (sel < top) top = sel; if (sel >= top + 5) top = (u8)(sel - 4);
       for (i = 0; i < 5 && top + i < NACH; i++) { u8 a = (u8)(top + i), y = (u8)(4 + i * 2);
         if (a == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
@@ -135,7 +139,7 @@ static void extras(void) {
         ps(2, y, DN3[i], 9); pn(10, y, wins[i], 3);
         if (b) { pn(16, y, (u8)(b / 60 > 99 ? 99 : b / 60), 3); pc(18, y, ':', 10); pz(19, y, (u8)(b % 60), 3); } else ps(17, y, "-", 15);
         pd(23, y, hiscore[i], 3); }
-      ps(2, 12, "TROPHIES", 10); pn(14, 12, ach_count(), 9); ps(17, 12, "OF 56", 10);
+      ps(2, 12, "TROPHIES", 10); pn(14, 12, ach_count(), 9); ps(17, 12, "OF", 10); pn(20, 12, NACH, 10);
       ps(2, 13, "STORY", 10); pc(14, 13, (char)('0' + (SRAM[63] <= 7 ? SRAM[63] : 0)), 9); ps(17, 13, "OF 7 DONE", 10);
       ps(2, 14, "EMPIRE MODE", 10); ps(14, 14, emp_unlocked() ? "OPEN" : "LOCKED", emp_unlocked() ? 13 : 15);
       ps(2, 15, "CITY GOALS", 10); pn(14, 15, scen_count(), 9); ps(17, 15, "OF 10 DONE", 10);

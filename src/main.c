@@ -158,7 +158,8 @@ static u32 mrnd(void) {
 }
 // ---------- OPTIONS (title: R, or the pause menu). Saved on the cartridge. ----------
 enum { O_PRESET, O_ANTS, O_AP, O_REFILL, O_REDN, O_REDATK, O_MYATK, O_HEARTS, O_DIS, O_ELECT, O_PERKS, O_FOOD, O_REGROW, O_TIME,
-       O_GSPD, O_CURSOR, O_HINTS, O_ALERTS, O_TRAILS, O_SHAKE, O_POPS, O_PANEL, O_ANTCOL, O_MUSIC, O_SFX, O_EYESPD, O_SKY, NOPT };
+       O_GSPD, O_CURSOR, O_HINTS, O_ALERTS, O_TRAILS, O_SHAKE, O_POPS, O_PANEL, O_ANTCOL, O_MUSIC, O_SFX, O_EYESPD, O_SKY,
+       O_FACTS, O_PZ, O_PZEL, O_PZREB, O_PZCOUP, O_PZPOW, O_PZHID, O_PZEVT, O_PZDIF, O_PZLOSE, NOPT };   // (O_FACTS.. live in the 2nd SRAM block)
 typedef struct { const char *name, *vals; u8 def; const char *h1, *h2; } Opt;
 static const Opt OPTS[NOPT] = {
   {"PRESET",        "CUSTOM|KIDS|CLASSIC|HARD", 2, "SETS THE GAME RULES BELOW", "KIDS: GENTLE  HARD: TOUGH"},
@@ -188,9 +189,22 @@ static const Opt OPTS[NOPT] = {
   {"SOUNDS",        "ON|OFF",                   0, "BEEPS  CRUNCHES AND", "SPLASHES"},
   {"ANT EYE SPEED", "SLOW|NORMAL|FAST",         1, "WALKING SPEED IN THE", "ANT EYE VIEW"},
   {"ANT EYE SKY",   "DAY|SUNSET|NIGHT",         0, "THE SKY IN THE ANT EYE", "VIEW"},
+  {"LOADING FACTS", "ON|OFF",                   0, "ANT BUG AND NATURE FACTS", "WHILE A NEW WORLD IS BUILT"},
+  {"EL PRESIDANTE", "OFF|FREE CITY|ALWAYS",     1, "TROPICO MODE FOR ANT CITY", "AND ANTVERSE: RULE THE ANTS"},
+  {"VOTE EVERY",    "2 YEARS|4 YEARS|6 YEARS|NEVER", 1, "HOW OFTEN THE CITY VOTES", "THE CHARTER CAN CHANGE IT"},
+  {"REBELS",        "OFF|CALM|NORMAL|FIERCE",   2, "UNHAPPY ANTS TURN REBEL", "AND ATTACK THE CITY"},
+  {"COUPS",         "ON|OFF",                   0, "ANGRY SOLDIERS CAN TRY", "TO TAKE THE PALACE"},
+  {"SUPERPOWERS",   "OFF|FRIENDLY|NORMAL|HOSTILE", 2, "THE RED EMPIRE AND THE", "GOLDEN HIVE: AID OR WAR"},
+  {"HIDDEN HAND",   "ON|OFF",                   0, "GROUPS QUIETLY CHANGE THE", "CITY: STRIKES CRIME SMOG"},
+  {"PALACE EVENTS", "OFF|RARE|NORMAL|OFTEN",    2, "SURPRISES WITH 2 CHOICES:", "SPIES STRIKES PROPHETS"},
+  {"GROUPS ARE",    "EASY|NORMAL|DEMANDING",    1, "HOW HARD IT IS TO KEEP", "EVERY GROUP HAPPY"},
+  {"IF YOU FALL",   "GAME OVER|COME BACK",      0, "LOSE A VOTE OR A COUP:", "THE END  OR EXILE + RETURN"},
 };
 static u8 opt[NOPT];
-static u8 cht[21];                                   // cheats switched on (EXTRAS > CHEATS)
+#define NCHT 23
+static u8 cht[NCHT];                                 // cheats switched on (EXTRAS > CHEATS)
+static void ld_step(void);                           // loading screens (see ld_begin): one more notch on the bar
+static void ld_begin(const char *what, const char *sub); static void ld_end(void);
 static void ach_get(u8 i);
 static u8 opt_locked(u8 i, u8 v);
 static u8 qlost, rdrown, ewins;                   // classic achievements: queen hurt, red ants drowned, elections won
@@ -1038,6 +1052,7 @@ static void gen_world(void) {
   mw = hand ? hm->w : tw; mh = hand ? hm->h : th;
   if (mw < 32) mw = 32; if (mw > 96) mw = 96; if (mh < 32) mh = 32; if (mh > 96) mh = 96; area = (u16)(W * H); sc = (u8)(area / 1024); if (!sc) sc = 1;
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) { fld[y][x] = 0; food[y][x] = 0; ph[y][x] = 0; }
+  ld_step();
   nestx[0] = (u8)(3 + (rnd() & 1)); nesty[0] = (u8)(H - 6 + (rnd() & 1)); nestx[1] = (u8)(W - 5 + (rnd() & 1)); nesty[1] = (u8)(4 + (rnd() & 1));
   if (hand) hand_map(hm);
   else if (t == MINF) {                            // INFINITE: every knob comes from the 320-bit generator
@@ -1047,7 +1062,7 @@ static void gen_world(void) {
     nb = (u8)((4 + rnd() % 12) * sc); nd = (u8)((rnd() % 10) * sc); nl = (u8)(rnd() % 4); nr = (u8)(rnd() % 3);
     noise = (u8)(rnd() % 30); smp = (u8)(rnd() % 4); cliffy = (u8)((rnd() & 3) == 0); sym = (u8)(rnd() % 3); cor = (u8)(rnd() & 3);
     for (y = 0; y < H; y++) for (x = 0; x < W; x++) fld[y][x] = (s16)(base + (noise ? (s16)(rnd() % (noise * 2 + 1)) - noise : 0));
-    blob(nb, (u8)(2 + rnd() % 3), (u8)(5 + rnd() % 5), amp);
+    ld_step(); blob(nb, (u8)(2 + rnd() % 3), (u8)(5 + rnd() % 5), amp); ld_step();
     blob(nd, 2, (u8)(3 + rnd() % 4), (s16)-(30 + rnd() % 60));
     for (k = 0; k < nl; k++) blob(1, (u8)(3 + rnd() % 6), (u8)(6 + rnd() % 6), -220);
     if (sym) for (y = 0; y < H; y++) for (x = 0; x < W; x++) {   // fair maps: mirror (sym 1) or point symmetry (sym 2)
@@ -1058,7 +1073,7 @@ static void gen_world(void) {
       v = fld[y][x];
       hgt[y][x] = cliffy ? (v < -60 ? 0 : v < 15 ? 1 : v < 55 ? 2 : 3) : (v <= -25 ? 0 : v < 0 ? 1 : v < 50 ? 2 : 3);
     }
-    for (k = 0; k < nr; k++) river((u8)(rnd() & 1), (u8)(2 + rnd() % 3), (u8)(rnd() % 6), (u8)(1 + rnd() % 3));
+    ld_step(); for (k = 0; k < nr; k++) river((u8)(rnd() & 1), (u8)(2 + rnd() % 3), (u8)(rnd() % 6), (u8)(1 + rnd() % 3)); ld_step();
     if (cor == 1) { nestx[0] = 4; nesty[0] = 4; nestx[1] = (u8)(W - 5); nesty[1] = (u8)(H - 5); }
     else if (cor == 2) { nestx[0] = 4; nesty[0] = (u8)(H / 2); nestx[1] = (u8)(W - 5); nesty[1] = (u8)(H / 2); }
     else if (cor == 3) { nestx[0] = (u8)(W / 2); nesty[0] = (u8)(H - 5); nestx[1] = (u8)(W / 2); nesty[1] = 4; }
@@ -1071,6 +1086,7 @@ static void gen_world(void) {
     else if (t == 1) { blob((u8)(12 * sc), 3, 6, 70); blob((u8)(3 * sc), 2, 3, -60); }            // RIVER (the river comes below)
     else if (t == 2) { blob((u8)(10 * sc), 3, 6, 70); blob((u8)(1 * sc), 6, 7, -200); blob((u8)(3 * sc), 3, 4, -160); }   // LAKES
     else { blob((u8)(16 * sc), 3, 6, 90); blob((u8)(10 * sc), 2, 5, -70); }                      // CANYON
+    ld_step(); ld_step();
     if (t == 2) {                                   // LAKES: one big lake in the middle
       s16 r2 = (s16)((W < H ? W : H) * (W < H ? W : H) / 45);
       for (y = 0; y < H; y++) for (x = 0; x < W; x++)
@@ -1081,6 +1097,7 @@ static void gen_world(void) {
       if (t == 3) hgt[y][x] = v < -60 ? 0 : v < 15 ? 1 : v < 55 ? 2 : 3;
       else hgt[y][x] = v <= -25 ? 0 : v < 0 ? 1 : v < 50 ? 2 : 3;
     }
+    ld_step(); ld_step();
     if (t == 1) river(0, 4, 3, 2);                  // RIVER: corner to corner, between the nests
     flat_nests();
     if (t != 3) { beach(); smooth(); }
@@ -1091,7 +1108,7 @@ static void gen_world(void) {
   }
   if (hgt[nesty[0]][nestx[0]] == 0) hgt[nesty[0]][nestx[0]] = 2;
   if (hgt[nesty[1]][nestx[1]] == 0) hgt[nesty[1]][nestx[1]] = 2;
-  bfs(0);
+  ld_step(); bfs(0); ld_step();
   if (dnp[0][nesty[1]][nestx[1]] == NOPATH) path(nestx[0], nesty[0], nestx[1], nesty[1]);   // always a way from nest to nest
   if (!hand) {                                      // berry patches: one near each nest, the rest anywhere on land
     u8 want = (u8)(6 + 2 * sc); if (want > 16) want = 16;
@@ -1113,7 +1130,7 @@ static void gen_world(void) {
     if (a >= 0 && b >= 0 && a < W && b < H && hgt[b][a] && !near_nest(a, b)) food[b][a] = 1;
   }
   genm = 0;
-  pdirty = 1;
+  pdirty = 1; ld_step();
 }
 
 // ---------- camera + sprites ----------
@@ -1176,12 +1193,9 @@ static void draw_sprites(void) {
 // ---------- new game ----------
 static void newgame(void) {
   u8 i, k;
-  DISPCNT = 0x80; BLDY = 0;
-  ov_fill(1, 1, 0, 19); ui_full();
-  ps(5, 8, "BUILDING THE WORLD...", 2);
-  ps((u8)(15 - (blen2(mname(mapt)) + 1) / 2), 10, mname(mapt), 1);
-  vsync(); DISPCNT = 0x0A00;                        // only the text + soil layers while the map is made
+  ld_begin("BUILDING THE WORLD...", mname(mapt));
   gen_world();
+  ld_end();
   DISPCNT = 0x80; BLDY = 16;
   for (i = 0; i < MAXA; i++) ant[i].alive = 0;
   for (i = 0; i < 8; i++) fx[i].t = 0;
@@ -2510,7 +2524,7 @@ static void opt_val(u8 i, char *b) {                // the text of option i's cu
   while (*v && *v != '|' && n < 9) b[n++] = *v++;
   b[n] = 0;
 }
-static const char *opt_group(u8 i) { return i <= O_TIME ? "GAME RULES" : i <= O_ALERTS ? "CONTROLS" : i <= O_ANTCOL ? "LOOK" : i <= O_SFX ? "SOUND" : "ANT EYE"; }
+static const char *opt_group(u8 i) { return i <= O_TIME ? "GAME RULES" : i <= O_ALERTS ? "CONTROLS" : i <= O_ANTCOL ? "LOOK" : i <= O_SFX ? "SOUND" : i <= O_SKY ? "ANT EYE" : i == O_FACTS ? "LOADING" : "EL PRESIDANTE"; }
 static void opts_apply(void) {                      // colours, sound and rules follow the options right away
 
   static const u16 ANTC[8][4] = {{RGB(1,1,2), RGB(6,6,8), RGB(16,16,19), RGB(14,15,22)},
@@ -2527,16 +2541,22 @@ static void opts_apply(void) {                      // colours, sound and rules 
   if (O(O_MUSIC) != nomus) { nomus = O(O_MUSIC); if (nomus) { music_stop(); tmu = 0; } }
   set_rules();
 }
+#define OXO 9310                                    // SRAM: the 2nd options block ('E' 'O', values, checksum at +30)
 static void opts_save(void) {
-  u8 i, sum = 0;
+  u8 i, sum = 0, s2 = 0;
   SRAM[24] = 'O'; SRAM[25] = 'P';
-  for (i = 0; i < NOPT; i++) { SRAM[26 + i] = opt[i]; sum = (u8)(sum + opt[i] + i); }
+  for (i = 0; i < O_FACTS; i++) { SRAM[26 + i] = opt[i]; sum = (u8)(sum + opt[i] + i); }
   SRAM[60] = sum;
+  SRAM[OXO] = 'E'; SRAM[OXO + 1] = 'O';
+  for (i = O_FACTS; i < NOPT; i++) { SRAM[OXO + 2 + i - O_FACTS] = opt[i]; s2 = (u8)(s2 + opt[i] + i); }
+  SRAM[OXO + 30] = s2;
 }
 static void opts_load(void) {
-  u8 i, sum = 0, ok = SRAM[24] == 'O' && SRAM[25] == 'P';
-  for (i = 0; i < NOPT; i++) { opt[i] = SRAM[26 + i]; sum = (u8)(sum + opt[i] + i); if (opt[i] >= opt_n(i)) ok = 0; }
-  if (!ok || sum != SRAM[60]) for (i = 0; i < NOPT; i++) opt[i] = OPTS[i].def;
+  u8 i, sum = 0, ok = SRAM[24] == 'O' && SRAM[25] == 'P', s2 = 0, ok2 = SRAM[OXO] == 'E' && SRAM[OXO + 1] == 'O';
+  for (i = 0; i < O_FACTS; i++) { opt[i] = SRAM[26 + i]; sum = (u8)(sum + opt[i] + i); if (opt[i] >= opt_n(i)) ok = 0; }
+  if (!ok || sum != SRAM[60]) for (i = 0; i < O_FACTS; i++) opt[i] = OPTS[i].def;
+  for (i = O_FACTS; i < NOPT; i++) { opt[i] = SRAM[OXO + 2 + i - O_FACTS]; s2 = (u8)(s2 + opt[i] + i); if (opt[i] >= opt_n(i)) ok2 = 0; }
+  if (!ok2 || s2 != SRAM[OXO + 30]) for (i = O_FACTS; i < NOPT; i++) opt[i] = OPTS[i].def;
   for (i = 0; i < NOPT; i++) if (opt_locked(i, opt[i])) opt[i] = OPTS[i].def;
 }
 static void opt_draw(u8 sel, u8 top) {
@@ -2708,6 +2728,73 @@ static void big(u8 y, const char *t) {             // centred 2x gold title (let
   }
 }
 static void wait_keys(u16 m) { u16 k; while (joy()) vsync(); do { vsync(); k = joy(); } while (!(k & m)); }
+
+// ---------- LOADING SCREENS: a fact (from lame to astronomical) while a world is built ----------
+// ld_begin() draws the fact and a bar, the builder calls ld_step() now and then, ld_end() waits for \1.
+// The facts come from tools/facts.py. Which one is shown is counted on the cartridge, not drawn from the game's
+// random numbers, so a seed still makes the same world (and two linked GBAs stay in step).
+#include "facts.h"
+#define FXO 9346                                     // SRAM: 'F' 'X' + how many facts were shown so far
+static u8 ld_on, ld_n;
+static const char *const FKN[5] = {"ANT FACT", "BUG FACT", "LIFE FACT", "HUGE NUMBER", "LAME FACT"};
+static u16 fact_count(void) { return (u16)(SRAM[FXO] == 'F' && SRAM[FXO + 1] == 'X' ? (SRAM[FXO + 2] | (SRAM[FXO + 3] << 8)) : 0); }
+static u16 fact_take(void) {                         // the next fact (47 and NFACT share no factor: all of them before a repeat)
+  u16 n = fact_count(), i = (u16)((n * 47u + 13u) % NFACT);
+  n++; SRAM[FXO] = 'F'; SRAM[FXO + 1] = 'X'; SRAM[FXO + 2] = (u8)n; SRAM[FXO + 3] = (u8)(n >> 8);
+  return i;
+}
+static u8 wrap_txt(const char *t, u8 w, const char **st, u8 *ln, u8 maxl) {   // lines of at most w letters, broken at spaces
+  u8 n = 0, i, cut;
+  while (*t == ' ') t++;
+  while (*t && n < maxl) {
+    for (i = 0; t[i] && i < w; i++) {}
+    if (!t[i] || t[i] == ' ') cut = i;
+    else { cut = i; while (cut && t[cut] != ' ') cut--; if (!cut) cut = i; }
+    st[n] = t; ln[n] = cut; n++;
+    t += cut; while (*t == ' ') t++;
+  }
+  return n;
+}
+static void fact_print(u16 f, u8 y0, u8 rows, u8 gap, u8 col) {   // a fact, centred, in the rows y0.. (gap 2 = double spaced)
+  const char *st[5]; u8 ln[5], n, i, j, y;
+  n = wrap_txt(FACT[f], 26, st, ln, 5);
+  if (n * gap > rows + gap - 1) gap = 1;
+  y = (u8)(y0 + (rows - ((n - 1) * gap + 1)) / 2);
+  for (i = 0; i < n; i++, y = (u8)(y + gap)) for (j = 0; j < ln[i]; j++) pc((u8)((30 - ln[i]) / 2 + j), y, st[i][j], col);
+}
+static void ld_bar(void) { u8 i; for (i = 0; i < 20; i++) BGMAP1[17 * 32 + 5 + i] = (u16)((i < ld_n ? BAR_F : BAR_E) | (14 << 12)); }
+static void ld_begin(const char *what, const char *sub) {
+  DISPCNT = 0x80; BLDY = 0; hide_all(); oam_flush();
+  ov_fill(1, 1, 0, 19); ui_full();
+  ld_on = 1; ld_n = 0;
+  if (O(O_FACTS)) {                                  // facts off: the plain loading text
+    ps((u8)(15 - (blen2(what) + 1) / 2), 8, what, 2); if (sub) ps((u8)(15 - (blen2(sub) + 1) / 2), 10, sub, 1);
+  } else {
+    u16 f = fact_take();
+    big(1, FKN[FACTK[f]]); pm_rule(4);
+    fact_print(f, 6, 7, 2, 3);
+    pm_rule(14);
+    ps((u8)(15 - (blen2(what) + 1) / 2), 15, what, 2); if (sub) ps((u8)(15 - (blen2(sub) + 1) / 2), 16, sub, 10);
+    ld_bar();
+  }
+  vsync(); DISPCNT = 0x0A00;                         // only the text + soil layers while the world is made
+}
+static void ld_step(void) { if (ld_on && ld_n < 19) { ld_n++; if (!O(O_FACTS)) ld_bar(); } }
+static void ld_end(void) {                           // the world is ready: \1 (either player on a link) goes on
+  u16 f = 0, k;
+  if (!ld_on) return;
+  ld_on = 0;
+  if (O(O_FACTS)) return;
+  ld_n = 20; ld_bar();
+  while (joy()) vsync();
+  for (;;) {
+    vsync(); f++;
+    if ((f & 31) == 1) ps(10, 18, "\1 GO ON", 9); else if ((f & 31) == 21) ps(10, 18, "       ", 9);
+    k = joy(); if (f > 12 && (k & (J_A | J_START))) break;
+  }
+  while (joy()) vsync();
+  if (fact_count() >= 50) ach_get(61);
+}
 // ---------- PERK CARD: after a good antlection the game stops and you pick one of two perks ----------
 static void perk_card(void) {
   u16 k; u8 i, c;

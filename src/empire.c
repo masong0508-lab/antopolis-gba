@@ -1024,7 +1024,7 @@ static void emp_newgame(void) {
   u8 i;
   { u8 sm = mapt, sw = tw, sh = th;                // story chapters pick their own land
     if (echap != 255) { mapt = CH[echap].map; tw = CH[echap].w; th = CH[echap].h; }
-    DISPCNT = 0x80; BLDY = 0; ov_fill(1, 1, 0, 19); ui_full(); ps(5, 8, "BUILDING THE WORLD...", 2); vsync(); DISPCNT = 0x0A00;
+    ld_begin("BUILDING THE WORLD...", echap != 255 ? CH[echap].name : mname(mapt));
     gen_world();
     mapt = sm; tw = sw; th = sh; }
   emp_setup_common();
@@ -1042,6 +1042,7 @@ static void emp_newgame(void) {
   bfs(0); pdirty = 0;
   efield(nestx[0], nesty[0]);
   terr_calc();
+  ld_end();
 }
 
 // ---------- save / continue (free play) ----------
