@@ -33,8 +33,9 @@ static void chase_rules(u8 round) {
   ps(2, 9, "WALK ON % FOOD - BRING TO $", 3);
   ps(2, 10, "DELIVER THREE TO ESCAPE!", 13);
   ps(2, 11, "A SPRINT B SCENT L/R STRAFE", 3);
-  ps(2, 13, "CAT TAGS MOUSE TO WIN.", 8);
-  ps(2, 14, "CLOCK RUNS OUT: CAT WINS.", 8);
+  ps(2, 12, "HOLD B + STOP ON HILLS: HIDE", 13);
+  ps(2, 13, "CAT: TRACK HOT/COLD CLUES", 8);
+  ps(2, 14, "TAG OR TIMEOUT: CAT WINS", 8);
   ps(2, 16, "ROUND", 10); pn(9, 16, (u8)(round + 1), 9);
   if (lk_me == hunter) ps(2, 17, "YOUR JOB: HUNT FROM THE MAP", 8);
   else if (lk_me == runner) ps(2, 17, "YOUR JOB: RUN IN ANT EYE", 13);
@@ -272,7 +273,14 @@ static u8 chase_round(u8 round) {
       cur = eye_tab == m7t[0] ? 1 : 0;
       m7_build(m7t[cur], fa, (s16)px, (s16)py);
       eye_tab = m7t[cur];
-      eye_scene(fa, px, py, vi, 0, (u8)((frc >> 3) & 1));
+      // ANT EYE world objects use shadow OAM, so upload their changes.
+      // The previous chase loop never flushed OAM after eye_scene, leaving
+      // living ants and other props visually frozen in the mouse's view.
+      // Scene/OAM at 30Hz with 60Hz camera matrix and lockstep world ticks.
+      if (!(frame & 1)) {
+        eye_scene(fa, px, py, vi, 0, (u8)((frc >> 3) & 1));
+        oam_flush();
+      }
       BG0HOFS = (u16)(fa * 5 + (fa >> 2));
       if (!(frame & 7)) {
         eye_compass(fa, rx, ry);
