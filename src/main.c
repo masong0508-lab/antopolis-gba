@@ -1266,7 +1266,7 @@ static void lower_land(void) {
     drowned = (u8)TERRAIN_FOOD_DROWNED(hgt[cy][cx], food[cy][cx]);
     food[cy][cx] = (u8)TERRAIN_FOOD_AFTER(hgt[cy][cx], food[cy][cx]);
     draw_around(cx, cy); sfx_lower(); tev |= 4;
-    say(drowned ? "FOOD LOST: TILE TURNED TO WATER" :
+    say(drowned ? "FOOD LOST: NOW UNDERWATER" :
         hgt[cy][cx] == 0 ? "MOAT DUG: WATER BLOCKS ANTS" :
         hgt[cy][cx] == 1 ? "RAMP LOWERED TO SAND" : "HILL LOWERED TO GRASS");
     return;
