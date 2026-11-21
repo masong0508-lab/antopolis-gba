@@ -202,15 +202,16 @@ static void chase_hud_map(u8 guide, u8 delivered, u8 marked, u8 secs,
      marker_reason == 4 ? 13 : marker_reason ? 8 : 10);
 }
 static void chase_hud_eye(u8 scout, u8 delivered, u8 energy, u8 secs,
-                          u8 carry, u8 marked, u8 boost_notice) {
+                          u8 task_message) {
   ov_fill(CHASE_PANEL_TILE, 1, 16, 19);
   ps(0, 16, scout ? "P2 SCOUT: ANT EYE" : "P1 SCOUT: ANT EYE", 13);
   ps(24, 16, "TIME", 10); pn(28, 16, secs, 9);
-  ps(0, 17, boost_notice ? "WAYPOINT REACHED +20 STAMINA" :
-     carry ? "FOOD HELD: RETURN HOME $" :
-     marked ? "FOLLOW GUIDE ? COMPASS MARK" :
-     "FIND FOOD % AND BRING HOME $",
-     boost_notice ? 13 : carry ? 13 : marked ? 14 : 3);
+  ps(0, 17, task_message == 3 ? "WAYPOINT REACHED +20 STAMINA" :
+     task_message == 2 ? "FOOD HELD: RETURN HOME $" :
+     task_message == 1 ? "FOLLOW GUIDE ? COMPASS MARK" :
+                         "FIND FOOD % AND BRING HOME $",
+     task_message == 3 || task_message == 2 ? 13 :
+     task_message == 1 ? 14 : 3);
   ps(0, 18, "DELIVERIES", 10); pn(12, 18, delivered, 13);
   ps(14, 18, "/3", 3); ps(19, 18, "STAMINA", 10); pn(28, 18, energy, 9);
   ps(0, 19, "\1 SPRINT \2 SCENT L/R STRAFE", 10);
@@ -376,10 +377,11 @@ static u8 chase_round(u8 round) {
           eye_mark(fa, (s16)mx - rx, (s16)my - ry, '?', 14);
         // The compass is live, but static words/counters need no VRAM
         // clears until time, food, stamina or the current task changes.
+        u8 task_message = chase_scout_message(ant[vi].carry, marked,
+                                               boost_notice);
         if (chase_hud_needs_update(&hud_cache, secs, deliveries, marked,
-                                   energy, boost_notice ? 2 : ant[vi].carry))
-          chase_hud_eye(scout, deliveries, energy, secs, ant[vi].carry,
-                        marked, boost_notice);
+                                   energy, task_message))
+          chase_hud_eye(scout, deliveries, energy, secs, task_message);
       }
     } else {
       cx = hx; cy = hy;
