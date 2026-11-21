@@ -43,7 +43,8 @@ jobs:
           # replay of a failed cable test without recompiling either one.
           cp "$CORE" build/link-smoke/linked-core.so
           cp build/empire-ants.gba build/link-smoke/empire-ants.gba
-          python3 -u tools/linked_smoke.py build/empire-ants.gba "$CORE" --out build/link-smoke
+          python3 -u tools/linked_smoke.py build/empire-ants.gba "$CORE" --out build/link-smoke/classic --scenario co-op 2>build/link-smoke/classic-serial.log
+          python3 -u tools/linked_smoke.py build/empire-ants.gba "$CORE" --out build/link-smoke/chase --scenario chase 2>build/link-smoke/chase-serial.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
