@@ -65,6 +65,10 @@ linked mGBA cores. This is local GBA link-cable multiplayer; not IP networking.
    NEVER reveal the mouse while the scanner marker is hidden; within
    two tiles, the mouse becomes visible even without scanning.
    Winning by delivery should not require hitting the red queen.
+   After ordinary AI workers consume nearby food, confirm that new reachable
+   berries grow on BOTH clients' world state, show visually on the hunter's
+   tile map, and are available to the mouse. Both devices must still report
+   the same score and must not desynchronize during replenishment.
 5. Let the first **90-second** round expire without delivering all food.
    Both GBAs must show the same cat-win result and per-player scores.
 6. Advance together and confirm a **fresh arena** is generated so the
@@ -104,6 +108,10 @@ complete mechanics/long-session verification.
 - Build/protocol token: `0xA75`; both cartridges must match.
 - Visibility is driven by one pure rule for the hunter HUD, marker and mouse
   sprite; check with `make test` before the ROM build.
+- A seeded 8-phase pass restores up to eight reachable berries, about every
+  128 linked frames. It never reads local camera state to choose tiles and
+  writes BG map tiles only on the map-rendering console. The host test checks
+  every hash bucket without needing an ARM toolchain.
 - SIOMLT_SEND is populated **before** starting each master-clocked transfer. A received packet is rejected if its sequence number, local echo, hardware player ID, or SIO error bit is invalid.
 - Only the presentation camera is local; input and world mutations are
   processed in stable **P1 then P2** order on both devices.

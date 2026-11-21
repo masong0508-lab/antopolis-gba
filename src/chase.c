@@ -7,20 +7,40 @@
 #include "chase_logic.h"
 #define CHASE_TICKS 5400u                // 90 seconds at the game's 60 Hz VBlank
 #define CHASE_GOAL 3
+#define CHASE_BERRIES 8             // reserve a small accessible food supply
+#define CHASE_FOOD_TICK 127u        // top up every 128 linked frames (~2 seconds)
 // One 4bpp tile, outside the MAPT 832..975 generated-map atlas.
 // Pixel index 1 in palette 1 is black. No image asset/framebuffer needed.
 #define CHASE_PANEL_TILE 976
 static u8 chase_last_food;   // the mouse's completed deliveries count even if caught
-static void chase_food(void) {           // accessible nearby berries, not random unreachable scenery
-  s16 x, y; u8 added = 0;
+// Both peers generate identical supplies from map data, never RNG. Workers
+// still consume food normally, but cannot permanently starve the mouse's
+// three-delivery win condition. Keep at least eight nearby reachable berries.
+// The hunter's BG map must refresh newly grown berries on its own cartridge;
+// the mouse client has BG2 in first-person mode and must NOT write the map.
+static void chase_food(u8 map_visible) {
+  s16 x, y;
+  u8 supply = 0, phase;
   for (y = (s16)nesty[0] - 8; y <= (s16)nesty[0] + 8; y++)
     for (x = (s16)nestx[0] - 8; x <= (s16)nestx[0] + 8; x++) {
       if (x < 0 || y < 0 || x >= W || y >= H) continue;
-      if (!hgt[y][x] || near_nest((u8)x, (u8)y) || food[y][x]) continue;
       if (dnp[0][y][x] == NOPATH || dnp[0][y][x] > 15) continue;
-      if (((x * 17 + y * 29) & 7) != 1) continue;
-      food[y][x] = 1; if (++added == 15) return;
+      if (food[y][x] && supply < CHASE_BERRIES) supply++;
     }
+  if (supply >= CHASE_BERRIES) return;
+  // Sweep all eight stable hash buckets, covering all eligible squares even
+  // when a sparse arena has fewer than eight squares in bucket zero.
+  for (phase = 0; phase < 8 && supply < CHASE_BERRIES; phase++)
+    for (y = (s16)nesty[0] - 8; y <= (s16)nesty[0] + 8 && supply < CHASE_BERRIES; y++)
+      for (x = (s16)nestx[0] - 8; x <= (s16)nestx[0] + 8 && supply < CHASE_BERRIES; x++) {
+        if (x < 0 || y < 0 || x >= W || y >= H) continue;
+        if (!hgt[y][x] || near_nest((u8)x, (u8)y) || food[y][x]) continue;
+        if (dnp[0][y][x] == NOPATH || dnp[0][y][x] > 15) continue;
+        if (chase_berry_bucket((u8)x, (u8)y) != phase) continue;
+        food[y][x] = 1;
+        supply++;
+        if (map_visible) draw_dec((u8)x, (u8)y);
+      }
 }
 // Cheap, bounded objective search: the hunt guarantees reachable food around
 // the black nest. Recheck at HUD cadence, not per camera frame. The compass
@@ -186,7 +206,7 @@ static u8 chase_round(u8 round) {
   chase_last_food = 0;
   // Round setup is deterministic and the generated world is identical on
   // both GBAs, independently of which perspective either GBA renders.
-  chase_food();
+  chase_food(0); // win_all() in chase_map_start() draws the initial berries
   vi = mp_pilot_near(nestx[0], nesty[0], MAXA);
   if (vi >= MAXA) return 0;  // no workers left to control
   eye_ctl = vi; eye_ctl2 = MAXA;
@@ -286,6 +306,9 @@ static u8 chase_round(u8 round) {
       } else sfx_deny();
     }
     if (!(frame & 7)) { tick_slice(); bfs_tick(200); }
+    // Replenish before drawing either perspective. Only the map client
+    // touches map VRAM, while both peers change identical world-state food.
+    if (!(frame & CHASE_FOOD_TICK)) chase_food((u8)!is_eye);
     // Advance presentation timers in the SHARED simulation, never from the
     // map-only drawing branch. Otherwise the 2D and 3D ROMs desynchronize.
     if (!(frame & 3)) {

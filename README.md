@@ -39,6 +39,11 @@ behind the camera, and the cat's map does not reveal a concealed mouse through
 the ordinary ant-sprite layer. Close-range sight (within two tiles), scanner
 pulses and visible food-carrying expose the runner; hill cover defeats
 long-range scans. A full sprint now lasts approximately 3.3 seconds.
+During the hunt, a deterministic supply service keeps eight berries available
+on passable tiles close to home: ordinary ants cannot quietly make the
+three-delivery objective unwinnable. Fresh berries also update on the
+hunter's map. No extra textures, dynamic allocations or network data
+are needed, and the service runs approximately once every two seconds.
 A successful tag or time-out wins for the cat;
 three deliveries win for the mouse. **Round two swaps viewpoints** so P1
 becomes the first-person mouse and P2 becomes the map hunter. Each round win
