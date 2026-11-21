@@ -1,3 +1,19 @@
+## Milestone: terrain-edit clarity and flooded-food safety (November 2026)
+
+The bottom map HUD now warns **B LOSES FOOD** when the cursor is over
+berry-bearing sand that would become water. Raising and lowering tiles
+show meaningful outcome messages rather than silently changing the
+world. Flooding distinguishes ordinary terrain changes from berries
+washed away. Water still blocks ants and submerged berries disappear,
+including after earthquakes. All feedback is based on the actual
+post-edit tile and berry state, not an assumed action.
+
+The same pure food/height rule and native regression as GBC cover
+every tile height and sinking transition. This is visual feedback and
+data-consistency work only: no new mode, permanent state, save
+layout, framebuffer, link-packet fields, or additional rendering pass.
+The flood warning is calculated during the existing affected-cell loop.
+
 # EMPIRE-ANTS (GBA)
 Native Game Boy Advance port of the GBC game: raw registers, no libraries. Build: `make` (ARM toolchain + devkitPro `gbafix`) -> `build/empire-ants.gba`.
 
