@@ -111,7 +111,7 @@ static void chase_map_sprites(u8 hx, u8 hy, u8 rx, u8 ry, u8 scan) {
   else spr_hide(MAXA + 11);
 }
 static void chase_hud_map(u8 hunter, u8 delivered, u8 scan_cd, u8 secs) {
-  ov_fill(1, 1, 17, 19);
+  ov_fill(UIB + 31, 1, 17, 19);   // opaque bark/soil HUD panel; 2D terrain stays legible
   ps(0, 17, hunter ? "P2 CAT: MAP HUNTER" : "P1 CAT: MAP HUNTER", 8);
   ps(24, 17, "TIME", 10); pn(28, 17, secs, 9);
   ps(0, 18, "MOUSE FOOD:", 13); pn(13, 18, delivered, 9);
@@ -120,7 +120,7 @@ static void chase_hud_map(u8 hunter, u8 delivered, u8 scan_cd, u8 secs) {
   if (scan_cd) ps(26, 19, "WAIT", 8);
 }
 static void chase_hud_eye(u8 runner, u8 delivered, u8 energy, u8 secs, u8 carry) {
-  ov_fill(1, 1, 16, 19);
+  ov_fill(UIB + 31, 1, 16, 19);   // cover the busy ground texture behind tiny HUD text
   ps(0, 16, runner ? "P2 MOUSE: ANT EYE" : "P1 MOUSE: ANT EYE", 13);
   ps(24, 16, "TIME", 10); pn(28, 16, secs, 9);
   ps(0, 17, carry ? "CARRY FOOD HOME TO $ !" : "FIND % FOOD, RETURN TO $", carry ? 13 : 3);
@@ -227,6 +227,15 @@ static u8 chase_round(u8 round) {
       } else sfx_deny();
     }
     if (!(frame & 7)) { tick_slice(); bfs_tick(200); }
+    // Advance presentation timers in the SHARED simulation, never from the
+    // map-only drawing branch. Otherwise the 2D and 3D ROMs desynchronize.
+    if (!(frame & 3)) {
+      for (i = 0; i < 8; i++) if (fx[i].t) {
+        fx[i].t--;
+        if (fx[i].tile != FX_PUFF && (fx[i].t & 1)) fx[i].y--;
+      }
+      for (i = 0; i < 2; i++) if (qfl[i]) qfl[i]--;
+    }
     if (!vok(vi) || !qhp[0]) { roundout = 0; break; }
     // The PRESENTATION alone diverges. No world-tick / FX mutations from
     // drawing; this prevents 2D/3D client disagreement and cable desync.
@@ -288,7 +297,7 @@ static void chase_final(const u8 *score) {
   hide_all(); vsync(); oam_flush(); DISPCNT = 0x80;
   ov_fill(1, 3, 0, 19); ui_full(); big(1, "CAT & MOUSE");
   ps(3, 5, score[0] > score[1] ? "PLAYER 1 WINS!" :
-           score[1] > score[0] ? "PLAYER 2 WINS!" : "DRAW - BOTH ESCAPED!", 9);
+           score[1] > score[0] ? "PLAYER 2 WINS!" : "DRAW - EVEN SCORES!", 9);
   ps(3, 8, "PLAYER 1", 13); pn(19, 8, score[0], 13);
   ps(3, 10, "PLAYER 2", 8); pn(19, 10, score[1], 8);
   ps(3, 13, "TWO ROUNDS COMPLETE.", 3);
