@@ -6,6 +6,7 @@
 // ============================================================================
 #define CHASE_TICKS 5400u                // 90 seconds at the game's 60 Hz VBlank
 #define CHASE_GOAL 3
+static u8 chase_last_food;   // the mouse's completed deliveries count even if caught
 static void chase_food(void) {           // accessible nearby berries, not random unreachable scenery
   s16 x, y; u8 added = 0;
   for (y = (s16)nesty[0] - 8; y <= (s16)nesty[0] + 8; y++)
@@ -137,6 +138,7 @@ static u8 chase_round(u8 round) {
   u16 sky = BGPAL[0], pic[16], angle = 0, k[2], frame;
   s32 px, py;
   u8 i;
+  chase_last_food = 0;
   // Round setup is deterministic and the generated world is identical on
   // both GBAs, independently of which perspective either GBA renders.
   chase_food();
@@ -178,8 +180,9 @@ static u8 chase_round(u8 round) {
     if ((hp & J_B) && !scan_cd) {
       scan = 110; scan_cd = 420; sfx_mana();
     }
-    // Map cat: quick moving targeting cursor, but no unfair teleporting.
-    if (!(frame & 2)) {
+    // Cursor covers one map cell per eight frames; accurate tagging takes
+    // deliberate pursuit rather than near-instant map-wide teleporting.
+    if (!(frame & 7)) {
       if ((k[0] & J_LEFT) && hx) hx--;
       if ((k[0] & J_RIGHT) && hx + 1 < W) hx++;
       if ((k[0] & J_UP) && hy) hy--;
@@ -192,7 +195,9 @@ static u8 chase_round(u8 round) {
     {
       s32 cs = SINT[(fa + 64) & 255], sn = SINT[fa];
       s32 vx = 0, vy = 0, speed = ESPD[O(O_EYESPD)];
-      if ((k[1] & J_A) && energy) { speed = speed * 2; energy--; }
+      if ((k[1] & J_A) && (k[1] & (J_UP | J_DOWN | J_L | J_R)) && energy) {
+        speed = speed * 2; energy--;
+      }
       else if (!(frame & 3) && energy < 99) energy++;
       if (k[1] & J_UP) { vx += (cs * speed) >> 8; vy += (sn * speed) >> 8; }
       if (k[1] & J_DOWN) { vx -= (cs * speed) >> 9; vy -= (sn * speed) >> 9; }
@@ -216,7 +221,7 @@ static u8 chase_round(u8 round) {
       if (!is_eye) draw_dec(rx, ry);  // VRAM-only update on map machine
     }
     if (ant[vi].carry && dist(rx, nestx[0]) <= 1 && dist(ry, nesty[0]) <= 1) {
-      ant[vi].carry = 0; deliveries++; st_food++;
+      ant[vi].carry = 0; deliveries++; chase_last_food = deliveries; st_food++;
       sfx_mana();
       if (deliveries >= CHASE_GOAL) { roundout = 1; break; }
     }
@@ -324,7 +329,10 @@ static void chase_play(void) {
     if (lk_err) break;
     result = chase_round(round);
     if (result == 2) { over = 3; break; }
-    score[result ? (round ^ 1) : round] += 2;
+    // Reward actual foraging effort plus the round victory, so two matches
+    // where both cats win need not end in an automatic, unrewarding draw.
+    score[round ^ 1] += chase_last_food;
+    score[result ? (round ^ 1) : round] += 3;
     chase_result(round, result, score);
     if (lk_err) break;
     if (round == 0) { vram_reload(); opts_apply(); }
