@@ -239,24 +239,42 @@ static u32 lk_hash;                                // filled in each frame by th
 static void lk_tick(void) { u8 v = VCOUNT >= 160; if (v && !lk_vbl) lk_frames++; lk_vbl = v; }
 static void lk_open(void) { RCNTR = 0; SIOCNTR = 0x2003; lk_seq = 0; lk_err = 0; lk_bad = 0; lk_focus = 2; }
 static void lk_close(void) { lk_on = 0; SIOCNTR = 0; RCNTR = 0x8000; lk_focus = 2; }
-static u8 lk_step(u16 pay, u16 *other, u16 tmo) {  // one exchange of 12 bits each way; 0 = the partner did not answer in time
+static u8 lk_step(u16 pay, u16 *other, u16 tmo) {
   u16 s = lk_seq & 15, w = (u16)((s << 12) | (pay & 0xFFF));
   lk_frames = 0;
-  if (lk_me == 0) {                                // host: keep sending our last word until the guest is on step s
+  // Multiplayer SIO latches SIOMULTI0-3 at transfer completion. The sender's
+  // word must be published BEFORE the master starts the transfer, not after
+  // receiving the guest's word (that used to send a one-step-old host packet).
+  SIOSEND = w;
+  if (!lk_me) {
     for (;;) {
-      if (SIOCNTR & 8) {
-        SIOCNTR = (u16)(SIOCNTR | 0x80);
+      if (SIOCNTR & 8) {                          // SD high: both terminals ready
+        SIOCNTR = (u16)(SIOCNTR | 0x80);         // only the master may clock
         while (SIOCNTR & 0x80) { lk_tick(); if (lk_frames > tmo) return 0; }
-        if ((SIOMULTI(1) >> 12) == s) { *other = SIOMULTI(1) & 0xFFF; break; }
+        if (!(SIOCNTR & 0x40) && SIOMULTI(0) == w &&
+            (SIOCNTR & 0x30) == 0 &&
+            (SIOMULTI(1) >> 12) == s) {
+          *other = SIOMULTI(1) & 0xFFF; break;
+        }
       }
       lk_tick(); if (lk_frames > tmo) return 0;
     }
-    SIOSEND = w;                                   // now publish step s, and pass it over at once
-    if (SIOCNTR & 8) { SIOCNTR = (u16)(SIOCNTR | 0x80); while (SIOCNTR & 0x80) { lk_tick(); if (lk_frames > tmo) break; } }
-  } else {                                         // guest: send step s, wait for the host's step s
-    SIOSEND = w;
+    // A second clock with the *same* packet allows a guest that reached
+    // the receive loop late to observe it before the host advances its step.
+    if (SIOCNTR & 8) {
+      SIOCNTR = (u16)(SIOCNTR | 0x80);
+      while (SIOCNTR & 0x80) { lk_tick(); if (lk_frames > tmo) return 0; }
+    }
+  } else {
+    // Clear a stale receive word before waiting. Otherwise step 0 can
+    // accidentally accept the power-on register value without a transfer.
+    SIOMULTI(0) = 0xFFFF;
     for (;;) {
-      if ((SIOMULTI(0) >> 12) == s) { *other = SIOMULTI(0) & 0xFFF; break; }
+      if (!(SIOCNTR & 0x80) && !(SIOCNTR & 0x40) &&
+          (SIOCNTR & 0x30) == 0x10 &&
+          SIOMULTI(1) == w && (SIOMULTI(0) >> 12) == s) {
+        *other = SIOMULTI(0) & 0xFFF; break;
+      }
       lk_tick(); if (lk_frames > tmo) return 0;
     }
   }
