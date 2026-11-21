@@ -37,8 +37,10 @@ Move and turn with the D-pad, strafe with L/R, hold **A** for stamina-limited
 sprinting and hold **B** to lay scent. Find berries (the `%` compass cue),
 carry **three loads** to the home nest (`$`), and follow a guide waypoint
 (`?` compass cue) for a one-time stamina boost. Guide markers must be at
-least three tiles from the scout and placed on reachable land, so the guide
-must actually plan routes rather than mint infinite sprint energy.
+least three tiles from the scout and placed on reachable land. If placement
+fails, the guide HUD now distinguishes water, unreachable terrain and being
+too close to the scout instead of responding with an unexplained buzzer.
+This keeps route planning understandable without granting free stamina.
 
 Each run lasts **90 seconds**. Then the players swap perspectives, so both
 get to experience the overhead colony and immersive ant world. Every food
