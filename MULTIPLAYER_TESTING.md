@@ -51,7 +51,8 @@ linked mGBA cores. This is local GBA link-cable multiplayer; not IP networking.
 ## Technical invariants
 
 - Link payload: 10 key bits, two rolling checksum bits, four sequence bits.
-- Build/protocol token: `0xA72`; both cartridges must match.
+- Build/protocol token: `0xA73`; both cartridges must match.
+- SIOMLT_SEND is populated **before** starting each master-clocked transfer. A received packet is rejected if its sequence number, local echo, hardware player ID, or SIO error bit is invalid.
 - Only the presentation camera is local; input and world mutations are
   processed in stable **P1 then P2** order on both devices.
 - Each player owns a different worker; AI must not move a human-owned worker.
