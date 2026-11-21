@@ -13,12 +13,12 @@
 static u8 mp_how, mp_sub = 255, mp_size = 1, mp_riv = 1, mp_sel;
 static u8 mp_supply;  // linked co-op supply-run combo; survives switching between map and ANT EYE
 static const u8 MPSZ[4] = {32, 48, 64, 96};
-static const char *const MPK[5] = {"VERSUS", "CO-OP EMPIRE", "CO-OP CITY", "CO-OP ANTVERSE", "CO-OP CLASSIC"};
-static const char *const MPD[5] = {"BLACK ANTS AGAINST RED ANTS", "ONE EMPIRE, TWO RULERS", "ONE CITY, TWO MAYORS", "EVERYTHING, TOGETHER", "TWO GODS, ONE ANT COLONY"};
-static const u8 MPORD[5] = {0, 4, 1, 2, 3};          // the order LEFT / RIGHT steps through the games
+static const char *const MPK[6] = {"VERSUS", "CO-OP EMPIRE", "CO-OP CITY", "CO-OP ANTVERSE", "CO-OP CLASSIC", "CAT & MOUSE"};
+static const char *const MPD[6] = {"BLACK ANTS AGAINST RED ANTS", "ONE EMPIRE, TWO RULERS", "ONE CITY, TWO MAYORS", "EVERYTHING, TOGETHER", "TWO GODS, ONE ANT COLONY", "2D HUNTER VS 3D MOUSE"};
+static const u8 MPORD[6] = {0, 4, 5, 1, 2, 3};       // CAT & MOUSE appears alongside the familiar Classic games
 // Stable on-wire protocol revision. Build timestamps must NEVER decide whether two identical ROMs can link.
 // Bump this 12-bit value only when game state, input packets or lobby settings become incompatible.
-#define MP_BUILD 0xA73u
+#define MP_BUILD 0xA74u
 static u8 mp_locked(u8 k) { return (k == 1 && !emp_unlocked()) || (k == 3 && !verse_unlocked()); }
 
 // ---------- VERSUS (classic) ----------
@@ -291,6 +291,8 @@ static void mp_eye(void) {
   vsync(); DISPCNT = 0x1F40;
 }
 
+#include "chase.c"
+
 static u8 vs_input(u8 p, u16 k) {                   // 0 go on, 1 quit, 2 a menu was used
   PSt *s = &pst[p]; u16 pr = k & ~s->prev; u8 dirs, fire, sw = (u8)(p && !mp_kind);   // sw: P2 of VERSUS acts with the red AP
   s->prev = k;
@@ -505,6 +507,9 @@ static void mp_run(u8 how) {                        // how: 1 same GBA, 2 link c
   case 4:                                          // CO-OP CLASSIC: the host's options and cheats, both gods on the black side
     newgame(); versus_play();
     break;
+  case 5:                                          // CAT & MOUSE: two linked GBAs, two different viewpoints
+    chase_play();
+    break;
   case 1:
     emode = 1; ecity = 0; echap = mp_sub; enriv = (u8)(echap == 255 ? mp_riv : 0); eaggr = 1;
     if (echap != 255) { char t1[12] = "CHAPTER "; t1[8] = (char)('1' + echap); t1[9] = 0; story_card(t1, CH[echap].s1, CH[echap].name); story_card("CHITIN", CH[echap].s2, "\1 BEGIN"); }
@@ -553,6 +558,7 @@ static void mp_draw(void) {
   else ps(14, 9, "SET BY THE GAME", 15);
   ps(3, 11, mp_kind == 2 ? "MONEY" : "RIVALS", mp_sel == 4 ? 9 : 3);
   if (mp_kind == 0) ps(14, 11, "EACH OTHER!", 15);
+  else if (mp_kind == 5) ps(14, 11, "HUNT / ESCAPE", 13);
   else if (mp_kind == 4) ps(14, 11, "THE RED ANTS", 8);
   else if (mp_kind == 2) { static const char *const MN[4] = {"EASY", "NORMAL", "HARD", "SANDBOX"}; ps(12, 11, "<", 10); ps(14, 11, mp_sub == 255 ? MN[cmoney] : "SET", 9); ps(29, 11, ">", 10); }
   else if (mp_sub == 255 || mp_kind == 3) { ps(12, 11, "<", 10); pc(14, 11, (char)('0' + mp_riv), 9); ps(29, 11, ">", 10); }
@@ -565,6 +571,7 @@ static void mp_draw(void) {
     ps(3, 15, lk ? "LOCKED" : "START!", mp_sel == 6 ? 9 : lk ? 15 : 13);
     ps((u8)(15 - (blen2(d) + 1) / 2), 17, d, lk ? 8 : 2); }
   if (mp_kind == 4 && mp_how) ps(1, 18, "LINK CO-OP: SEL+START = 3D", 10);
+  if (mp_kind == 5) ps(1, 18, "LINK: CAT MAP / MOUSE ANT EYE", 10);
   ps(1, 19, "< > CHANGE  \1 GO  \2 BACK", 10);
 }
 static void mp_menu(void) {
@@ -581,15 +588,15 @@ static void mp_menu(void) {
     if (p & (J_LEFT | J_RIGHT)) {
       s8 d = (p & J_RIGHT) ? 1 : -1;
       switch (mp_sel) {
-      case 0: { u8 j = 0; while (j < 4 && MPORD[j] != mp_kind) j++; mp_kind = MPORD[(j + 5 + d) % 5]; mp_sub = 255; } break;
-      case 1: mp_how ^= 1; break;
+      case 0: { u8 j = 0; while (j < 6 && MPORD[j] != mp_kind) j++; mp_kind = MPORD[(j + 6 + d) % 6]; mp_sub = 255; if (mp_kind == 5) mp_how = 1; } break;
+      case 1: if (mp_kind != 5) mp_how ^= 1; else sfx_deny(); break;
       case 2:
         if (mp_kind == 1) { u8 top = (u8)(SRAM[63] < NCH ? SRAM[63] : NCH - 1); mp_sub = (u8)(mp_sub == 255 ? (d > 0 ? 0 : top) : (mp_sub + d > top || (s8)(mp_sub + d) < 0) ? 255 : mp_sub + d); }
         else if (mp_kind == 2) { mp_sub = (u8)(mp_sub == 255 ? (d > 0 ? 0 : NSCEN - 1) : (mp_sub + d >= NSCEN || (s8)(mp_sub + d) < 0) ? 255 : mp_sub + d); }
         else { do mapt = (u8)((mapt + MAPN + d) % MAPN); while (mapt == MMY); }
         break;
       case 3: mp_size = (u8)((mp_size + 4 + d) & 3); break;
-      case 4: if (mp_kind == 2) cmoney = (u8)((cmoney + 4 + d) & 3); else if (mp_kind && mp_kind != 4) mp_riv = (u8)(mp_riv + d < 1 ? 3 : mp_riv + d > 3 ? 1 : mp_riv + d); break;
+      case 4: if (mp_kind == 2) cmoney = (u8)((cmoney + 4 + d) & 3); else if (mp_kind && mp_kind != 4 && mp_kind != 5) mp_riv = (u8)(mp_riv + d < 1 ? 3 : mp_riv + d > 3 ? 1 : mp_riv + d); break;
       case 5: if (!mp_how) mp_tlen = (u8)((mp_tlen + 4 + d) & 3); break;
       }
       sfx_food();
