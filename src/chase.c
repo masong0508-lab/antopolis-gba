@@ -127,7 +127,8 @@ static void chase_hud_map(u8 hunter, u8 delivered, u16 scan_cd, u8 secs, u8 dist
   else ps(21, 18, "SCAN OK", 13);
   // Directionless proximity signal: readable clues without revealing the
   // mouse's precise hiding square between limited scanner pulses.
-  ps(0, 19, visible ? "MOUSE SPOTTED! A TO TAG" :
+  ps(0, 19, (!(frc & 127) || (frc & 127) < 32) ? "D-PAD AIM A TAG B SCAN" :
+     visible ? "MOUSE SPOTTED! A TO TAG" :
      distance <= 4 ? "HOT! MOUSE IS VERY CLOSE" :
      distance <= 9 ? "WARM TRAIL - SEARCH HERE" :
      "COLD TRAIL - USE B SCAN", distance <= 4 ? 8 : 10);
@@ -142,7 +143,7 @@ static void chase_hud_eye(u8 runner, u8 delivered, u8 energy, u8 secs, u8 carry,
      "FIND % FOOD, BRING TO $", danger <= 3 ? 8 : carry ? 13 : 3);
   ps(0, 18, "HOME DELIVERIES:", 10); pn(18, 18, delivered, 13);
   ps(21, 18, "OF 3", 3); ps(26, 18, "SP", 10); pn(28, 18, energy, 9);
-  ps(0, 19, "\1 RUN \2 SCENT L/R SIDE \5 QUIT", 10);
+  ps(0, 19, "\1 SPRINT \2 HIDE/SCENT L/R SIDE", 10);
 }
 // Returns 1 for runner victory, 0 for hunter victory, 2 for quit/link loss.
 static u8 chase_round(u8 round) {
