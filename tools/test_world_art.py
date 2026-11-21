@@ -91,4 +91,29 @@ world = Path("src/main.c").read_text()
 assert "h * 81 + c" in world and "draw_around(u8 x, u8 y)" in world
 assert "draw_cell(x, y)" in world and "BGMAP0" in world
 print("GBA world fruit art PASS: two legible 8x8 tiles, unchanged 104-word DECO atlas")
+# Reconstruct the nine 8x8 pieces of the 24x24 nest mound from the
+# art generator's own geometry. This is pure Python, no Pillow needed.
+# The shadowed burrow and sparse grass/soil apron must ship in the exact
+# same 104-word decor atlas that carries berries and trails.
+text_source = Path("tools/art2.py").read_text()
+assert "M = [[0] * 24 for _ in range(24)]" in text_source
+mound_program = "M = [[0] * 24" + text_source.split(
+    "M = [[0] * 24", 1
+)[1].split("DECO =", 1)[0]
+mound_ns = {}
+exec(compile(mound_program, "tools/art2.py:nest", "exec"), mound_ns)
+nest_tiles = mound_ns["MOUND"]
+assert len(nest_tiles) == 9
+expected_mound = [
+    sum(tile[y][x] << (4 * x) for x in range(8))
+    for tile in nest_tiles for y in range(8)
+]
+assert actual[32:] == expected_mound, (
+    "GBA nest mound graphics are out of sync with generated 4bpp decor"
+)
+nest_pixels = mound_ns["M"]
+assert nest_pixels[11][12] == 8, "The burrow opening lost its dark core"
+assert any(nest_pixels[y][x] == 4 for y in range(7, 20) for x in range(24))
+assert any(nest_pixels[y][x] == 10 for y in range(14, 24) for x in range(24))
+print("GBA nest rendering PASS: 9 unchanged-size mound tiles, opening, grass and soil fringe")
 print("GBA edge art PASS: 324 terrain tiles exactly match 4bpp atlas, foam + cliff strata")
