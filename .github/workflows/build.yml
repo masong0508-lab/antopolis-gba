@@ -11,6 +11,13 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: empire-ants-gba, path: build/empire-ants.gba }
 
+  chase-logic:
+    name: CAT & MOUSE host logic regression
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: make test
+
   link-smoke:
     name: Two linked mGBA instances + 3D co-op
     needs: build

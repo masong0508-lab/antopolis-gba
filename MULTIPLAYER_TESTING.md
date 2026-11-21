@@ -54,10 +54,16 @@ linked mGBA cores. This is local GBA link-cable multiplayer; not IP networking.
    HOT/WARM/COLD distance clues between scans; after a scan or a visible
    carried-food trail, the mouse's position is temporarily revealed.
 4. MOUSE walks/turns with D-pad, sidesteps with L/R, sprints with A
-   (stamina must drain only while moving), and lays scent with B. Holding
+   (stamina must drain only while moving, at half-rate for ~3.3 seconds
+   of continuous sprint from full), and lays scent with B. Holding
    B while **not moving on height-3 hills** should mark the mouse hidden:
    distant scan markers disappear until the hunter closes within 3 tiles.
-   Walk over food, bring it home and deliver **three loads** to escape.
+   The runner's **% compass bearing** must point to reachable berry tiles
+   even when looking away from them; while carrying food, return toward
+   the **$ home marker**. Walk over food, bring it home and deliver
+   **three loads** to escape. The normal black-ant world sprite must
+   NEVER reveal the mouse while the scanner marker is hidden; within
+   two tiles, the mouse becomes visible even without scanning.
    Winning by delivery should not require hitting the red queen.
 5. Let the first **90-second** round expire without delivering all food.
    Both GBAs must show the same cat-win result and per-player scores.
@@ -95,7 +101,9 @@ complete mechanics/long-session verification.
 ## Technical invariants
 
 - Link payload: 10 key bits, two rolling checksum bits, four sequence bits.
-- Build/protocol token: `0xA74`; both cartridges must match.
+- Build/protocol token: `0xA75`; both cartridges must match.
+- Visibility is driven by one pure rule for the hunter HUD, marker and mouse
+  sprite; check with `make test` before the ROM build.
 - SIOMLT_SEND is populated **before** starting each master-clocked transfer. A received packet is rejected if its sequence number, local echo, hardware player ID, or SIO error bit is invalid.
 - Only the presentation camera is local; input and world mutations are
   processed in stable **P1 then P2** order on both devices.

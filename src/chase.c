@@ -4,6 +4,7 @@
 // hunter's overhead screen and runner's ANT EYE never mutate world state.
 // One round per role; the winner is the best player after the two-round match.
 // ============================================================================
+#include "chase_logic.h"
 #define CHASE_TICKS 5400u                // 90 seconds at the game's 60 Hz VBlank
 #define CHASE_GOAL 3
 // One 4bpp tile, outside the MAPT 832..975 generated-map atlas.
@@ -20,6 +21,22 @@ static void chase_food(void) {           // accessible nearby berries, not rando
       if (((x * 17 + y * 29) & 7) != 1) continue;
       food[y][x] = 1; if (++added == 15) return;
     }
+}
+// Cheap, bounded objective search: the hunt guarantees reachable food around
+// the black nest. Recheck at HUD cadence, not per camera frame. The compass
+// then guides the runner even when the food is behind the camera.
+static u8 chase_goal(u8 rx, u8 ry, u8 *gx, u8 *gy) {
+  s16 x, y;
+  u16 best = 0xFFFFu, d;
+  u8 found = 0;
+  for (y = (s16)nesty[0] - 8; y <= (s16)nesty[0] + 8; y++)
+    for (x = (s16)nestx[0] - 8; x <= (s16)nestx[0] + 8; x++) {
+      if (x < 0 || y < 0 || x >= W || y >= H) continue;
+      if (!food[y][x] || dnp[0][y][x] == NOPATH || dnp[0][y][x] > 15) continue;
+      d = (u16)(dist(rx, (u8)x) + dist(ry, (u8)y));
+      if (d < best) { best = d; *gx = (u8)x; *gy = (u8)y; found = 1; }
+    }
+  return found;
 }
 static void chase_rules(u8 round) {
   u16 k;
@@ -101,12 +118,16 @@ static void chase_map_start(u8 hx, u8 hy) {
 }
 // Unlike draw_sprites(), this render function does NOT decrement world
 // animation counters. Every world mutation must happen on BOTH devices.
-static void chase_map_sprites(u8 hx, u8 hy, u8 rx, u8 ry, u8 scan) {
+static void chase_map_sprites(u8 hx, u8 hy, u8 rx, u8 ry, u8 revealed) {
   u8 i, tl;
   Ant *a;
   for (i = 0; i < MAXA; i++) {
     a = &ant[i];
-    if (!a->alive) { spr_hide(i); continue; }
+    // The controlled mouse IS an ordinary colony ant in world state, but
+    // must not leak through the normal map-ant sprite pass while concealed.
+    if (!a->alive || (i == eye_ctl && !revealed)) {
+      spr_hide(i); continue;
+    }
     tl = a->carry ? 5 : a->sol ? 7 : 3;
     if (a->age < 8 && (((frc >> 2) + i) & 1)) tl++;
     place_px(i, tl, a->team, a->ox * 8 + (a->x - a->ox) * a->age,
@@ -122,7 +143,7 @@ static void chase_map_sprites(u8 hx, u8 hy, u8 rx, u8 ry, u8 scan) {
     if (fx[i].t) place_px(MAXA + 3 + i, fx[i].tile, 3, fx[i].x, fx[i].y, 0);
     else spr_hide(MAXA + 3 + i);
   }
-  if (scan) place16(MAXA + 11, 20, 8, rx * 8, ry * 8, 0);
+  if (revealed) place16(MAXA + 11, 20, 8, rx * 8, ry * 8, 0);
   else spr_hide(MAXA + 11);
 }
 static void chase_hud_map(u8 hunter, u8 delivered, u16 scan_cd, u8 secs, u8 distance, u8 visible) {
@@ -131,7 +152,7 @@ static void chase_hud_map(u8 hunter, u8 delivered, u16 scan_cd, u8 secs, u8 dist
   ps(24, 17, "TIME", 10); pn(28, 17, secs, 9);
   ps(0, 18, "MOUSE FOOD:", 13); pn(13, 18, delivered, 9);
   ps(16, 18, "OF 3", 3);
-  if (scan_cd) { ps(22, 18, "SCAN", 8); pn(28, 18, (u8)(scan_cd / 60), 8); }
+  if (scan_cd) { ps(22, 18, "SCAN", 8); pn(28, 18, (u8)((scan_cd + 59u) / 60u), 8); }
   else ps(21, 18, "SCAN OK", 13);
   // Directionless proximity signal: readable clues without revealing the
   // mouse's precise hiding square between limited scanner pulses.
@@ -185,6 +206,8 @@ static u8 chase_round(u8 round) {
   prevh = lk_k[hunter]; prevr = lk_k[runner];
   for (frame = 0; frame < CHASE_TICKS && !lk_err; frame++) {
     u16 hp, rp;
+    u16 distance;
+    u8 revealed;
     u8 secs = (u8)((CHASE_TICKS - frame + 59) / 60);
     u8 moved = 0;
     vsync(); frc++;
@@ -220,7 +243,9 @@ static u8 chase_round(u8 round) {
       s32 cs = SINT[(fa + 64) & 255], sn = SINT[fa];
       s32 vx = 0, vy = 0, speed = ESPD[O(O_EYESPD)];
       if ((k[1] & J_A) && (k[1] & (J_UP | J_DOWN | J_L | J_R)) && energy) {
-        speed = speed * 2; energy--;
+        // A useful chase-length sprint (~3.3 s from full stamina), rather
+        // than draining the entire meter in only 99 video frames.
+        speed = speed * 2; if (!(frame & 1)) energy--;
       }
       else if (!(frame & 3) && energy < 99) energy++;
       if (k[1] & J_UP) { vx += (cs * speed) >> 8; vy += (sn * speed) >> 8; }
@@ -271,6 +296,10 @@ static u8 chase_round(u8 round) {
       for (i = 0; i < 2; i++) if (qfl[i]) qfl[i]--;
     }
     if (!vok(vi) || !qhp[0]) { roundout = 0; break; }
+    // Derive *one* reveal decision for map sprites, scanner marker and
+    // hunter HUD: no hidden-mouse leak through another draw pass.
+    distance = (u16)(dist(hx, rx) + dist(hy, ry));
+    revealed = chase_revealed(scan, ant[vi].carry, hidden, distance);
     // The PRESENTATION alone diverges. No world-tick / FX mutations from
     // drawing; this prevents 2D/3D client disagreement and cable desync.
     if (is_eye) {
@@ -292,7 +321,10 @@ static u8 chase_round(u8 round) {
       }
       BG0HOFS = (u16)(fa * 5 + (fa >> 2));
       if (!(frame & 7)) {
+        u8 gx, gy;
         eye_compass(fa, rx, ry);
+        if (!ant[vi].carry && chase_goal(rx, ry, &gx, &gy))
+          eye_mark(fa, (s16)gx - rx, (s16)gy - ry, '%', 13);
         chase_hud_eye(runner, deliveries, energy, secs, ant[vi].carry,
                        (u8)(dist(hx, rx) + dist(hy, ry)), hidden);
       }
@@ -301,13 +333,10 @@ static u8 chase_round(u8 round) {
       follow(); scroll_step(); win_sync();
       BG0HOFS = BG2HOFS = (u16)scx;
       BG0VOFS = BG2VOFS = (u16)scy;
-      chase_map_sprites(hx, hy, rx, ry,
-                        (u8)((scan || ant[vi].carry) &&
-                        (!hidden || dist(hx, rx) + dist(hy, ry) <= 3)));
+      chase_map_sprites(hx, hy, rx, ry, revealed);
       oam_flush();
       if (!(frame & 7)) chase_hud_map(hunter, deliveries, scan_cd, secs,
-                          (u8)(dist(hx, rx) + dist(hy, ry)),
-                          (u8)((scan || ant[vi].carry) && !hidden));
+                          (u8)distance, revealed);
     }
   }
   if (is_eye) chase_eye_stop(sky, pic);

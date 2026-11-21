@@ -33,20 +33,13 @@ round one, **P1 CAT** watches the overhead map, moving a targeting cursor
 with the D-pad, pressing A to tag a nearby runner ant, or B for a limited
 reveal scan. **P2 MOUSE** sees the immersive ANT EYE 3D view. Find the
 `%` food markers, walk over berries and bring **three loads** back to the
-`# EMPIRE-ANTS (GBA)
-Native Game Boy Advance port of the GBC game: raw registers, no libraries. Build: `make` (ARM toolchain + devkitPro `gbafix`) -> `build/empire-ants.gba`.
-
-New on GBA: 30x18 tile view, 24 ants per colony, EASY/NORM/HARD, game timer, battery-save records (wins + best time per difficulty), L/R shortcuts. Same controls as the GBC version (A/B raise/lower, SELECT flood, SELECT+A embezzle, SELECT+B fast forward, START pause/help).
-
-**Status:** builds with arm-none-eabi-gcc (`make`, then gbafix) and is tested in the mGBA core, including two linked mGBA cores for the link cable. Includes the interactive tutorial, the first-person ANT EYE, EMPIRE MODE, ANT CITY, ANTVERSE and 2 PLAYERS in every mode.
-
-## Title music (ported from the GBC build)
-The title screen has its own stereo theme again (E phrygian-dominant, ~81 BPM, 16 bars): echo of the lead hard left, lead with vibrato hard right, a plucked drone bass in the centre on the wave channel, and tiny footsteps that ping-pong between the speakers. It fades in with the picture and out on START; the in-game loop takes over afterwards. The routing uses NR51 (high byte of SOUNDCNT_L), which is reset to centred sound when the title ends. Code: `tm_start` / `tm_update` / `tm_stop` in `src/main.c`, driven once per frame from `vsync()`.
-
-Wave channel fix: the old code wrote `NR30 = 0xA0` (two-bank 64-sample mode). It is now `0xC0` (`WAVE_ON`: DAC on, play bank 1, the bank that was just loaded). Listen to the bass on a real build or an accurate emulator.
-
- home nest within **90 seconds**. A sprints (stamina-limited), B lays a
-scent trail, L/R sidestep. A successful tag or time-out wins for the cat;
+`home nest within **90 seconds**. A sprints (stamina-limited), B lays a
+scent trail, L/R sidestep. The mouse's compass now guides toward reachable berries even when they are
+behind the camera, and the cat's map does not reveal a concealed mouse through
+the ordinary ant-sprite layer. Close-range sight (within two tiles), scanner
+pulses and visible food-carrying expose the runner; hill cover defeats
+long-range scans. A full sprint now lasts approximately 3.3 seconds.
+A successful tag or time-out wins for the cat;
 three deliveries win for the mouse. **Round two swaps viewpoints** so P1
 becomes the first-person mouse and P2 becomes the map hunter. Each round win
 awards three points, and every successfully delivered food load adds a point

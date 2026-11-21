@@ -9,3 +9,12 @@ build/empire-ants.gba: src/mp.c src/chase.c src/city.c src/extras.c src/empire.c
 	gbafix $@ -t"EMPIRE-ANTS" -cEANT
 clean:
 	rm -rf build
+
+
+# Native host-only regression checks; no ARM SDK or emulator needed.
+HOSTCC ?= cc
+.PHONY: test
+test:
+	mkdir -p build
+	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_chase_logic.c -o build/test_chase_logic
+	./build/test_chase_logic
