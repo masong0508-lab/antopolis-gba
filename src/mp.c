@@ -15,7 +15,9 @@ static const u8 MPSZ[4] = {32, 48, 64, 96};
 static const char *const MPK[5] = {"VERSUS", "CO-OP EMPIRE", "CO-OP CITY", "CO-OP ANTVERSE", "CO-OP CLASSIC"};
 static const char *const MPD[5] = {"BLACK ANTS AGAINST RED ANTS", "ONE EMPIRE, TWO RULERS", "ONE CITY, TWO MAYORS", "EVERYTHING, TOGETHER", "TWO GODS, ONE ANT COLONY"};
 static const u8 MPORD[5] = {0, 4, 1, 2, 3};          // the order LEFT / RIGHT steps through the games
-#define MP_BUILD ((u16)((__TIME__[0] * 7 + __TIME__[1] * 13 + __TIME__[3] * 17 + __TIME__[4] * 19 + __TIME__[6] * 23 + __TIME__[7] * 29 + __DATE__[4] * 31 + __DATE__[5] * 37) & 0xFFF))
+// Stable on-wire protocol revision. Build timestamps must NEVER decide whether two identical ROMs can link.
+// Bump this 12-bit value only when game state, input packets or lobby settings become incompatible.
+#define MP_BUILD 0xA71u
 static u8 mp_locked(u8 k) { return (k == 1 && !emp_unlocked()) || (k == 3 && !verse_unlocked()); }
 
 // ---------- VERSUS (classic) ----------
@@ -191,7 +193,9 @@ static u8 mp_link_start(u32 *seed) {               // 1 = linked; the host's set
   for (i = 0; i < 8; i++) vsync();
   for (;;) {
     if (raw_keys() & J_B) { lk_close(); sfx_deny(); while (raw_keys()) vsync(); return 0; }
-    lk_me = (SIOCNTR & 4) ? 1 : 0;
+    // Multiplayer SIOCNT bits 4-5 are the player ID; bit 2 is the SI line, NOT player 2.
+    lk_me = (u8)((SIOCNTR >> 4) & 3);
+    if (lk_me > 1) { mp_msg("TWO GBAS ONLY", "USE A TWO PLAYER LINK", 8); lk_close(); return 0; }
     mp_msg("LOOKING FOR THE OTHER GBA", (dots++ & 1) ? "... ..." : ". . . .", 9);
     lk_seq = 0;
     if (lk_step(0xA5A, &o, 15) && o == 0xA5A) {
