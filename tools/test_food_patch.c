@@ -158,6 +158,42 @@ int main(void) {
     assert(!food_start_anchor(heights,128u,32u,32u,4u,4u,27u,27u,
                               &ax,&ay));
   }
-  puts("GBA map editor food patches and starter anchors PASS: 81 world sizes, shoreline, cliffs, 50 noisy worlds");
+  /* Custom-map markers are *actual* berry tiles in the world. The 16
+     selected centers cap the future regrowth distribution only; they
+     must never silently discard authored initial food in large maps. */
+  {
+    uint8_t w,h,selected;
+    uint16_t k,marked,spawned;
+    assert(food_patch_authored_tile('f',2u));
+    assert(food_patch_authored_tile('f',1u));
+    assert(!food_patch_authored_tile('f',0u));
+    assert(!food_patch_authored_tile('w',0u));
+    assert(!food_patch_authored_tile('Y',2u));
+    assert(!food_patch_authored_tile('R',2u));
+    assert(!food_patch_authored_tile('g',2u));
+    for(h=32u;h<=96u;h=(uint8_t)(h+8u))
+      for(w=32u;w<=96u;w=(uint8_t)(w+8u)) {
+        marked=0u; spawned=0u;
+        for(k=0u;k<(uint16_t)w*h;++k) {
+          world[k]=((k%17u)==0u)?'f':'g';
+          if(world[k]=='f') ++marked;
+        }
+        selected=food_patch_pick(world,w,h,px,py);
+        assert(selected==FOOD_PATCH_LIMIT);
+        for(k=0u;k<(uint16_t)w*h;++k)
+          spawned += food_patch_authored_tile(world[k],2u);
+        assert(marked==spawned);
+        assert(marked>FOOD_PATCH_LIMIT);
+      }
+    /* Sparse authored maps retain every actual berry too. */
+    memset(world,'g',32u*32u);
+    for(k=0u;k<7u;++k) world[k*13u]='f';
+    assert(food_patch_pick(world,32u,32u,px,py)==7u);
+    spawned=0u;
+    for(k=0u;k<32u*32u;++k)
+      spawned += food_patch_authored_tile(world[k],2u);
+    assert(spawned==7u);
+  }
+  puts("GBA map food PASS: exact authored berries, 81 dimensions, shoreline/cliff starter anchors, randomized patches");
   return 0;
 }
