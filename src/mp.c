@@ -64,7 +64,12 @@ static u8 vs_input(u8 p, u16 k) {                   // 0 go on, 1 quit, 2 a menu
   if (pr & J_START) {
     lk_focus = p; if (sw) vs_swap(); pm_do = 0; pause_menu(); if (pm_do == 2) offering(); if (sw) vs_swap(); lk_focus = 2; s->prev = 0x3FF;
     if (over == 3) return 1;
-    if (pm_do == 1) say("NO ANT EYE WITH 2 PLAYERS");
+    if (pm_do == 1) {
+      // Pass-the-GBA co-op classic can hand the same *real* black ant to either god.
+      // Linked games and versus retain map-only play until camera ownership is network-safe.
+      if (mp_on == 1 && mp_kind == 4) eye();
+      else say("ANT EYE: LOCAL CO-OP ONLY");
+    }
     vs_redraw(); return 2;
   }
   dirs = (u8)(k & 15);
