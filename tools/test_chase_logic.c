@@ -52,6 +52,21 @@ int main(void) {
     // A new round's panel is invalidated even when scores coincide.
     cache.seconds = 255;
     assert(chase_hud_needs_update(&cache, 90, 0, 0, 99, 0));
+    // Two seconds at 60 Hz, panel opportunity every 8 frames.
+    // A stable guide should repaint twice, not 15 times. A live
+    // scout compass is independent and still updates every 8 frames.
+    {
+      u16 redraws = 0, chances = 0;
+      cache.seconds = 255;
+      for (u16 frame = 0; frame < 120; frame += 8) {
+        u8 seconds = (u8)(90 - frame / 60);
+        chances++;
+        if (chase_hud_needs_update(&cache, seconds, 0, 0, 0, 0))
+          redraws++;
+      }
+      assert(chances == 15);
+      assert(redraws == 2);
+    }
   }
   assert(chase_team_points(0, 0) == 0);
   assert(chase_team_points(2, 0) == 2);
