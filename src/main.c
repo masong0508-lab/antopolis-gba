@@ -3264,7 +3264,7 @@ static void em_draw(u8 sel, u8 conf) {
   pm_rule(3);
   ps(2, 4, "SIZE", 9); pn(11, 4, mw, 3); ps(14, 4, "X", 10); pn(16, 4, mh, 3);
   ps(2, 5, "BERRIES", 9); if (n > 99u) ps(11, 5, "99+", 3); else pn(11, 5, (u8)n, 3);
-  if (n > FOOD_PATCH_LIMIT) ps(14, 5, "16 PATCHES LIVE", 10);
+  if (n > FOOD_PATCH_LIMIT) ps(14, 5, "16 REGROW SITES", 10);
   ps(2, 6, "PATH", 9); ps(11, 6, ok ? "ANTS CAN WALK" : "NONE: GAME CUTS ONE", ok ? 13 : 8);
   ps(11, 7, "NEST TO NEST", 10);
   pm_rule(9);
