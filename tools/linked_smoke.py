@@ -254,8 +254,15 @@ def main():
         tick(120)
         snapshot("05_map_ready" if args.scenario == "co-op" else "05_chase_rules")
         if args.scenario == "chase":
-            # Run one: P1 guides from the OVERHEAD MAP, P2 explores in ANT EYE.
-            press(A, ports=(0, 1))
+            # A single Ready cannot launch an expedition. Stagger the
+            # consoles deliberately; the guide must wait for the scout.
+            press(A, ports=(0,))
+            tick(65)
+            report["guide_only_ready"] = save_info()
+            if report["guide_only_ready"][1]["ant_eye_achievement_7"]:
+                raise AssertionError("DUAL VIEW started before both peers confirmed Ready")
+            snapshot("05a_waiting_for_scout_ready")
+            press(A, ports=(1,))
             tick(120)
             snapshot("06_cat_map_vs_mouse_eye")
             report["eye_sram"] = save_info()
@@ -277,15 +284,24 @@ def main():
             # bring both linked emulators to the SAME result card.
             report["round_one_seconds"] = tick(5500)
             snapshot("08_first_round_result")
-            # The scorecard accepts A / START. The next arena has its own
-            # deterministic loading screen and an explicit "A GO ON" gate.
-            press(A, ports=(0, 1))
+            # Scorecards also require BOTH acknowledgements. The guide
+            # confirms first; then the scout triggers the shared transition.
+            press(A, ports=(0,))
+            tick(65)
+            snapshot("08a_waiting_for_scout_result")
+            press(A, ports=(1,))
             tick(1300)
             snapshot("09_second_arena_loaded")
             press(A, ports=(0, 1))
             tick(120)
             snapshot("10_swapped_role_rules")
-            press(A, ports=(0, 1))
+            # In the swapped round P2 confirms first, then P1 as scout.
+            press(A, ports=(1,))
+            tick(65)
+            report["swapped_guide_only_ready"] = save_info()
+            if report["swapped_guide_only_ready"][0]["ant_eye_achievement_7"]:
+                raise AssertionError("P1 entered ANT EYE without confirming swapped role")
+            press(A, ports=(0,))
             tick(120)
             snapshot("11_roles_swapped")
             report["round_two_sram"] = save_info()
