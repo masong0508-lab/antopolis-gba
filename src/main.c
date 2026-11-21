@@ -9,6 +9,7 @@
 #include "world_variation.h"
 #include "eye_floor_detail.h"
 #include "eye_scene_motion.h"
+#include "terrain_food.h"  // common flooded-berry rule, no extra world-state bytes
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 #include "font8.h"
@@ -445,6 +446,7 @@ static void cur_info(void) {
   if (O(O_HINTS)) return;
   if (h == 0) ps(20, 19, "\1 FILL IN", 1);
   else if (h == 3) ps(20, 19, "\2 DIG DOWN", 1);
+  else if (h == 1 && food[cy][cx]) ps(18, 19, "\2 LOSES FOOD", 8);
   else ps(19, 19, "\1 UP \2 DOWN", 1);
 }
 static void hud(void) {
@@ -485,7 +487,8 @@ static const char HELP[] =
   "THE RED ANTS KILL YOURS\n"
   "\n"
   "#TIPS\n"
-  "DARK EDGES ARE CLIFFS: NO WAY\n";
+  "DARK EDGES ARE CLIFFS: NO WAY\n"
+  "B ON BERRY SAND: FOOD LOST\n";
 static void help_show(void) {
   const char *s = HELP; u8 y = 1, x, g;
   hide_all(); vsync(); oam_flush();
@@ -889,7 +892,7 @@ static void hit(u8 px, u8 py, u8 q) {            // 3x3 patch: every tile sinks 
   for (y = (s8)py - 1; y <= (s8)py + 1; y++) for (x = (s8)px - 1; x <= (s8)px + 1; x++)
     if (x >= 0 && y >= 0 && x < W && y < H && !is_nest(x, y)) {
       if (q && (rnd() & 1)) { if (hgt[y][x] < 3) hgt[y][x]++; } else if (hgt[y][x]) hgt[y][x]--;
-      if (!hgt[y][x]) food[y][x] = 0;
+      food[y][x] = (u8)TERRAIN_FOOD_AFTER(hgt[y][x], food[y][x]);
     }
   for (y = (s8)py - 2; y <= (s8)py + 2; y++) for (x = (s8)px - 2; x <= (s8)px + 2; x++)
     if (x >= 0 && y >= 0 && x < W && y < H) draw_cell(x, y);
@@ -1248,13 +1251,25 @@ static void newgame(void) {
 }
 
 static void raise_land(void) {
-  if (mana && hgt[cy][cx] < 3 && !is_nest(cx, cy)) { hgt[cy][cx]++; mana--; draw_around(cx, cy); sfx_raise(); tev |= 2; return; }
+  if (mana && hgt[cy][cx] < 3 && !is_nest(cx, cy)) {
+    hgt[cy][cx]++; mana--; draw_around(cx, cy); sfx_raise(); tev |= 2;
+    say(hgt[cy][cx] == 1 ? "WATER FILLED: NEW LAND" :
+        hgt[cy][cx] == 2 ? "GROUND RAISED: NEW RAMP" : "HILL RAISED: WATCH CLIFFS");
+    return;
+  }
   sfx_deny(); say(is_nest(cx, cy) ? "NESTS CANT BE CHANGED" : hgt[cy][cx] >= 3 ? "ALREADY HIGHEST: \2 LOWERS" : "NO AP: WAIT OR FIND FOOD");
 }
 static void lower_land(void) {
   if (mana && hgt[cy][cx] > 0 && !is_nest(cx, cy)) {
-    hgt[cy][cx]--; mana--; if (!hgt[cy][cx]) food[cy][cx] = 0;
-    draw_around(cx, cy); sfx_lower(); tev |= 4; return;
+    u8 drowned;
+    hgt[cy][cx]--; mana--;
+    drowned = (u8)TERRAIN_FOOD_DROWNED(hgt[cy][cx], food[cy][cx]);
+    food[cy][cx] = (u8)TERRAIN_FOOD_AFTER(hgt[cy][cx], food[cy][cx]);
+    draw_around(cx, cy); sfx_lower(); tev |= 4;
+    say(drowned ? "FOOD LOST: NOW UNDERWATER" :
+        hgt[cy][cx] == 0 ? "MOAT DUG: WATER BLOCKS ANTS" :
+        hgt[cy][cx] == 1 ? "RAMP LOWERED TO SAND" : "HILL LOWERED TO GRASS");
+    return;
   }
   sfx_deny(); say(is_nest(cx, cy) ? "NESTS CANT BE CHANGED" : hgt[cy][cx] == 0 ? "ALREADY WATER: \1 FILLS" : "NO AP: WAIT OR FIND FOOD");
 }
@@ -1266,14 +1281,20 @@ static void offering(void) {
 }
 static void flood(void) {
   s8 x, y;
+  u8 drowned = 0;
   if (mana < fcost) { sfx_deny(); say(fcost == 4 ? "FLOOD NEEDS 4 AP" : "FLOOD NEEDS 8 AP"); return; }
   mana -= fcost; sfx_flood(); tev |= 8; shk = 10; st_flood++;
   { s8 r = (s8)(cht[20] ? 2 : 1);
   for (y = (s8)cy - r; y <= (s8)cy + r; y++) for (x = (s8)cx - r; x <= (s8)cx + r; x++)
-    if (x >= 0 && y >= 0 && x < W && y < H && hgt[y][x] && !is_nest(x, y)) { hgt[y][x]--; if (!hgt[y][x]) food[y][x] = 0; }
+    if (x >= 0 && y >= 0 && x < W && y < H && hgt[y][x] && !is_nest(x, y)) {
+      hgt[y][x]--;
+      if (TERRAIN_FOOD_DROWNED(hgt[y][x], food[y][x])) drowned = 1;
+      food[y][x] = (u8)TERRAIN_FOOD_AFTER(hgt[y][x], food[y][x]);
+    }
   for (y = (s8)cy - r - 1; y <= (s8)cy + r + 1; y++) for (x = (s8)cx - r - 1; x <= (s8)cx + r + 1; x++)
     if (x >= 0 && y >= 0 && x < W && y < H) draw_cell(x, y); }
   pdirty = 1;
+  say(drowned ? "FLOOD: BERRIES WASHED AWAY" : "FLOOD: GROUND LOWERED");
 }
 static void jump(void) {                           // SELECT: alert spot, else HOME -> ARMY -> RED NEST
   u8 i, bi = MAXA; u16 b = NOPATH, d;

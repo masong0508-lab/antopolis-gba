@@ -27,7 +27,15 @@ def check(name,parts,word_count):
 big=check("BIGS",ns["BIG"],512)
 eye=check("EYE2",ns["EYE2"],1088)
 def pixel(tiles,base,x,y):
+    # 32x32 creatures use four 8x8 tiles across each row.
+    assert 0 <= x < 32 and 0 <= y < 32
     return tiles[base+(y//8)*4+x//8][y%8][x%8]
+
+def pixel16(tiles,base,x,y):
+    # Six 16x16 decorations are packed as four tiles apiece, two
+    # tiles per row. Indexing them as 32x32 samples a different prop.
+    assert 0 <= x < 16 and 0 <= y < 16
+    return tiles[base+(y//8)*2+x//8][y%8][x%8]
 for base in (0,16,32):
     assert pixel(big,base,9,18)==3,("shell glint",base)
     assert pixel(big,base,11,17)==4,("thorax articulation",base)
@@ -48,11 +56,17 @@ assert all(pixel(eye,64,x,29) in (0,1) for x in range(32))
 # contact pixels, and the existing 32x32 ant shadow must have a denser
 # central weight to remain visible when hardware scaled for distance.
 footprints=ns["FOOT_SHADOWS"]
+assert len(footprints) == 6
 for kind, xs in enumerate(footprints):
+    base = 96 + kind * 4
+    assert len(xs) > 0 and len(xs) == len(set(xs))
     for x in xs:
-        assert pixel(eye,96+kind*4,x,15)==1
-    assert all(pixel(eye,96+kind*4,x,15)==0 for x in range(16)
-               if x not in xs)
+        assert pixel16(eye,base,x,15)==1, ("ground contact", kind, x)
+    assert all(pixel16(eye,base,x,15)==0 for x in range(16)
+               if x not in xs), ("shadow spread", kind)
+    # Contact pixels add no sprite tiles, and every footprint is
+    # actually attached to its own decoration, not its neighbor.
+    assert any(pixel16(eye,base,x,14) for x in range(16)), ("visible prop", kind)
 assert pixel(eye,64,15,29)==1
 assert pixel(eye,64,16,29)==1
 world=Path("src/main.c").read_text()
