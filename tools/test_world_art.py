@@ -43,7 +43,7 @@ assert all(any(c == "4" for c in "".join(rows)) for rows in (gold, red))
 assert "2" in "".join(gold) and "3" in "".join(gold)
 assert "5" in "".join(red) and "3" in "".join(red)
 content = Path("src/art2.h").read_text()
-match = re.search(r"static const u32 DECO\\[104\\]\\s*=\\s*\\{(.*?)\\};", content, re.S)
+match = re.search(r"static const u32 DECO\[104\]\s*=\s*\{(.*?)\};", content, re.S)
 assert match, "Missing GBA decor tile atlas"
 actual = [int(word, 16) for word in re.findall(
     r"0x([0-9A-Fa-f]{8})", match.group(1)
