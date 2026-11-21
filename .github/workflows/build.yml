@@ -38,6 +38,11 @@ jobs:
         run: |
           CORE="$(find /tmp/antopolis-mgba/build -name mgba_splitscreen_libretro.so -print -quit)"
           test -n "$CORE"
+          mkdir -p build/link-smoke
+          # Save the exact native emulator and ROM for reproducible local
+          # replay of a failed cable test without recompiling either one.
+          cp "$CORE" build/link-smoke/linked-core.so
+          cp build/empire-ants.gba build/link-smoke/empire-ants.gba
           python3 -u tools/linked_smoke.py build/empire-ants.gba "$CORE" --out build/link-smoke
       - uses: actions/upload-artifact@v4
         if: always()
