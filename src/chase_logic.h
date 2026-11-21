@@ -31,6 +31,13 @@ static u8 chase_ready_press(u16 previous, u16 current, u16 mask) {
 static u8 chase_both_released(u16 p1, u16 p2, u16 mask) {
   return (u8)(((p1 | p2) & mask) == 0);
 }
+// Player-facing scout objective, with the recent guide reward taking
+// precedence for one second. This state is presentation-only and does
+// not affect the linked world checksum or stamina calculation.
+// 0 seek food, 1 guide marker, 2 carry home, 3 waypoint rewarded.
+static u8 chase_scout_message(u8 carry, u8 marked, u8 boost_notice) {
+  return boost_notice ? 3u : carry ? 2u : marked ? 1u : 0u;
+}
 // Presentation-only cache. The old DUAL VIEW HUD cleared and repainted
 // 3-4 text rows every eight frames even when every label stayed the same.
 // No world state or linked checksum depends on this cache.
