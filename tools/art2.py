@@ -33,6 +33,14 @@ def terr_tile(l, code):
             if s: p[7][i] = 10
             if w: p[i][0] = 10
             if e: p[i][7] = 10
+        # A broken second band of pale shallows makes the beach recede
+        # into real water rather than becoming a single white square edge.
+        # Use only the existing 4bpp palette and 81 variant tile slots.
+        for i in range(8):
+            if n: p[1][i] = 3 if i % 3 == 0 else 14
+            if s: p[6][i] = 3 if (i + 1) % 3 == 0 else 14
+            if w: p[i][1] = 3 if (i + 2) % 3 == 0 else 14
+            if e: p[i][6] = 3 if i % 3 == 0 else 14
         return p
     for i in range(8):   # N and W first (lit side), then S and E (shadow side) on top
         if n == 1: p[0][i] = 12
@@ -44,6 +52,15 @@ def terr_tile(l, code):
         if s == 2: p[6][i] = 13; p[7][i] = 11
         if e == 1: p[i][7] = 13
         if e == 2: p[i][6] = 13; p[i][7] = 11
+    # Cut shallow stratification lines into tall drops without changing
+    # the gameplay height or the fixed 4x81 tile atlas. Minor steps stay
+    # readable as a single lip; actual cliffs acquire a recessed face.
+    if l >= 2:
+        for i in range(8):
+            if n == 2 and i % 3 == 0: p[2][i] = 13
+            if s == 2 and (i + 1) % 3 == 0: p[5][i] = 9
+            if w == 2 and (i + 2) % 3 == 0: p[i][2] = 13
+            if e == 2 and i % 3 == 0: p[i][5] = 9
     return p
 TERR = [terr_tile(l, c) for l in range(4) for c in range(81)]
 
