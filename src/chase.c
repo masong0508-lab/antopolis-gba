@@ -194,20 +194,23 @@ static void chase_hud_map(u8 guide, u8 delivered, u8 marked, u8 secs,
   // Make the reason for a rejected A press visible instead of just buzzing.
   // This uses the exact same deterministic rule as waypoint placement.
   ps(0, 19,
+     marker_reason == 4 ? "SCOUT REACHED MARK +20 STAMINA" :
      marker_reason == 1 ? "MARK: WATER PICK DRY LAND" :
      marker_reason == 2 ? "MARK: NO ROUTE FROM NEST" :
      marker_reason == 3 ? "MARK: TOO CLOSE TO SCOUT" :
                           "D-PAD MAP A MARK B FIND SCOUT",
-     marker_reason ? 8 : 10);
+     marker_reason == 4 ? 13 : marker_reason ? 8 : 10);
 }
 static void chase_hud_eye(u8 scout, u8 delivered, u8 energy, u8 secs,
-                          u8 carry, u8 marked) {
+                          u8 carry, u8 marked, u8 boost_notice) {
   ov_fill(CHASE_PANEL_TILE, 1, 16, 19);
   ps(0, 16, scout ? "P2 SCOUT: ANT EYE" : "P1 SCOUT: ANT EYE", 13);
   ps(24, 16, "TIME", 10); pn(28, 16, secs, 9);
-  ps(0, 17, carry ? "FOOD HELD: RETURN HOME $" :
+  ps(0, 17, boost_notice ? "WAYPOINT REACHED +20 STAMINA" :
+     carry ? "FOOD HELD: RETURN HOME $" :
      marked ? "FOLLOW GUIDE ? COMPASS MARK" :
-     "FIND FOOD % AND BRING HOME $", carry ? 13 : marked ? 14 : 3);
+     "FIND FOOD % AND BRING HOME $",
+     boost_notice ? 13 : carry ? 13 : marked ? 14 : 3);
   ps(0, 18, "DELIVERIES", 10); pn(12, 18, delivered, 13);
   ps(14, 18, "/3", 3); ps(19, 18, "STAMINA", 10); pn(28, 18, energy, 9);
   ps(0, 19, "\1 SPRINT \2 SCENT L/R STRAFE", 10);
@@ -216,6 +219,7 @@ static void chase_hud_eye(u8 scout, u8 delivered, u8 energy, u8 secs,
 static u8 chase_round(u8 round) {
   u8 guide = round, scout = (u8)(round ^ 1), vi, rx, ry, hx, hy;
   u8 deliveries = 0, energy = 99, marked = 0, mx = 0, my = 0;
+  u8 boost_notice = 0;  // 1-second shared presentation cue, no network state
   u8 prevh = 0, prevr = 0, roundout = 0, cur, fa, is_eye;
   u16 sky = BGPAL[0], pic[16], angle = 0, k[2], frame;
   s32 px, py;
@@ -325,6 +329,7 @@ static u8 chase_round(u8 round) {
     if (marked && dist(rx, mx) + dist(ry, my) <= 1) {
       marked = 0;
       energy = (u8)(energy > 79 ? 99 : energy + 20);
+      boost_notice = 60; // Immediately explain why the waypoint disappeared
       sfx_food();
     }
     if (!(frame & 7)) { tick_slice(); bfs_tick(200); }
@@ -372,9 +377,9 @@ static u8 chase_round(u8 round) {
         // The compass is live, but static words/counters need no VRAM
         // clears until time, food, stamina or the current task changes.
         if (chase_hud_needs_update(&hud_cache, secs, deliveries, marked,
-                                   energy, ant[vi].carry))
+                                   energy, boost_notice ? 2 : ant[vi].carry))
           chase_hud_eye(scout, deliveries, energy, secs, ant[vi].carry,
-                        marked);
+                        marked, boost_notice);
       }
     } else {
       cx = hx; cy = hy;
@@ -384,13 +389,17 @@ static u8 chase_round(u8 round) {
       chase_map_sprites(hx, hy, px, py, marked, mx, my);
       oam_flush();
       if (!(frame & 7)) {
-        u8 reason = chase_marker_reason(hgt[hy][hx], dnp[0][hy][hx],
-                          (u16)(dist(hx, rx) + dist(hy, ry)));
+        u8 reason = boost_notice ? 4 :
+          chase_marker_reason(hgt[hy][hx], dnp[0][hy][hx],
+                              (u16)(dist(hx, rx) + dist(hy, ry)));
         if (chase_hud_needs_update(&hud_cache, secs, deliveries, marked,
                                    reason, 0))
           chase_hud_map(guide, deliveries, marked, secs, reason);
       }
     }
+    // The notice is deliberately visual-only: both linked clients execute
+    // identical simulation and packet logic, and the cue expires on its own.
+    if (boost_notice) boost_notice--;
   }
   if (is_eye) chase_eye_stop(sky, pic);
   eye_ctl = eye_ctl2 = MAXA;
