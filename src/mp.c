@@ -342,7 +342,7 @@ static void versus_play(void) {                     // VERSUS, and CO-OP CLASSIC
   mana2 = mana;
   ps_load(mp_local()); follow(); scx = (s16)camx * 8; scy = (s16)camy * 8; win_all();
   if (mp_on == 1) { mp_pass_card(0); }
-  vs_redraw(); say(co ? "TWO GODS, ONE COLONY!" : "P1 BLACK  AGAINST  P2 RED!");
+  vs_redraw(); say(co ? (mp_on == 2 ? "SEL+START: TWO ANT 3D CO-OP!" : "TWO GODS, ONE COLONY!") : "P1 BLACK  AGAINST  P2 RED!");
   while (joy()) vsync();
   while (!over) {
     vsync(); frc++;
@@ -545,6 +545,7 @@ static void mp_draw(void) {
     const char *d = lk ? (mp_kind == 1 ? "WIN A GAME TO OPEN EMPIRE" : "WIN ALL 10 CITY SCENARIOS") : MPD[mp_kind];
     ps(3, 15, lk ? "LOCKED" : "START!", mp_sel == 6 ? 9 : lk ? 15 : 13);
     ps((u8)(15 - (blen2(d) + 1) / 2), 17, d, lk ? 8 : 2); }
+  if (mp_kind == 4 && mp_how) ps(1, 18, "LINK CO-OP: SEL+START = 3D", 10);
   ps(1, 19, "< > CHANGE  \1 GO  \2 BACK", 10);
 }
 static void mp_menu(void) {
