@@ -829,7 +829,7 @@ static u8 mp_on, mp_kind, mp_turn, mp_tlen = 1, mana2;
 static u16 mp_tleft;
 static u8 mp_local(void) { return mp_on == 2 ? lk_me : mp_on == 1 ? mp_turn : 0; }
 static u8 mp_vs(void) { return mp_on && mp_kind == 0; }
-static u8 eye_ctl = 255;                          // the ant you are steering in the ANT EYE (the AI leaves it alone)
+static u8 eye_ctl = 255, eye_ctl2 = 255;          // two human pilots in linked co-op; AI leaves both ants alone
 static void apr(s8 d) { s16 v = (s16)appr + d; appr = v < 0 ? 0 : v > 99 ? 99 : (u8)v; }
 static void die(Ant *a, u8 drown) { a->alive = 0; if (a->team) st_kill++; else st_lost++; if (a->team == 0) apr(-2); if (drown && a->team == 1 && ++rdrown >= 20) ach_get(3); fx_add(a->x, a->y, drown ? FX_SPLASH : FX_PUFF); }
 static void set_rules(void) {
@@ -943,13 +943,13 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
   for (i = 0; i < MAXA; i++) if (ant[i].age < 8) ant[i].age++;
   for (i = slice; i < MAXA; i += 8) {
     if (!ant[i].alive) continue;
-    if (i == eye_ctl) continue;
+    if (i == eye_ctl || i == eye_ctl2) continue;
     if (hgt[ant[i].y][ant[i].x] == 0) { die(&ant[i], 1); continue; }
     step_ant(&ant[i]);
   }
   for (i = slice; i < MAXA; i += 8)
     if (ant[i].alive) for (j = i + 1; j < MAXA; j++)
-      if (ant[j].alive && ant[i].team != ant[j].team && ant[i].x == ant[j].x && ant[i].y == ant[j].y && i != eye_ctl && j != eye_ctl)
+      if (ant[j].alive && ant[i].team != ant[j].team && ant[i].x == ant[j].x && ant[i].y == ant[j].y && i != eye_ctl && j != eye_ctl && i != eye_ctl2 && j != eye_ctl2)
         { u8 iw = (u8)(rnd() & 1);
           if (cht[11] && ant[i].team != ant[j].team) {     // STRONG ANTS: your ant wins more often
             static const u8 SW[4] = {50, 67, 80, 100}; u8 mine_i = (u8)(ant[i].team == 0);
