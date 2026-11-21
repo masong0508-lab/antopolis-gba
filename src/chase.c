@@ -6,6 +6,9 @@
 // ============================================================================
 #define CHASE_TICKS 5400u                // 90 seconds at the game's 60 Hz VBlank
 #define CHASE_GOAL 3
+// One 4bpp tile, outside the MAPT 832..975 generated-map atlas.
+// Pixel index 1 in palette 1 is black. No image asset/framebuffer needed.
+#define CHASE_PANEL_TILE 976
 static u8 chase_last_food;   // the mouse's completed deliveries count even if caught
 static void chase_food(void) {           // accessible nearby berries, not random unreachable scenery
   s16 x, y; u8 added = 0;
@@ -47,6 +50,7 @@ static void chase_rules(u8 round) {
   }
 }
 static void chase_eye_start(s32 px, s32 py, u8 fa, u8 vi) {
+  fill_tile(TILE32 + CHASE_PANEL_TILE * 8, 0x11111111u);
   hide_all(); vsync(); oam_flush();
   floor_pal(); sky_init(); pano_init(); ov_clear(); floor_tiles();
   fox = (s16)(px >> 8) - 32; foy = (s16)(py >> 8) - 32;
@@ -76,6 +80,7 @@ static void chase_eye_stop(u16 sky, const u16 *pic) {
   *(volatile u32 *)0x0400002C = 0;
 }
 static void chase_map_start(u8 hx, u8 hy) {
+  fill_tile(TILE32 + CHASE_PANEL_TILE * 8, 0x11111111u);
   cx = hx; cy = hy;
   camx = 0; camy = H - VH; follow();
   scx = (s16)camx * 8; scy = (s16)camy * 8;
@@ -112,7 +117,7 @@ static void chase_map_sprites(u8 hx, u8 hy, u8 rx, u8 ry, u8 scan) {
   else spr_hide(MAXA + 11);
 }
 static void chase_hud_map(u8 hunter, u8 delivered, u8 scan_cd, u8 secs) {
-  ov_fill(UIB + 31, 1, 17, 19);   // opaque bark/soil HUD panel; 2D terrain stays legible
+  ov_fill(CHASE_PANEL_TILE, 1, 17, 19); // solid dark HUD behind bright text
   ps(0, 17, hunter ? "P2 CAT: MAP HUNTER" : "P1 CAT: MAP HUNTER", 8);
   ps(24, 17, "TIME", 10); pn(28, 17, secs, 9);
   ps(0, 18, "MOUSE FOOD:", 13); pn(13, 18, delivered, 9);
@@ -122,7 +127,7 @@ static void chase_hud_map(u8 hunter, u8 delivered, u8 scan_cd, u8 secs) {
   ps(0, 19, "PAD AIM \1 TAG \2 SCAN \5 QUIT", 10);
 }
 static void chase_hud_eye(u8 runner, u8 delivered, u8 energy, u8 secs, u8 carry) {
-  ov_fill(UIB + 31, 1, 16, 19);   // cover the busy ground texture behind tiny HUD text
+  ov_fill(CHASE_PANEL_TILE, 1, 16, 19); // solid dark HUD behind first-person text
   ps(0, 16, runner ? "P2 MOUSE: ANT EYE" : "P1 MOUSE: ANT EYE", 13);
   ps(24, 16, "TIME", 10); pn(28, 16, secs, 9);
   ps(0, 17, carry ? "CARRY FOOD HOME TO $ !" : "FIND % FOOD, RETURN TO $", carry ? 13 : 3);
@@ -286,6 +291,7 @@ static void chase_result(u8 round, u8 outcome, const u8 *score) {
   ps(18, 8, winner ? "PLAYER 2" : "PLAYER 1", 9);
   ps(3, 11, "P1 SCORE", 13); pn(20, 11, score[0], 13);
   ps(3, 13, "P2 SCORE", 8); pn(20, 13, score[1], 8);
+  ps(3, 15, "ROUND WIN +3  EACH FOOD +1", 10);
   ps(2, 17, round ? "MATCH DONE!" : "NEXT: SWAP CAT AND MOUSE", 3);
   ps(2, 19, "A / START: CONTINUE", 9);
   DISPCNT = 0x1B40; BLDY = 0;
