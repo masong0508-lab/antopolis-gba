@@ -19,3 +19,5 @@ test:
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_chase_logic.c -o build/test_chase_logic
 	./build/test_chase_logic
 	python3 tools/test_world_art.py
+	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_ambient_water.c -o build/test_ambient_water
+	./build/test_ambient_water
