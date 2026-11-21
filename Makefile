@@ -2,7 +2,7 @@
 PREFIX ?= arm-none-eabi-
 CFLAGS = -mcpu=arm7tdmi -marm -mthumb-interwork -O2 -Wall -ffreestanding -fno-builtin -nostdlib -fno-tree-loop-distribute-patterns -Isrc
 all: build/empire-ants.gba
-build/empire-ants.gba: src/mp.c src/chase.c src/chase_logic.h src/city.c src/extras.c src/empire.c src/battle.c src/main.c src/logo.c src/logo.h src/ambient_water.h src/world_variation.h src/art.h src/art2.h src/font8.h src/maps.h src/crt0.s gba.ld
+build/empire-ants.gba: src/mp.c src/chase.c src/chase_logic.h src/city.c src/extras.c src/empire.c src/battle.c src/main.c src/logo.c src/logo.h src/ambient_water.h src/world_variation.h src/eye_floor_detail.h src/art.h src/art2.h src/font8.h src/maps.h src/crt0.s gba.ld
 	mkdir -p build
 	$(PREFIX)gcc $(CFLAGS) -T gba.ld -Wl,--gc-sections src/crt0.s src/main.c src/logo.c -lgcc -o build/empire-ants.elf
 	$(PREFIX)objcopy -O binary build/empire-ants.elf $@
@@ -23,3 +23,5 @@ test:
 	./build/test_ambient_water
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_world_variation.c -o build/test_world_variation
 	./build/test_world_variation
+	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_eye_floor_detail.c -o build/test_eye_floor_detail
+	./build/test_eye_floor_detail
