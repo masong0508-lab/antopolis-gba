@@ -10,6 +10,19 @@ int main(void) {
   assert(!chase_marker_legal(1, 0xFFFFu, 5));
   assert(!chase_marker_legal(1, 5, 2));
   assert(chase_marker_legal(1, 5, 3));
+  // The exact same predicate drives both gameplay validation and the
+  // guide's player-facing reason: water > unreachable > near > legal.
+  assert(chase_marker_reason(0, 0xFFFFu, 0) == 1);
+  assert(chase_marker_reason(1, 0xFFFFu, 0) == 2);
+  assert(chase_marker_reason(1, 9, 2) == 3);
+  assert(chase_marker_reason(1, 9, 3) == 0);
+  for (u16 d = 0; d <= 12; d++)
+    for (u16 h = 0; h <= 3; h++)
+      for (u16 p = 0; p <= 2; p++) {
+        u16 path = p == 0 ? 0xFFFFu : p;
+        assert(chase_marker_legal((u8)h, path, d) ==
+               (chase_marker_reason((u8)h, path, d) == 0));
+      }
   assert(chase_team_points(0, 0) == 0);
   assert(chase_team_points(2, 0) == 2);
   assert(chase_team_points(3, 1) == 6);
