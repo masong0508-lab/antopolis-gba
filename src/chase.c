@@ -28,7 +28,7 @@ static void chase_rules(u8 round) {
   ps(2, 8, "MOUSE: FIRST PERSON VIEW", 13);
   ps(2, 9, "WALK ON % FOOD - BRING TO $", 3);
   ps(2, 10, "DELIVER THREE TO ESCAPE!", 13);
-  ps(2, 11, "A SPRINT  B SCENT  L/R STRAFE", 3);
+  ps(2, 11, "A SPRINT B SCENT L/R STRAFE", 3);
   ps(2, 13, "CAT TAGS MOUSE TO WIN.", 8);
   ps(2, 14, "CLOCK RUNS OUT: CAT WINS.", 8);
   ps(2, 16, "ROUND", 10); pn(9, 16, (u8)(round + 1), 9);
@@ -115,7 +115,7 @@ static void chase_hud_map(u8 hunter, u8 delivered, u8 scan_cd, u8 secs) {
   ps(0, 17, hunter ? "P2 CAT: MAP HUNTER" : "P1 CAT: MAP HUNTER", 8);
   ps(24, 17, "TIME", 10); pn(28, 17, secs, 9);
   ps(0, 18, "MOUSE FOOD:", 13); pn(13, 18, delivered, 9);
-  ps(16, 18, "OF 3  TAG THE ANT", 3);
+  ps(16, 18, "OF 3  TAG!", 3);
   ps(0, 19, "D-PAD SEEK  A TAG  B SCAN", 10);
   if (scan_cd) ps(26, 19, "WAIT", 8);
 }
@@ -133,7 +133,7 @@ static u8 chase_round(u8 round) {
   u8 hunter = round, runner = (u8)(round ^ 1), vi, rx, ry, hx, hy;
   u8 deliveries = 0, energy = 99, scan = 0, scan_cd = 0, tag_cd = 0;
   u8 prevh = 0, prevr = 0, roundout = 0, cur, fa, is_eye;
-  u16 sky = BGPAL[0], pic[16], angle = 0, k[2], frame, sec;
+  u16 sky = BGPAL[0], pic[16], angle = 0, k[2], frame;
   s32 px, py;
   u8 i;
   // Round setup is deterministic and the generated world is identical on
@@ -292,7 +292,7 @@ static void chase_final(const u8 *score) {
   ps(3, 8, "PLAYER 1", 13); pn(19, 8, score[0], 13);
   ps(3, 10, "PLAYER 2", 8); pn(19, 10, score[1], 8);
   ps(3, 13, "TWO ROUNDS COMPLETE.", 3);
-  ps(3, 15, "NEXT: NEW HUNT OR OTHER MODE", 3);
+  ps(3, 15, "NEXT: NEW HUNT OR GAME", 3);
   ps(3, 19, "A / START: BACK TO MENU", 9);
   DISPCNT = 0x1B40; BLDY = 0;
   while (!lk_err) {
