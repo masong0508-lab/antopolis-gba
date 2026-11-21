@@ -1,3 +1,25 @@
+## Starter forage reliability — river, islands and narrow maps
+
+Procedurally generated worlds place a food patch near each starting
+colony. Previously each colony tried twenty random coordinates and
+stored the final coordinate even when it was water or unreachable. Even
+valid patch centers could generate no nearby food after the five-plus
+random placement attempts; some fresh games could begin with neither
+side able to find food.
+
+World construction now falls back to a **traversable, two-cell nest
+perimeter** when the random placement budget fails and also seeds one
+guaranteed usable berry on that accessible perimeter for **each** colony.
+The scan uses the existing height map only, checks water/cliffs and both
+queen exclusions, and runs only when the world is created. It adds no
+new persistent map, allocations, random draws or per-frame work.
+Hand-made maps and Map Maker berry placement are unchanged.
+
+The native suite exercises all **81** supported procedural map sizes,
+both colony starting positions, sparse shoreline fallback, unwalkable
+cliffs and safe failure when no land exists. ARM compilation and the
+linked two-GBA mGBA playthrough must pass before merging this change.
+
 ## Map Maker milestone: spatially fair food patches (November 2026)
 
 Hand-made maps can place berries anywhere, but the cartridge has 16
