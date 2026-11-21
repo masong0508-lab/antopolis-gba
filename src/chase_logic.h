@@ -31,6 +31,25 @@ static u8 chase_ready_press(u16 previous, u16 current, u16 mask) {
 static u8 chase_both_released(u16 p1, u16 p2, u16 mask) {
   return (u8)(((p1 | p2) & mask) == 0);
 }
+// Presentation-only cache. The old DUAL VIEW HUD cleared and repainted
+// 3-4 text rows every eight frames even when every label stayed the same.
+// No world state or linked checksum depends on this cache.
+typedef struct {
+  u8 seconds, delivered, marked, detail, carry;
+} ChaseHudCache;
+static u8 chase_hud_needs_update(ChaseHudCache *c, u8 seconds,
+                                 u8 delivered, u8 marked, u8 detail,
+                                 u8 carry) {
+  if (c->seconds == seconds && c->delivered == delivered &&
+      c->marked == marked && c->detail == detail && c->carry == carry)
+    return 0;
+  c->seconds = seconds;
+  c->delivered = delivered;
+  c->marked = marked;
+  c->detail = detail;
+  c->carry = carry;
+  return 1;
+}
 static u8 chase_team_points(u8 delivered, u8 complete) {
   return (u8)(delivered + (complete ? 3u : 0u));
 }
