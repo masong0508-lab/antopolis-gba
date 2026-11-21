@@ -36,6 +36,43 @@ linked mGBA cores. This is local GBA link-cable multiplayer; not IP networking.
    return to the same cooperative strategy game, with the pilots' final
    positions visible on the map.
 
+## Smoke test C: CAT & MOUSE, asymmetric 2D / 3D
+
+1. Both ROMs select **2 PLAYERS > CAT & MOUSE > LINK CABLE**.
+   SAME GBA is intentionally disabled for this simultaneous asymmetric mode.
+2. Accept the world loading facts card and the mode's instructional card.
+   **Round one:** Player 1 (the **CAT**) stays on the normal overhead map;
+   Player 2 (the **MOUSE**) enters the real first-person ANT EYE renderer.
+   It is an error if both screens are the same or if both become 3D.
+3. CAT moves the map targeting cursor with the D-pad, taps **A** to tag the
+   mouse within one map tile, and presses **B** for a short reveal scan
+   subject to its cooldown. The map must show the same terrain, berries
+   and ants that exist in the mouse's world.
+4. MOUSE walks/turns with D-pad, sidesteps with L/R, sprints with A
+   (stamina must drain only while moving), and lays scent with B.
+   Walk over food, bring it home and deliver **three loads** to escape.
+   Winning by delivery should not require hitting the red queen.
+5. Let the first **90-second** round expire without delivering all food.
+   Both GBAs must show the same cat-win result and per-player scores.
+6. Advance together and confirm a **fresh arena** is generated so the
+   second runner gets a fair berry supply. **Round two swaps roles:**
+   P1 now sees ANT EYE and P2 sees the overhead map.
+7. Press START on one device. Both devices must exit safely instead of
+   leaving one in an orphaned 3D camera or a hanging link wait.
+8. Test actual berry deliveries, capture, stamina regeneration, scanner
+   cooldown, result scoring, low-RAM hardware, sound timing and cable
+   removal manually as the scripted suite exercises only representative
+   movement/controls and the time-out role-swap path.
+
+**Automated evidence:** the new `tools/linked_smoke.py --scenario chase`
+is exercised by CI alongside `--scenario co-op`. A two-core mGBA run
+successfully tested the asymmetric views, independent input, the complete
+first round, result card, second arena, P1/P2 viewpoint swap and a safe
+exit, with 12 real paired screenshots; see
+https://github.com/masong0508-lab/antopolis-gba/actions/runs/44861116040.
+This is emulator evidence, **not** a claim of real-hardware FPS or
+complete mechanics/long-session verification.
+
 ## Recovery and regression
 
 - Unplug the cable during a 3D session. Both devices should eventually
@@ -51,7 +88,7 @@ linked mGBA cores. This is local GBA link-cable multiplayer; not IP networking.
 ## Technical invariants
 
 - Link payload: 10 key bits, two rolling checksum bits, four sequence bits.
-- Build/protocol token: `0xA73`; both cartridges must match.
+- Build/protocol token: `0xA74`; both cartridges must match.
 - SIOMLT_SEND is populated **before** starting each master-clocked transfer. A received packet is rejected if its sequence number, local echo, hardware player ID, or SIO error bit is invalid.
 - Only the presentation camera is local; input and world mutations are
   processed in stable **P1 then P2** order on both devices.
