@@ -10,6 +10,49 @@ The title screen has its own stereo theme again (E phrygian-dominant, ~81 BPM, 1
 
 Wave channel fix: the old code wrote `NR30 = 0xA0` (two-bank 64-sample mode). It is now `0xC0` (`WAVE_ON`: DAC on, play bank 1, the bank that was just loaded). Listen to the bass on a real build or an accurate emulator.
 
+## Quick start: what am I supposed to do?
+
+**PLAY / Classic:** Your black ants automatically gather food, hatch workers and
+march toward the red colony. **Protect your black queen, and help your ants
+reach and defeat the red queen.** You do not move every ant manually: you move
+the cursor with the D-pad and use **A to raise land** or **B to lower land**,
+building safe routes across lakes, cliffs and enemy approaches. **AP**
+recharges over time and pays for terrain changes; food is delivered by
+workers and can be traded into extra AP with SELECT+A. The HUD now labels
+AP, food and popularity directly. On the first ordinary match, a brief
+mission card explains the win condition. Press START for HELP/PAUSE, or
+SELECT+START to walk around the real world as an ant.
+
+**Two players:** choose the 2 PLAYER title card for VERSUS, CLASSIC CO-OP,
+CAT & MOUSE and the larger empire/city modes. For simultaneous control,
+each GBA must run the **same current ROM** over a working GBA link cable.
+The two players see their *own* screens, not one mirrored view.
+
+**CAT & MOUSE (GBA link only):** a focused two-round competitive hunt. In
+round one, **P1 CAT** watches the overhead map, moving a targeting cursor
+with the D-pad, pressing A to tag a nearby runner ant, or B for a limited
+reveal scan. **P2 MOUSE** sees the immersive ANT EYE 3D view. Find the
+`%` food markers, walk over berries and bring **three loads** back to the
+`# EMPIRE-ANTS (GBA)
+Native Game Boy Advance port of the GBC game: raw registers, no libraries. Build: `make` (ARM toolchain + devkitPro `gbafix`) -> `build/empire-ants.gba`.
+
+New on GBA: 30x18 tile view, 24 ants per colony, EASY/NORM/HARD, game timer, battery-save records (wins + best time per difficulty), L/R shortcuts. Same controls as the GBC version (A/B raise/lower, SELECT flood, SELECT+A embezzle, SELECT+B fast forward, START pause/help).
+
+**Status:** builds with arm-none-eabi-gcc (`make`, then gbafix) and is tested in the mGBA core, including two linked mGBA cores for the link cable. Includes the interactive tutorial, the first-person ANT EYE, EMPIRE MODE, ANT CITY, ANTVERSE and 2 PLAYERS in every mode.
+
+## Title music (ported from the GBC build)
+The title screen has its own stereo theme again (E phrygian-dominant, ~81 BPM, 16 bars): echo of the lead hard left, lead with vibrato hard right, a plucked drone bass in the centre on the wave channel, and tiny footsteps that ping-pong between the speakers. It fades in with the picture and out on START; the in-game loop takes over afterwards. The routing uses NR51 (high byte of SOUNDCNT_L), which is reset to centred sound when the title ends. Code: `tm_start` / `tm_update` / `tm_stop` in `src/main.c`, driven once per frame from `vsync()`.
+
+Wave channel fix: the old code wrote `NR30 = 0xA0` (two-bank 64-sample mode). It is now `0xC0` (`WAVE_ON`: DAC on, play bank 1, the bank that was just loaded). Listen to the bass on a real build or an accurate emulator.
+
+ home nest within **90 seconds**. A sprints (stamina-limited), B lays a
+scent trail, L/R sidestep. A successful tag or time-out wins for the cat;
+three deliveries win for the mouse. **Round two swaps viewpoints** so P1
+becomes the first-person mouse and P2 becomes the map hunter. Each round
+scores two points; the highest score wins. START leaves the hunt. The
+hunter's map is a separate presentation-only renderer: it cannot advance
+the world one extra time compared with the first-person player.
+
 ## Multiplayer and ANT EYE refinements (November 2026)
 
 - **GBA link protocol:** the compatibility code is now a stable explicit protocol revision, not a compile-time clock stamp. Identical protocol ROMs rebuilt at different times no longer fail the version check solely due to different build timestamps. Test actual cable lockstep and disconnection on two mGBA instances before shipping.
@@ -23,14 +66,16 @@ Wave channel fix: the old code wrote `NR30 = 0xA0` (two-bank 64-sample mode). It
 - **Automated dual-emulator test:** GitHub Actions builds a linked mGBA Splitscreen core, boots two copies of the ROM, drives the link lobby and attempts two-player ANT EYE. It inspects each cartridge's save-RAM achievement flags to distinguish genuine multiplayer entry from a boot-only test, and uploads paired frame captures. This is not physical hardware certification.
 
 ## ANT EYE panel
-The four rows under the view now read:
-```
-FROM ANT 3/12            HEIGHT 1
-FACING SOUTH WEST   AHEAD CLEAR
-PAD: WALK/TURN  A: NEXT ANT
-B: CURSOR HERE  START: LEAVE
-```
-`FROM` is which of your ants you ride (or `YOUR NEST`), `HEIGHT` the ground level under it, `FACING` the compass heading in full words, and `AHEAD` what one step forward meets: `CLEAR`, `CLIFF`, `WATER`, `EDGE`, `FRIEND`, `ENEMY`, `HOME` or `R NEST` (the red nest). The controls stay on screen. L / R now turn as well as LEFT / RIGHT, matching the tutorial card.
+The regular first-person view shows a compass at the top, with nearby
+food, enemy ants and home/enemy nests indicated by distinct markers.
+Its four-line status area shows the controlled ant's health, food/AP
+resources, nearby hazards, and the actual actions available: A **bite**,
+hold B **lay pheromone scent**, L/R **sidestep**, SELECT **switch ant**,
+and START **return to the overhead map**. The game displays contextual
+obstacle warnings (water, cliffs and enemies) instead of pretending a
+blocked step is movement. The competitive CAT & MOUSE version of this
+panel deliberately uses **different controls** (A sprints, B leaves
+scent) and a prominent food-delivery objective and round timer.
 
 ## Remaster update
 - New readable 5x7 font and a 3-row HUD with icons: hearts for both queens, ant counts, AP bar, food, popularity, time.
@@ -119,7 +164,8 @@ Civilization + Age of Empires + Tropico + SimCity, played on the normal map scre
   checked). OPTIONS > LOADING FACTS switches them off.
 
 ## 2 PLAYERS (home screen: 2 PLAYER)
-- Every mode works for two: VERSUS (black ants against red ants), CO-OP CLASSIC (two gods, one colony), CO-OP EMPIRE,
+- VERSUS, CO-OP CLASSIC, CO-OP EMPIRE, CO-OP CITY, CO-OP ANTVERSE and the new **CAT & MOUSE**. CAT & MOUSE is exclusively for two linked GBAs; the others support same-console play.
+- The previous modes work for two: VERSUS (black ants against red ants), CO-OP CLASSIC (two gods, one colony), CO-OP EMPIRE,
   CO-OP CITY and CO-OP ANTVERSE.
 - PLAY ON: SAME GBA = take turns with a turn clock (30 to 120 seconds) and a "pass the GBA" card between turns.
   LINK CABLE = two GBAs at the same time. Both pick 2 PLAYERS > LINK CABLE > START; the first GBA (player 1) sends its game,
