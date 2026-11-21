@@ -22,6 +22,15 @@ static u8 chase_marker_reason(u8 height, u16 home_path, u16 scout_distance) {
 static u8 chase_marker_legal(u8 height, u16 home_path, u16 scout_distance) {
   return (u8)(chase_marker_reason(height, home_path, scout_distance) == 0);
 }
+// Ready screens must be based on the SAME two linked input snapshots on
+// both cartridges. A pre-held menu button is not a new confirmation.
+static u8 chase_ready_press(u16 previous, u16 current, u16 mask) {
+  return (u8)((current & mask) != 0 && (previous & mask) == 0);
+}
+// Neither console may enter a new scene while its peer still holds Ready.
+static u8 chase_both_released(u16 p1, u16 p2, u16 mask) {
+  return (u8)(((p1 | p2) & mask) == 0);
+}
 static u8 chase_team_points(u8 delivered, u8 complete) {
   return (u8)(delivered + (complete ? 3u : 0u));
 }
