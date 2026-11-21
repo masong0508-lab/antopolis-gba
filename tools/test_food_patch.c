@@ -103,6 +103,61 @@ int main(void) {
     assert(n==(uint8_t)(total<16u?total:16u));
     validate(96,96,n);
   }
-  puts("GBA map editor food patches PASS: sparse legacy, 4x4 distribution, dense, rectangles, 50 noisy worlds");
+  /* Every procedural world size must guarantee a reachable land food
+     anchor for BOTH colonies after the generator flattens nest ground. */
+  {
+    static uint8_t heights[96u*128u];
+    uint8_t width,height,team,ax,ay;
+    for (height=32; height<=96u; height=(uint8_t)(height+8u)) {
+      for (width=32; width<=96u; width=(uint8_t)(width+8u)) {
+        uint8_t nx[2]={4u,(uint8_t)(width-5u)};
+        uint8_t ny[2]={(uint8_t)(height-6u),4u};
+        int8_t dx,dy;
+        memset(heights,0,sizeof heights);
+        for(team=0;team<2u;++team) {
+          for(dy=-2;dy<=2;++dy) for(dx=-2;dx<=2;++dx) {
+            uint8_t x=(uint8_t)((int16_t)nx[team]+dx);
+            uint8_t y=(uint8_t)((int16_t)ny[team]+dy);
+            heights[(uint16_t)y*128u+x]=
+              (uint8_t)((dx>=-1 && dx<=1 && dy>=-1 && dy<=1)?2u:1u);
+          }
+        }
+        for(team=0;team<2u;++team) {
+          assert(food_start_anchor(heights,128u,width,height,
+                  nx[team],ny[team],nx[team^1u],ny[team^1u],
+                  &ax,&ay));
+          assert(ax<width && ay<height);
+          assert(heights[(uint16_t)ay*128u+ax]==1u);
+          assert(food_start_cell(heights,128u,width,height,
+                 nx[team],ny[team],nx[team^1u],ny[team^1u],
+                 ax,ay));
+          /* Prefer a diagonal inward from each queen, not her tile. */
+          assert(ax==(uint8_t)(nx[team]+(nx[team]<width/2u?2:-2)));
+          assert(ay==(uint8_t)(ny[team]+(ny[team]<height/2u?2:-2)));
+        }
+      }
+    }
+    /* The preferred cell may be water. Another accessible perimeter
+       tile must be selected without relying on the random number stream. */
+    memset(heights,0,sizeof heights);
+    heights[4u*128u+4u]=2u;
+    heights[6u*128u+4u]=1u;
+    assert(food_start_anchor(heights,128u,32u,32u,4u,4u,27u,27u,
+                             &ax,&ay));
+    assert(ax==4u && ay==6u);
+    /* No usable land must fail cleanly and keep output coordinates. */
+    heights[6u*128u+4u]=0u; ax=20u; ay=21u;
+    assert(!food_start_anchor(heights,128u,32u,32u,4u,4u,27u,27u,
+                              &ax,&ay));
+    assert(ax==20u && ay==21u);
+    /* A 2->3 slope is a legal ant step; a 1->3 cliff is not. */
+    heights[6u*128u+4u]=3u;
+    assert(food_start_anchor(heights,128u,32u,32u,4u,4u,27u,27u,
+                             &ax,&ay));
+    heights[4u*128u+4u]=1u;
+    assert(!food_start_anchor(heights,128u,32u,32u,4u,4u,27u,27u,
+                              &ax,&ay));
+  }
+  puts("GBA map editor food patches and starter anchors PASS: 81 world sizes, shoreline, cliffs, 50 noisy worlds");
   return 0;
 }

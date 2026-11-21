@@ -50,4 +50,55 @@ static uint8_t food_patch_pick(const char *cells, uint8_t width,
     }
   return n;
 }
+/* Choose usable starting forage on the ring two tiles from a nest.
+   Procedural generation flattens this 5x5 area to traversable land.
+   Unlike retrying random coordinates, an exhausted random budget cannot
+   silently create a patch centered in open water or a sheer cliff.
+   Scanned only when making a world; no heap and no extra RNG calls. */
+static uint8_t food_start_cell(const uint8_t *heights,
+                               uint8_t stride, uint8_t width,
+                               uint8_t height, uint8_t nx,
+                               uint8_t ny, uint8_t rivalx,
+                               uint8_t rivaly, int16_t x,
+                               int16_t y) {
+  uint8_t h,nh;
+  int16_t dx,dy;
+  if (x < 0 || y < 0 || x >= width || y >= height) return 0;
+  dx = x - nx; dy = y - ny;
+  if (dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1) return 0;
+  dx = x - rivalx; dy = y - rivaly;
+  if (dx >= -1 && dx <= 1 && dy >= -1 && dy <= 1) return 0;
+  h = heights[(uint16_t)y * stride + (uint16_t)x];
+  nh = heights[(uint16_t)ny * stride + nx];
+  return h && nh && h <= nh + 1u && nh <= h + 1u;
+}
+static uint8_t food_start_anchor(const uint8_t *heights,
+                                 uint8_t stride, uint8_t width,
+                                 uint8_t height, uint8_t nx,
+                                 uint8_t ny, uint8_t rivalx,
+                                 uint8_t rivaly, uint8_t *ox,
+                                 uint8_t *oy) {
+  int16_t x,y;
+  int8_t dx,dy;
+  /* Prefer the inward diagonal, where players can see and collect food
+     early, but do not assume that coordinate is above water. */
+  x = (int16_t)nx + (nx < width / 2u ? 2 : -2);
+  y = (int16_t)ny + (ny < height / 2u ? 2 : -2);
+  if (food_start_cell(heights,stride,width,height,nx,ny,
+                      rivalx,rivaly,x,y)) {
+    *ox=(uint8_t)x; *oy=(uint8_t)y;
+    return 1;
+  }
+  for (dy=-2;dy<=2;++dy) for (dx=-2;dx<=2;++dx) {
+    if (dx!=-2 && dx!=2 && dy!=-2 && dy!=2) continue;
+    x=(int16_t)nx+dx; y=(int16_t)ny+dy;
+    if (food_start_cell(heights,stride,width,height,nx,ny,
+                        rivalx,rivaly,x,y)) {
+      *ox=(uint8_t)x; *oy=(uint8_t)y;
+      return 1;
+    }
+  }
+  return 0;
+}
+
 #endif
