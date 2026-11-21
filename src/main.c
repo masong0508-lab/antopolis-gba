@@ -1784,14 +1784,22 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
     }
     x0 = (u8)((ux >> 8) > 10 ? (ux >> 8) - 10 : 0); y0 = (u8)((uy >> 8) > 10 ? (uy >> 8) - 10 : 0);
     x1 = (u8)((ux >> 8) + 10 < W ? (ux >> 8) + 10 : W - 1); y1 = (u8)((uy >> 8) + 10 < H ? (uy >> 8) + 10 : H - 1);
+    // Prioritize *playable* landmarks. With the fixed 80-object pool, early decorations
+    // previously crowded out later food pickups. Collect all visible food first.
     for (y = y0; y <= y1; y++) for (x = x0; x <= x1; x++) {
-      u8 h = hgt[y][x], r = ehash(x, y), t = 255;
-      if (!h || is_nest(x, y)) continue;
-      if (food[y][x]) { eo_add((s32)x * 256 + 128, (s32)y * 256 + 128, 4, 0, 0, ux, uy, cs, sn);
-        { u16 dd = (u16)(dist(x, (u8)(ux >> 8)) + dist(y, (u8)(uy >> 8))); if (dd < bd) { bd = dd; efx = x; efy = y; ehas_f = 1; } } continue; }
-      if (h == 2) t = r < 50 ? 0 : r < 58 ? 1 : r < 62 ? 4 : 255;
-      else if (h == 1) t = r < 30 ? 2 : r > 235 ? 5 : 255;
-      else if (h == 3) t = r < 50 ? 3 : r < 80 ? 2 : 255;
+      if (!hgt[y][x] || is_nest(x, y) || !food[y][x]) continue;
+      eo_add((s32)x * 256 + 128, (s32)y * 256 + 128, 4, 0, 0, ux, uy, cs, sn);
+      { u16 dd = (u16)(dist(x, (u8)(ux >> 8)) + dist(y, (u8)(uy >> 8)));
+        if (dd < bd) { bd = dd; efx = x; efy = y; ehas_f = 1; } }
+    }
+    // Sparse, deterministic scenery: keep the paths readable and avoid OAM clutter.
+    for (y = y0; y <= y1; y++) for (x = x0; x <= x1; x++) {
+      u8 h = hgt[y][x], r, t = 255;
+      if (!h || is_nest(x, y) || food[y][x]) continue;
+      r = ehash(x, y);
+      if (h == 2) t = r < 28 ? 0 : r < 34 ? 1 : r < 38 ? 4 : 255;
+      else if (h == 1) t = r < 20 ? 2 : r > 242 ? 5 : 255;
+      else if (h == 3) t = r < 38 ? 3 : r < 58 ? 2 : 255;
       if (t != 255) eo_add((s32)x * 256 + 40 + (r & 0x7F) + (r >> 3 & 15), (s32)y * 256 + 60 + ((r * 7) & 0x7F), 5, t, 0, ux, uy, cs, sn);
     }
   }
@@ -1857,9 +1865,24 @@ static u8 eye_walk(s32 *px, s32 *py, s32 dx, s32 dy) {
   }
   return moved;
 }
+// Real-world navigation cues rather than an unrelated first-person maze.
+static const char *eye_ahead(s32 px, s32 py, u8 fa) {
+  s32 nx = px + SINT[(fa + 64) & 255], ny = py + SINT[fa];
+  s16 x = (s16)(nx >> 8), y = (s16)(ny >> 8);
+  u8 i;
+  if (x < 0 || y < 0 || x >= W || y >= H) return "AHEAD: EDGE OF THE WORLD";
+  if (!hgt[y][x]) return "AHEAD: WATER - TURN";
+  if (!eye_space(nx, ny, (u8)(px >> 8), (u8)(py >> 8))) return "AHEAD: CLIFF - TURN";
+  if (x == nestx[0] && y == nesty[0]) return "AHEAD: HOME NEST";
+  if (x == nestx[1] && y == nesty[1]) return "AHEAD: RED QUEEN - BITE";
+  for (i = 0; i < MAXA; i++) if (ant[i].alive && ant[i].team && ant[i].x == x && ant[i].y == y)
+    return "AHEAD: ENEMY ANT - BITE";
+  if (food[y][x]) return "AHEAD: FOOD - WALK ON IT";
+  return "AHEAD: PATH CLEAR";
+}
 static const char *emsg; static u8 emsgt, emsgc;   // ANT EYE message (the counters e_del.. are declared near newgame)
 static void esay(const char *m, u8 c) { emsg = m; emsgt = 90; emsgc = c; }
-static void eye_panel(u8 vi, u8 php, u8 scent) {
+static void eye_panel(u8 vi, u8 php, u8 scent, s32 px, s32 py, u8 fa) {
   u8 i;
   ov_fill(1, 1, 16, 19);
   if (vi < MAXA) { ps(1, 16, "YOU", 2); for (i = 0; i < 3; i++) pc((u8)(5 + i), 16, '#', i < php ? 8 : 15); }
@@ -1869,7 +1892,7 @@ static void eye_panel(u8 vi, u8 php, u8 scent) {
   pc(20, 16, '@', 1); pn(21, 16, ncnt[0], 1); pc(25, 16, '@', 8); pn(26, 16, ncnt[1], 8);
   if (emsgt) psx(1, 17, emsg, emsgc);
   else if (scent) ps(1, 17, "LAYING SCENT: WORKERS FOLLOW", 13);
-  else if (vi < MAXA) ps(1, 17, ant[vi].carry ? "TAKE THE FOOD HOME: $" : ehas_e ? "ENEMY NEAR: \1 BITES" : "FIND FOOD: %", ant[vi].carry ? 2 : ehas_e ? 8 : 3);
+  else if (vi < MAXA) ps(1, 17, ant[vi].carry ? "TAKE THE FOOD HOME: $" : eye_ahead(px, py, fa), ant[vi].carry ? 2 : 3);
   ps(1, 18, "\1 BITE  \2 SCENT  \3\4 SIDESTEP", 10);
   ps(1, 19, "\6 NEXT ANT       \5 MAP", 10);
 }
@@ -1893,7 +1916,7 @@ static void eye(void) {                              // play as one of your ants
   fa = (u8)(a16 >> 8);
   m7_build(m7t[0], fa, (s16)px, (s16)py);
   eye_scene(fa, px, py, vi, 0, 0); eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8)); emsgt = 0;
-  esay(vi < MAXA ? "YOU ARE AN ANT! WALK AROUND" : "NO WORKERS LEFT: JUST LOOK", 2); eye_panel(vi, php, 0);
+  esay(vi < MAXA ? "YOU ARE AN ANT! WALK AROUND" : "NO WORKERS LEFT: JUST LOOK", 2); eye_panel(vi, php, 0, px, py, fa);
   while (joy()) vsync();
   vsync(); eye_arm(m7t[0]); oam_flush(); eye_tab = m7t[0]; eye_irq_on(1);
   BG2CNT = 0x8000 | (22 << 8) | (2 << 2) | 3 | 0x80;
@@ -1905,7 +1928,7 @@ static void eye(void) {                              // play as one of your ants
     s32 mvx = 0, mvy = 0; s32 cs, sn; u8 cxv, cyv, moving = 0;
     vsync();
     oam_flush();
-    if (!(frc & 3)) { eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8)); eye_panel(vi, php, scent); }   // text while the screen is not drawn
+    if (!(frc & 3)) { eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8)); eye_panel(vi, php, scent, px, py, fa); }   // text while the screen is not drawn
     frc++;
     BGPAL[97] = (frc & 32) ? RGB(12,20,30) : RGB(9,17,29); BGPAL[98] = (frc & 16) ? RGB(22,27,31) : RGB(17,23,30);   // water ripples
     k = joy(); p = k & ~prev; prev = k;
