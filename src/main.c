@@ -6,6 +6,7 @@
 #include "art.h"
 #include "logo.h"
 #include "ambient_water.h"
+#include "world_variation.h"
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 #include "font8.h"
@@ -759,7 +760,10 @@ static void draw_cell(u8 x, u8 y) {
   u8 h = hgt[y][x]; u16 c;
   if (!inwin(x, y)) return;
   c = (u16)(sstate(h, x, y - 1) + 3 * sstate(h, x + 1, y) + 9 * sstate(h, x, y + 1) + 27 * sstate(h, x - 1, y));
-  BGMAP0[(y & 31) * 32 + (x & 31)] = (u16)((TB + h * 81 + c) | (11 << 12));
+  // Interior texture grain changes orientation with real world coordinates.
+  // Never mirror directional cliff / shore edges (c != 0).
+  BGMAP0[(y & 31) * 32 + (x & 31)] = (u16)((TB + h * 81 + c) |
+    (11 << 12) | world_interior_flip(h, (u8)c, x, y));
   draw_dec(x, y);
 }
 static void draw_around(u8 x, u8 y) {             // a height changed: the cell and its 4 neighbours change their edges
