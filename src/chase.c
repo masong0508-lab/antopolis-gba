@@ -220,6 +220,9 @@ static u8 chase_round(u8 round) {
   u16 sky = BGPAL[0], pic[16], angle = 0, k[2], frame;
   s32 px, py;
   u8 i;
+  // These five bytes live only in this machine's presentation loop.
+  // Never include them in the shared simulation or link checksum.
+  ChaseHudCache hud_cache = {255, 255, 255, 255, 255};
   chase_last_food = 0;
   // Round setup is deterministic and the generated world is identical on
   // both GBAs, independently of which perspective either GBA renders.
@@ -363,8 +366,12 @@ static u8 chase_round(u8 round) {
           eye_mark(fa, (s16)gx - rx, (s16)gy - ry, '%', 13);
         if (marked)
           eye_mark(fa, (s16)mx - rx, (s16)my - ry, '?', 14);
-        chase_hud_eye(scout, deliveries, energy, secs, ant[vi].carry,
-                       marked);
+        // The compass is live, but static words/counters need no VRAM
+        // clears until time, food, stamina or the current task changes.
+        if (chase_hud_needs_update(&hud_cache, secs, deliveries, marked,
+                                   energy, ant[vi].carry))
+          chase_hud_eye(scout, deliveries, energy, secs, ant[vi].carry,
+                        marked);
       }
     } else {
       cx = hx; cy = hy;
@@ -373,10 +380,13 @@ static u8 chase_round(u8 round) {
       BG0VOFS = BG2VOFS = (u16)scy;
       chase_map_sprites(hx, hy, px, py, marked, mx, my);
       oam_flush();
-      if (!(frame & 7))
-        chase_hud_map(guide, deliveries, marked, secs,
-          chase_marker_reason(hgt[hy][hx], dnp[0][hy][hx],
-            (u16)(dist(hx, rx) + dist(hy, ry))));
+      if (!(frame & 7)) {
+        u8 reason = chase_marker_reason(hgt[hy][hx], dnp[0][hy][hx],
+                          (u16)(dist(hx, rx) + dist(hy, ry)));
+        if (chase_hud_needs_update(&hud_cache, secs, deliveries, marked,
+                                   reason, 0))
+          chase_hud_map(guide, deliveries, marked, secs, reason);
+      }
     }
   }
   if (is_eye) chase_eye_stop(sky, pic);
