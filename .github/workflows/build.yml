@@ -58,6 +58,12 @@ jobs:
           cp build/empire-ants.gba build/link-smoke/empire-ants.gba
           python3 -u tools/linked_smoke.py build/empire-ants.gba "$CORE" --out build/link-smoke/classic --scenario co-op 2>build/link-smoke/classic-serial.log
           python3 -u tools/linked_smoke.py build/empire-ants.gba "$CORE" --out build/link-smoke/chase --scenario chase 2>build/link-smoke/chase-serial.log
+          # Verify REAL 240x160 first-person pictures from both link roles.
+          # No image dependencies; keep a JSON audit alongside screenshots.
+          python3 tools/test_eye_screenshots.py \
+            build/link-smoke/chase/06_cat_map_vs_mouse_eye.png \
+            build/link-smoke/chase/11_roles_swapped.png \
+            build/link-smoke/chase/eye_visual_audit.json
       - uses: actions/upload-artifact@v4
         if: always()
         with:
