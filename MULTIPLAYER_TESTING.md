@@ -36,6 +36,22 @@ linked mGBA cores. This is local GBA link-cable multiplayer; not IP networking.
    return to the same cooperative strategy game, with the pilots' final
    positions visible on the map.
 
+## Shared Ready screen regression (all DUAL VIEW transitions)
+
+The rules, each result screen and the final score now require independent
+confirmation from both linked consoles. To reproduce the old one-sided
+advance bug, press **A on P1 only**, then keep P2 untouched. Both devices
+must remain on the same card, with P1 READY and P2 WAIT. Press **A on
+P2**, but hold P2's button while P1 releases: neither may enter the next
+world until **both** have released A/START. Repeat after the first 90-second
+run and at the final score. A button held over from a previous menu must
+not count as a fresh confirmation.
+
+The automated `--scenario chase` exercise deliberately confirms P1 and P2
+at different times on the briefing, score and swapped-role briefing. It
+also checks that a scout cannot enter 3D after only the guide is ready.
+These emulator results do **not** certify physical link-cable timing.
+
 ## Smoke test C: DUAL VIEW, cooperative 2D / 3D expedition
 
 1. Both ROMs choose **2 PLAYERS > DUAL VIEW > LINK CABLE**. SAME GBA
