@@ -58,9 +58,39 @@ static u8 chase_goal(u8 rx, u8 ry, u8 *gx, u8 *gy) {
     }
   return found;
 }
+// Confirm BOTH clients from the canonical linked button stream, never from
+// the local player's joypad alone. This runs on instruction, between-round
+// and final-result screens so peers cannot enter different scenes.
+static void chase_ready_sync(u8 status_row) {
+  const u16 mask = J_A | J_START;
+  u16 prev0 = lk_k[0], prev1 = lk_k[1];
+  u8 ready = 0;
+  ps(2, status_row, "P1 WAIT ", 10);
+  ps(17, status_row, "P2 WAIT ", 10);
+  while (ready != 3 && !lk_err) {
+    vsync(); mp_hash(); (void)joy();
+    if (!(ready & 1) && chase_ready_press(prev0, lk_k[0], mask)) {
+      ready |= 1;
+      ps(2, status_row, "P1 READY", 13);
+      sfx_food();
+    }
+    if (!(ready & 2) && chase_ready_press(prev1, lk_k[1], mask)) {
+      ready |= 2;
+      ps(17, status_row, "P2 READY", 13);
+      sfx_food();
+    }
+    prev0 = lk_k[0];
+    prev1 = lk_k[1];
+  }
+  // Even after both confirmations, do not leave this screen until BOTH
+  // A/START inputs are released. Local-only release caused peer desync.
+  while (!lk_err) {
+    vsync(); mp_hash(); (void)joy();
+    if (chase_both_released(lk_k[0], lk_k[1], mask)) break;
+  }
+}
 static void chase_rules(u8 round) {
-  u16 k;
-  u8 guide = round, scout = (u8)(round ^ 1), ready = 0;
+  u8 guide = round, scout = (u8)(round ^ 1);
   hide_all(); vsync(); oam_flush(); DISPCNT = 0x80;
   ov_fill(1, 3, 0, 19); ui_full(); big(0, "DUAL VIEW");
   ps(2, 3, "TWO RUNS - SWAP VIEWS", 9);
@@ -78,19 +108,7 @@ static void chase_rules(u8 round) {
   ps(2, 18, "P1 WAIT        P2 WAIT", 10);
   ps(2, 19, "BOTH PRESS A / START TO READY", 9);
   DISPCNT = 0x1B40; BLDY = 0;
-  while (ready != 3 && !lk_err) {
-    vsync(); mp_hash(); (void)joy();
-    if ((lk_k[0] & (J_A | J_START)) && !(ready & 1)) {
-      ready |= 1; ps(2, 18, "P1 READY", 13); sfx_food();
-    }
-    if ((lk_k[1] & (J_A | J_START)) && !(ready & 2)) {
-      ready |= 2; ps(17, 18, "P2 READY", 13); sfx_food();
-    }
-  }
-  while (!lk_err) {
-    vsync(); mp_hash(); k = joy();
-    if (!(k & (J_A | J_START))) break;
-  }
+  chase_ready_sync(18);
 }
 static void chase_eye_start(s32 px, s32 py, u8 fa, u8 vi) {
   fill_tile(TILE32 + CHASE_PANEL_TILE * 8, 0x11111111u);
@@ -367,7 +385,6 @@ static u8 chase_round(u8 round) {
   return roundout;
 }
 static void chase_result(u8 round, u8 outcome, const u8 *score) {
-  u16 k;
   hide_all(); vsync(); oam_flush(); DISPCNT = 0x80;
   ov_fill(1, 3, 0, 19); ui_full();
   big(1, "DUAL VIEW");
@@ -377,19 +394,11 @@ static void chase_result(u8 round, u8 outcome, const u8 *score) {
   ps(3, 13, "RUN 2 SCORE", 8); pn(20, 13, score[1], 8);
   ps(3, 15, "DELIVERY +1  COMPLETION +3", 10);
   ps(2, 17, round ? "BOTH VIEWS COMPLETED" : "NEXT: SWAP VIEWPOINTS", 3);
-  ps(2, 19, "A / START: CONTINUE", 9);
+  ps(2, 18, "BOTH PRESS A OR START", 9);
   DISPCNT = 0x1B40; BLDY = 0;
-  while (!lk_err) {
-    vsync(); mp_hash(); k = joy();
-    if (k & (J_A | J_START)) break;
-  }
-  while (!lk_err) {
-    vsync(); mp_hash(); k = joy();
-    if (!(k & (J_A | J_START))) break;
-  }
+  chase_ready_sync(19);
 }
 static void chase_final(const u8 *score) {
-  u16 k;
   hide_all(); vsync(); oam_flush(); DISPCNT = 0x80;
   ov_fill(1, 3, 0, 19); ui_full(); big(1, "DUAL VIEW");
   ps(3, 5, "TWO VIEWPOINTS - ONE COLONY", 9);
@@ -398,16 +407,9 @@ static void chase_final(const u8 *score) {
   ps(3, 13, "TOTAL TEAM SCORE", 3);
   pn(20, 13, (u8)(score[0] + score[1]), 9);
   ps(3, 15, "SWAP AND PLAY AGAIN!", 3);
-  ps(3, 19, "A / START: BACK TO MENU", 9);
+  ps(3, 18, "BOTH PRESS A OR START", 9);
   DISPCNT = 0x1B40; BLDY = 0;
-  while (!lk_err) {
-    vsync(); mp_hash(); k = joy();
-    if (k & (J_A | J_START)) break;
-  }
-  while (!lk_err) {
-    vsync(); mp_hash(); k = joy();
-    if (!(k & (J_A | J_START))) break;
-  }
+  chase_ready_sync(19);
 }
 static void chase_play(void) {
   u8 round, result, score[2] = {0, 0};
