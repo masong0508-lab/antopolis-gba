@@ -54,6 +54,22 @@ GBA cable/emulator multiplayer, not network play. The internal source name
 `src/chase.c` is kept for build compatibility, but it no longer describes the
 game mode's rules.
 
+## Dual View camera focus and low-overhead status panels
+
+The guide now **starts focused on the teammate's actual scout position**,
+not the far-away enemy queen's nest. The guide still needs to move the
+cursor to reachable ground at least three tiles from the scout before
+placing a waypoint; B always recenters the cursor on the moving scout.
+
+The linked guide and first-person scout HUDs also cache five tiny
+presentation values (seconds, deliveries, marker state, task detail,
+carried food). The game redraws its text panel only when a displayed
+value changes instead of wiping three or four tile rows every eight
+frames. The live 3D compass, camera, world simulation and two-player
+checksum continue to update at their original cadence. This eliminates
+redundant text-VRAM writes without new framebuffers or network state,
+and includes native cache tests plus real linked-mGBA smoke validation.
+
 ## Dual View link-screen synchronization (November 2026)
 
 Dual View now treats the rules, between-run results and final score as
