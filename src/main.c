@@ -1154,6 +1154,15 @@ static void gen_world(void) {
         a = (s8)(nestx[i] + (nestx[i] < W / 2 ? 1 : -1) * (s8)(3 + rnd() % 3)); b = (s8)(nesty[i] + (nesty[i] < H / 2 ? 1 : -1) * (s8)(2 + rnd() % 3));
         if (a >= 0 && b >= 0 && a < W && b < H && hgt[b][a]) break;
       }
+      if (k == 20) {
+        u8 fx, fy;
+        // The twenty random probes may all hit water on a river/island.
+        // Fall back to reachable land on the flattened nest perimeter.
+        if (!food_start_anchor(&hgt[0][0], MAXW, W, H, nestx[i],
+                               nesty[i], nestx[i ^ 1], nesty[i ^ 1],
+                               &fx, &fy)) continue;
+        a = (s8)fx; b = (s8)fy;
+      }
       pfx[npatch] = (u8)a; pfy[npatch] = (u8)b; npatch++;
     }
     for (k = 0; k < 120 && npatch < want; k++) {
@@ -1164,6 +1173,16 @@ static void gen_world(void) {
   for (i = 0; i < npatch; i++) for (k = 0; k < (O(O_FOOD) == 0 ? 5 : O(O_FOOD) == 1 ? 9 : 14); k++) {
     a = (s8)(pfx[i] + (s8)(rnd() % 5) - 2); b = (s8)(pfy[i] + (s8)(rnd() % 5) - 2);
     if (a >= 0 && b >= 0 && a < W && b < H && hgt[b][a] && !near_nest(a, b)) food[b][a] = 1;
+  }
+  // The random cloud can also miss every suitable square near a nest.
+  // Give both sides one real, traversable food tile at world creation.
+  // Hand-authored maps are left unchanged; this runs only for procedural
+  // layouts and consumes no random numbers or additional persistent RAM.
+  if (!hand) for (i = 0; i < 2; i++) {
+    u8 fx, fy;
+    if (food_start_anchor(&hgt[0][0], MAXW, W, H, nestx[i],
+                          nesty[i], nestx[i ^ 1], nesty[i ^ 1],
+                          &fx, &fy)) food[fy][fx] = 1;
   }
   genm = 0;
   pdirty = 1; ld_step();
