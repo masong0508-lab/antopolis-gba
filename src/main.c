@@ -1814,7 +1814,8 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
       // Level of detail for background only. Near scenery remains full;
       // far decorations are thinned deterministically to preserve food,
       // nest and ant visibility and avoid needless projection/OAM costs.
-      if ((u16)dist(x, vx) + dist(y, vy) > 9 && ((x ^ y) & 1)) continue;
+      if (!eye_decor_visible((u8)(dist(x, vx) + dist(y, vy)),
+                             (u8)(x ^ (y << 1)))) continue;
       r = ehash(x, y);
       // Shore reeds only proliferate beside ACTUAL water. Other
       // landmarks remain sparse and tied to their terrain class.
@@ -1869,7 +1870,7 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
       {
         u8 seed = (u8)((o->rx >> 8) ^ ((o->ry >> 8) << 1));
         int bloom_x = xx + eye_plant_sway((u8)frc, seed, o->a);
-        espr(bloom_x, yg - (6 * SCB[m] >> 8), tile, 6, 1,
+        espr(bloom_x, eye_decor_ground_center((s16)yg, (u16)SCB[m]), tile, 6, 1,
              (u8)((seed & 1u) ? m + 16 : m));
       }
       break; }

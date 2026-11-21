@@ -244,7 +244,11 @@ def shadow():
     A = canvas()
     for y in range(32):
         for x in range(32):
-            if ell_in(x, y, 15.5, 29.0, 12.5, 2.8) and (x + y) % 2 == 0: A[y][x] = 1
+            # Ground-contact core reads clearly at far sprite scales.
+            # Soft, broken perimeter retains the original dither falloff.
+            if ell_in(x, y, 15.5, 29.0, 12.5, 2.8):
+                if (8 <= x <= 23 and 28 <= y <= 30) or (x + y) % 2 == 0:
+                    A[y][x] = 1
     return A
 def mound():
     A = canvas()
@@ -330,6 +334,21 @@ def eye_polish_art():
         eye_polish_pixel(EYE2,80,x,y,a,b)
 
 eye_polish_art()
+
+# Plant and stone contact is authored into the EXISTING six 16x16
+# sprites: a broken one-pixel soil-colored footprint directly below
+# their visible silhouette. No extra shadow OAM or tile allocation.
+FOOT_SHADOWS = (
+    (5, 6, 7, 8, 9, 10), (6, 7, 8),
+    (4, 6, 8, 10, 12), (3, 5, 7, 9, 11, 13),
+    (5, 6, 7, 8, 9, 10), (2, 3, 5, 6, 8)
+)
+for kind, xs in enumerate(FOOT_SHADOWS):
+    for x in xs:
+        tile = EYE2[96 + kind * 4 + 2 + (x // 8)]
+        assert tile[7][x % 8] == 0  # bottom row was transparent
+        tile[7][x % 8] = 1
+
 
 # ---------------- ANT EYE panorama: 256x64 px, wraps around; far hills, trees, clouds (BG0 in the eye view, palette bank 5) ----------------
 import math, random

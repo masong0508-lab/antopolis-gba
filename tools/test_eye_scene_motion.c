@@ -38,6 +38,25 @@ int main(void) {
   assert(eye_ground_decor(1,225,0)==255); // no inland reed thicket
   assert(eye_ground_decor(2,33,0)==1); // flower in grass
   assert(eye_ground_decor(3,20,0)==3); // exposed stone
+  // Every hardware scale index uses a grounded 16px contact shadow,
+  // exactly one pixel beneath the previously visible row-14 sprite.
+  {
+    static const uint16_t sizes[16]={20,25,31,38,47,59,73,90,
+      112,139,172,213,264,328,406,504};
+    for(unsigned i=0;i<16;i++)for(int ground=62;ground<128;ground++) {
+      int16_t centre=eye_decor_ground_center((int16_t)ground,sizes[i]);
+      assert(centre+(int)((7u*sizes[i])>>8u)==ground);
+    }
+  }
+  for(unsigned distance=0;distance<32;distance++) {
+    unsigned visible=0;
+    for(unsigned k=0;k<4;k++) {
+      uint8_t a=eye_decor_visible((uint8_t)distance,(uint8_t)k);
+      assert(a<=1u);
+      visible+=a;
+    }
+    assert(visible==(distance<=6?4u:distance<=10?3u:1u));
+  }
   puts("GBA ANT EYE motion PASS: gait age, 256-frame plants and biome-grounded decor");
   return 0;
 }

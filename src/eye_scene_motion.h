@@ -14,6 +14,20 @@ static int8_t eye_plant_sway(uint8_t frame,uint8_t seed,uint8_t plant) {
   q=(uint8_t)(((frame>>4u)+(seed&3u))&3u);
   return (int8_t)(q==0u ? -1 : q==2u ? 1 : 0);
 }
+/* A 16x16 scenery asset touches the ground at LAST row (pixel 15).
+   Affine center is pixel 8, hence +7 scaled pixels at the foot.
+   Keep ground contact independent from camera/object sorting. */
+static int16_t eye_decor_ground_center(int16_t ground_y, uint16_t scale) {
+  return (int16_t)(ground_y - (int16_t)((7u*scale)>>8u));
+}
+/* Background billboards thin with distance, but never eliminate
+   important ant, food, nest or collision geometry (only kind=decor).
+   Both linked clients use their own camera, while gameplay is unchanged. */
+static uint8_t eye_decor_visible(uint8_t distance, uint8_t coord_phase) {
+  if(distance<=6u) return 1u;
+  if(distance<=10u) return (uint8_t)((coord_phase & 3u)!=0u);
+  return (uint8_t)((coord_phase & 3u)==0u);
+}
 static uint8_t eye_ground_decor(uint8_t height,uint8_t noise,uint8_t shoreline) {
   if(height==1u)
     return (uint8_t)(noise<24u?2u:

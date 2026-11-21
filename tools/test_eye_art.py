@@ -44,4 +44,19 @@ assert pixel(big,16,29,20)==5
 assert pixel(big,32,23,9)==5
 assert pixel(eye,80,15,19)==8
 assert all(pixel(eye,64,x,29) in (0,1) for x in range(32))
+# The last row of each 16x16 decor sprite must include opaque soil
+# contact pixels, and the existing 32x32 ant shadow must have a denser
+# central weight to remain visible when hardware scaled for distance.
+footprints=ns["FOOT_SHADOWS"]
+for kind, xs in enumerate(footprints):
+    for x in xs:
+        assert pixel(eye,96+kind*4,x,15)==1
+    assert all(pixel(eye,96+kind*4,x,15)==0 for x in range(16)
+               if x not in xs)
+assert pixel(eye,64,15,29)==1
+assert pixel(eye,64,16,29)==1
+world=Path("src/main.c").read_text()
+assert "eye_decor_ground_center((s16)yg, (u16)SCB[m])" in world
+assert "eye_decor_visible((u8)(dist(x, vx) + dist(y, vy))" in world
 print("GBA ANT EYE art PASS: 200 unchanged-size 4bpp tiles rebuilt, segmented ants and living nest")
+print("GBA native-resolution ground-contact audit PASS: six decor shadows and grounded ant silhouettes")
