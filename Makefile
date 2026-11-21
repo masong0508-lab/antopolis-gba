@@ -18,3 +18,4 @@ test:
 	mkdir -p build
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_chase_logic.c -o build/test_chase_logic
 	./build/test_chase_logic
+	python3 tools/test_world_art.py
