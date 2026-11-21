@@ -11,6 +11,7 @@
 //                         menu of whoever opened it.
 // ============================================================================================================================
 static u8 mp_how, mp_sub = 255, mp_size = 1, mp_riv = 1, mp_sel;
+static u8 mp_supply;  // linked co-op supply-run combo; survives switching between map and ANT EYE
 static const u8 MPSZ[4] = {32, 48, 64, 96};
 static const char *const MPK[5] = {"VERSUS", "CO-OP EMPIRE", "CO-OP CITY", "CO-OP ANTVERSE", "CO-OP CLASSIC"};
 static const char *const MPD[5] = {"BLACK ANTS AGAINST RED ANTS", "ONE EMPIRE, TWO RULERS", "ONE CITY, TWO MAYORS", "EVERYTHING, TOGETHER", "TWO GODS, ONE ANT COLONY"};
@@ -204,6 +205,20 @@ static void mp_eye(void) {
           a->carry = 0; if (stock[0] < 99) stock[0]++;
           st_food++; mana = (u8)(mana + 2 > MANA_MAX ? MANA_MAX : mana + 2);
           apr(2); sfx_spawn(); if (hp[i] < 3) hp[i]++;
+          // Co-op supply runs are shared objectives: bringing five food loads
+          // home grants a modest AP bonus; a nearby teammate is also healed.
+          if (vi[i ^ 1] < MAXA && hp[i ^ 1] < 3 &&
+              dist(ant[vi[i ^ 1]].x, nestx[0]) +
+              dist(ant[vi[i ^ 1]].y, nesty[0]) <= 3) {
+            hp[i ^ 1]++;
+            esay("TEAMMATE FED: +1 HEALTH", 13);
+          }
+          if (++mp_supply >= 5) {
+            mp_supply = 0;
+            mana = (u8)(mana + 5 > MANA_MAX ? MANA_MAX : mana + 5);
+            esay("SUPPLY RUN! +5 TEAM AP", 13);
+            sfx_mana();
+          }
         }
       }
       held_scent[i] = (k & J_B) != 0;
@@ -340,6 +355,7 @@ static void versus_play(void) {                     // VERSUS, and CO-OP CLASSIC
   ps_init((u8)(nestx[0] + 2 < W ? nestx[0] + 2 : nestx[0]), (u8)(nesty[0] > 2 ? nesty[0] - 2 : nesty[0]),
           (u8)(nestx[h2] > 2 ? nestx[h2] - 2 : nestx[h2]), (u8)(nesty[h2] + 2 < H ? nesty[h2] + 2 : nesty[h2]));
   mana2 = mana;
+  mp_supply = 0;
   ps_load(mp_local()); follow(); scx = (s16)camx * 8; scy = (s16)camy * 8; win_all();
   if (mp_on == 1) { mp_pass_card(0); }
   vs_redraw(); say(co ? (mp_on == 2 ? "SEL+START: TWO ANT 3D CO-OP!" : "TWO GODS, ONE COLONY!") : "P1 BLACK  AGAINST  P2 RED!");
