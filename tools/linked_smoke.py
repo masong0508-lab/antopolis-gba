@@ -9,6 +9,7 @@ This is emulator integration, not a hardware timing or FPS certification.
 from __future__ import annotations
 
 import argparse
+import base64
 import ctypes as C
 import json
 import pathlib
@@ -198,6 +199,9 @@ def main():
             "png": name.name,
         }
         print("SCREEN", label, report["screens"][label], flush=True)
+        # Diagnostic PNG is printed so we can inspect actual emulator pixels
+        # in failed CI jobs without trusting noisy emulator serial messages.
+        print("SCREEN_PNG64", label, base64.b64encode(name.read_bytes()).decode("ascii"), flush=True)
 
     def save_info():
         found = []
