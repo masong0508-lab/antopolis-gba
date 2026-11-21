@@ -88,9 +88,18 @@ for y in range(24):
             hx, hy = (x - 11.5) / 3.6, (y - 11.5) / 2.6
             hd = hx * hx + hy * hy
             if hd <= 1.0: c = 8
-            elif hd <= 1.6 and hy < 0: c = 10
-            elif hd <= 1.6: c = 11
+            elif hd <= 1.6 and hy < 0: c = 11  # sunlit upper lip
+            elif hd <= 1.6: c = 10              # underside shadow
+            # Break the artificial circular outline with sparse moss and
+            # earthy toe shading; preserve the dark opening's clear shape.
+            if d > 0.80 and hd > 1.6:
+                if dy < -0.15 and (x * 2 + y) % 7 == 0: c = 4
+                if dy > 0.15 and (x + y * 3) % 5 == 0: c = 10
             M[y][x] = c
+        elif d < 1.18 and y >= 7 and (x * 3 + y * 5) % 4 == 0:
+            # Non-solid grass/soil fringe meets the actual world tile; the
+            # 24x24 transparent footprint remains the same size in 4bpp.
+            M[y][x] = 4 if y < 14 else 10
 MOUND = [[[M[ty * 8 + y][tx * 8 + x] for x in range(8)] for y in range(8)] for ty in range(3) for tx in range(3)]
 DECO = [FOOD_A, FOOD_B, TRAIL1, TRAIL2] + MOUND
 
