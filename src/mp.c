@@ -104,6 +104,9 @@ static void mp_pilot_bite(s32 px, s32 py, u8 fa) {
   } else sfx_deny();
 }
 static void mp_eye(void) {
+  // Match the single-player ANT EYE milestone, and provide an on-ROM SRAM
+  // signal that both instances really entered first-person co-op.
+  tev |= 16; ach_get(7);
   u8 vi[2], hp[2] = {3, 3}, cooldown[2] = {0, 0};
   u8 bite_cd[2] = {0, 0}, held_scent[2] = {0, 0};
   u8 i, local, other, cur, fa, x, y, n;
