@@ -10,3 +10,38 @@ jobs:
         env: { PATH: "/opt/devkitpro/tools/bin:/usr/local/bin:/usr/bin:/bin" }
       - uses: actions/upload-artifact@v4
         with: { name: empire-ants-gba, path: build/empire-ants.gba }
+
+  link-smoke:
+    name: Two linked mGBA instances + 3D co-op
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: empire-ants-gba
+          path: build
+      - name: Install core build dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends build-essential cmake pkg-config zlib1g-dev libpng-dev
+      - name: Build dual-system link-capable mGBA core
+        run: |
+          git clone --depth 1 https://github.com/Spuds0588/mgba-splitscreen.git /tmp/antopolis-mgba
+          cmake -S /tmp/antopolis-mgba -B /tmp/antopolis-mgba/build \
+            -DCMAKE_BUILD_TYPE=Release -DLIBMGBA_ONLY=ON \
+            -DBUILD_LIBRETRO_SPLITSCREEN=ON -DBUILD_LIBRETRO=OFF
+          cmake --build /tmp/antopolis-mgba/build --target mgba_splitscreen_libretro --parallel 2
+          find /tmp/antopolis-mgba/build -name 'mgba_splitscreen_libretro.so' -print
+      - name: Exercise actual linked ROMs and verify both game achievements
+        run: |
+          CORE="$(find /tmp/antopolis-mgba/build -name mgba_splitscreen_libretro.so -print -quit)"
+          test -n "$CORE"
+          python3 -u tools/linked_smoke.py build/empire-ants.gba "$CORE" --out build/link-smoke
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: antopolis-two-gba-link-test
+          path: build/link-smoke
+          if-no-files-found: warn
