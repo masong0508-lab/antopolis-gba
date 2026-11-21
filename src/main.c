@@ -1832,13 +1832,29 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
     }
   }
 }
-// ---- moving: smooth steps; a square you cannot climb into stops you on that axis (so you slide along walls) ----
+// ---- moving: the controlled ant has a small collision radius, rather than being a point camera ----
+// Check all four feet against the SAME traversability rules used by the 2D ants.
+// This also prevents cutting diagonally through a corner or sliding half inside a cliff.
+static u8 eye_space(s32 px, s32 py, u8 fromx, u8 fromy) {
+  s16 x0 = (s16)((px - 40) >> 8), x1 = (s16)((px + 40) >> 8);
+  s16 y0 = (s16)((py - 40) >> 8), y1 = (s16)((py + 40) >> 8);
+  if (x0 < 0 || y0 < 0 || x1 >= W || y1 >= H) return 0;
+  return can_go(fromx, fromy, (s8)(x0 - fromx), (s8)(y0 - fromy)) &&
+         can_go(fromx, fromy, (s8)(x1 - fromx), (s8)(y0 - fromy)) &&
+         can_go(fromx, fromy, (s8)(x0 - fromx), (s8)(y1 - fromy)) &&
+         can_go(fromx, fromy, (s8)(x1 - fromx), (s8)(y1 - fromy));
+}
 static u8 eye_walk(s32 *px, s32 *py, s32 dx, s32 dy) {
-  u8 cx0 = (u8)(*px >> 8), cy0 = (u8)(*py >> 8), moved = 0; s32 n;
-  n = *px + dx;
-  if (n >= 40 && n < (s32)W * 256 - 40) { u8 nc = (u8)(n >> 8); if (nc == cx0 || can_go(cx0, cy0, (s8)(nc - cx0), 0)) { *px = n; cx0 = nc; moved = 1; } }
-  n = *py + dy;
-  if (n >= 40 && n < (s32)H * 256 - 40) { u8 nc = (u8)(n >> 8); if (nc == cy0 || can_go(cx0, cy0, 0, (s8)(nc - cy0))) { *py = n; moved = 1; } }
+  u8 cx0 = (u8)(*px >> 8), cy0 = (u8)(*py >> 8), moved = 0;
+  s32 n;
+  if (dx) {
+    n = *px + dx;
+    if (eye_space(n, *py, cx0, cy0)) { *px = n; cx0 = (u8)(n >> 8); moved = 1; }
+  }
+  if (dy) {
+    n = *py + dy;
+    if (eye_space(*px, n, cx0, cy0)) { *py = n; moved = 1; }
+  }
   return moved;
 }
 static const char *emsg; static u8 emsgt, emsgc;   // ANT EYE message (the counters e_del.. are declared near newgame)
@@ -1920,6 +1936,8 @@ static void eye(void) {                              // play as one of your ants
       if (k & J_DOWN) { mvx -= cs * sp / 2 >> 8; mvy -= sn * sp / 2 >> 8; }
       if (k & J_L) { mvx += sn * sp * 3 / 4 >> 8; mvy -= cs * sp * 3 / 4 >> 8; }
       if (k & J_R) { mvx -= sn * sp * 3 / 4 >> 8; mvy += cs * sp * 3 / 4 >> 8; }
+      // Forward + strafe should not move faster than ordinary walking.
+      if ((k & (J_UP | J_DOWN)) && (k & (J_L | J_R))) { mvx = mvx * 3 / 4; mvy = mvy * 3 / 4; }
       if (mvx || mvy) { moving = eye_walk(&px, &py, mvx, mvy); if (!moving && !(frc & 15)) sfx_deny(); }
       cxv = (u8)(px >> 8); cyv = (u8)(py >> 8);
       { Ant *a = &ant[vi]; if (a->x != cxv || a->y != cyv) { a->ox = a->x; a->oy = a->y; a->x = cxv; a->y = cyv; if (cxv != a->ox) a->fl = cxv < a->ox; } a->age = 8; }
