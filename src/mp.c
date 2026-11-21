@@ -193,9 +193,9 @@ static u8 mp_link_start(u32 *seed) {               // 1 = linked; the host's set
   for (i = 0; i < 8; i++) vsync();
   for (;;) {
     if (raw_keys() & J_B) { lk_close(); sfx_deny(); while (raw_keys()) vsync(); return 0; }
-    // Multiplayer SIOCNT bits 4-5 are the player ID; bit 2 is the SI line, NOT player 2.
-    lk_me = (u8)((SIOCNTR >> 4) & 3);
-    if (lk_me > 1) { mp_msg("TWO GBAS ONLY", "USE A TWO PLAYER LINK", 8); lk_close(); return 0; }
+    // SI terminal (bit 2) identifies master/slave BEFORE the first transfer.
+    // The multiplayer ID in bits 4-5 is not valid until a transfer completes.
+    lk_me = (SIOCNTR & 4) ? 1 : 0;
     mp_msg("LOOKING FOR THE OTHER GBA", (dots++ & 1) ? "... ..." : ". . . .", 9);
     lk_seq = 0;
     if (lk_step(0xA5A, &o, 15) && o == 0xA5A) {
