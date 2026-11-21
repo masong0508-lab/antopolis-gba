@@ -49,8 +49,10 @@ TERR = [terr_tile(l, c) for l in range(4) for c in range(81)]
 
 # ---------------- decor ----------------
 def parse(rows): return [[int(ch, 16) if ch not in '.' else 0 for ch in r] for r in rows]
-FOOD_A = parse(["........", "...11...", "..1231..", ".112211.", "12311231", "12211221", ".11..11.", "........"])
-FOOD_B = parse(["........", "....44..", "...44...", ".11.411.", "15311531", "15511551", ".11..11.", "........"])
+# Two readable fruit identities on the real overhead map: leaf/twig,
+# dark outline and separate pale highlights, without additional tiles.
+FOOD_A = parse(["........", "...44...", "..4444..", ".112211.", "12322331", "12222221", ".112211.", "..1..1.."])
+FOOD_B = parse(["....4...", "...44...", "..4414..", ".115511.", "15531551", "15551551", ".111111.", "........"])
 TRAIL1 = parse(["........", "........", ".....9..", "........", "........", "..9.....", "........", "........"])
 TRAIL2 = parse(["........", "......9.", "....9...", "........", "...9....", ".9......", "......9.", "........"])
 # nest mound 24x24: a dome with a dark hole in the middle
