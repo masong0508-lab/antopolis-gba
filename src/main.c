@@ -7,6 +7,7 @@
 #include "logo.h"
 #include "ambient_water.h"
 #include "world_variation.h"
+#include "eye_floor_detail.h"
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 #include "font8.h"
@@ -1659,31 +1660,14 @@ static void eye_arm(const M7 *t) {                    // call right after vsync(
 // floor: 8bpp 8x8 tiles 177..190 (free space after the decor tiles of charblock 2, before screenblock 22), colours 96..119.
 // 0-1 water, 2-4 sand, 5-8 grass (8 has flowers), 9-11 hill, 12-13 nest dirt (13 = the hole).
 #define FT8 177
-static u8 tex_rand(u8 x, u8 y, u8 s) { u16 h = (u16)(x * 31 + y * 17 + s * 101 + (x * y) * 7); h ^= h >> 3; h = (u16)(h * 0x2B9); return (u8)(h >> 4); }
 static void floor_tiles(void) {
   volatile u16 *d = (volatile u16 *)(TILE32 + 0x2000) + FT8 * 32;
-  u8 t, x, y, c, r;
-  for (t = 0; t < 14; t++) for (y = 0; y < 8; y++) for (x = 0; x < 8; x += 2) {
-    u16 w = 0; u8 k;
-    for (k = 0; k < 2; k++) {
-      u8 xx = (u8)(x + k); r = tex_rand(xx, y, t);
-      if (t < 2) c = (u8)(((y + t * 4) & 3) == 1 && ((xx + y * 3 + t) & 7) < 4 ? 97 : r < 16 ? 98 : 96);
-      else if (t < 5) c = (u8)(r < 30 ? 100 : r < 52 ? 101 : r < 60 ? 102 : ((y + t) % 4 == 0 && r < 140) ? 100 : 99);
-      else if (t < 9) {
-        c = (u8)(r < 50 ? 105 : r < 95 ? 104 : 103);
-        if (((xx * 3 + t * 5) % 7) == 0 && (y + t) % 8 < 3) c = 106;             // grass blades
-        if (t == 8 && ((xx == 2 && y == 2) || (xx == 5 && y == 5))) c = 107;    // flowers
-        if (t == 8 && xx == 6 && y == 1) c = 108;
-      }
-      else if (t < 12) {
-        c = (u8)(r < 40 ? 111 : r < 90 ? 110 : 109);
-        if (((xx + y + t) & 7) == 0 && r & 1) c = 111;
-        if (t == 10 && xx >= 2 && xx <= 4 && y >= 3 && y <= 4) c = (u8)(y == 3 ? 113 : 112);   // a stone
-      }
-      else { c = (u8)(r < 45 ? 116 : r < 95 ? 115 : 114); if (t == 13 && xx >= 2 && xx <= 5 && y >= 2 && y <= 5) c = (u8)((xx == 2 || y == 2) ? 116 : 117); }
-      w |= (u16)c << (k * 8);
-    }
-    d[t * 32 + y * 4 + x / 2] = w;
+  u8 t, x, y;
+  for (t=0;t<14u;t++) for(y=0;y<8u;y++) for(x=0;x<8u;x+=2u) {
+    // Same 14 x 8x8 8bpp floor tiles, packed two indices per halfword.
+    // All scattering is generated once per ANT EYE entry, not every frame.
+    u16 lo=eye_floor_pixel(t,x,y),hi=eye_floor_pixel(t,(u8)(x+1u),y);
+    d[t*32u+y*4u+(x>>1)]=(u16)(lo|(hi<<8u));
   }
 }
 static void floor_pal(void) {
