@@ -287,6 +287,50 @@ EYE2 = (split32(ant_step()) + split32(ant_step(carry=True)) + split32(ant_front(
         + TUFT + FLOWER + PEBBLE + ROCK + MUSH + REED + split32(mandible()))
 
 
+# Final hand-placed shell anatomy and natural nest masonry for ANT EYE.
+# All edits stay inside the ALREADY allocated 32x32 sprite sheets.
+# The same outer silhouette, contact shadows, food/queen distinction,
+# atlas indices, 4bpp packing and hardware scaling matrices are retained.
+def eye_polish_pixel(tiles, start, x, y, expected, replacement):
+    tile = tiles[start + (y // 8) * 4 + x // 8]
+    if tile[y % 8][x % 8] == expected:
+        tile[y % 8][x % 8] = replacement
+
+def eye_polish_art():
+    side = [(9,18,2,3),(11,17,2,4),(12,18,2,1),
+            (15,18,2,4),(24,15,2,3),(8,20,2,4),(18,19,2,1)]
+    for atlas, starts in ((BIG, (0,16,32)), (EYE2, (0,16))):
+        for start in starts:
+            for x,y,a,b in side:
+                eye_polish_pixel(atlas,start,x,y,a,b)
+            # A curved upper carapace highlight; separate dark thorax
+            # plates and a narrow gleam across the head's top shell.
+            for x in range(7,13):
+                eye_polish_pixel(atlas,start,x,15,2,3)
+            for x in range(7,11):
+                eye_polish_pixel(atlas,start,x,19,2,4)
+            for x in range(21,26):
+                eye_polish_pixel(atlas,start,x,16,2,3)
+    # Frontal face and mandibles: brow plates are different from eyes.
+    for x,y,a,b in [(14,10,2,3),(15,10,2,3),(12,12,3,4),
+                    (13,12,3,4),(17,12,2,3),(18,12,2,3),
+                    (14,17,2,4),(17,17,2,4),(13,22,2,3)]:
+        eye_polish_pixel(EYE2,32,x,y,a,b)
+    # Rear: gaster is plated and shaded rather than a flat dark oval.
+    for x,y,a,b in [(15,15,2,3),(16,15,2,3),(16,18,2,4),
+                    (15,20,2,3),(14,22,2,4),(17,22,2,4),
+                    (15,24,2,3),(20,18,2,1)]:
+        eye_polish_pixel(EYE2,48,x,y,a,b)
+    # The first-person nest has a bright upper lip, mossy margins
+    # and dark lower soil. The existing entrance stays fully open.
+    for x,y,a,b in [(12,16,1,7),(19,16,1,7),(10,18,6,7),
+                    (22,18,6,7),(7,23,6,4),(24,25,6,4),
+                    (6,28,6,4),(18,27,6,10),(12,22,6,7),
+                    (19,24,6,10)]:
+        eye_polish_pixel(EYE2,80,x,y,a,b)
+
+eye_polish_art()
+
 # ---------------- ANT EYE panorama: 256x64 px, wraps around; far hills, trees, clouds (BG0 in the eye view, palette bank 5) ----------------
 import math, random
 random.seed(7)

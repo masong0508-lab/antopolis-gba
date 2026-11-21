@@ -27,3 +27,4 @@ test:
 	./build/test_eye_floor_detail
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_eye_scene_motion.c -o build/test_eye_scene_motion
 	./build/test_eye_scene_motion
+	python3 tools/test_eye_art.py
