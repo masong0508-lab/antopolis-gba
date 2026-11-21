@@ -40,16 +40,23 @@ linked mGBA cores. This is local GBA link-cable multiplayer; not IP networking.
 
 1. Both ROMs select **2 PLAYERS > CAT & MOUSE > LINK CABLE**.
    SAME GBA is intentionally disabled for this simultaneous asymmetric mode.
-2. Accept the world loading facts card and the mode's instructional card.
+2. Accept the world loading facts card. On the mode's instructional card,
+   **both P1 and P2 must press A or START**. The screen should change from
+   `P1 WAIT / P2 WAIT` to the individual `READY` states before the round starts.
+   One person pressing the button must not skip the other's instructions.
    **Round one:** Player 1 (the **CAT**) stays on the normal overhead map;
    Player 2 (the **MOUSE**) enters the real first-person ANT EYE renderer.
    It is an error if both screens are the same or if both become 3D.
 3. CAT moves the map targeting cursor with the D-pad, taps **A** to tag the
    mouse within one map tile, and presses **B** for a short reveal scan
    subject to its cooldown. The map must show the same terrain, berries
-   and ants that exist in the mouse's world.
+   and ants that exist in the mouse's world. The cat's bottom HUD gives
+   HOT/WARM/COLD distance clues between scans; after a scan or a visible
+   carried-food trail, the mouse's position is temporarily revealed.
 4. MOUSE walks/turns with D-pad, sidesteps with L/R, sprints with A
-   (stamina must drain only while moving), and lays scent with B.
+   (stamina must drain only while moving), and lays scent with B. Holding
+   B while **not moving on height-3 hills** should mark the mouse hidden:
+   distant scan markers disappear until the hunter closes within 3 tiles.
    Walk over food, bring it home and deliver **three loads** to escape.
    Winning by delivery should not require hitting the red queen.
 5. Let the first **90-second** round expire without delivering all food.
