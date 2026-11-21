@@ -10,6 +10,13 @@ The title screen has its own stereo theme again (E phrygian-dominant, ~81 BPM, 1
 
 Wave channel fix: the old code wrote `NR30 = 0xA0` (two-bank 64-sample mode). It is now `0xC0` (`WAVE_ON`: DAC on, play bank 1, the bank that was just loaded). Listen to the bass on a real build or an accurate emulator.
 
+## Multiplayer and ANT EYE refinements (November 2026)
+
+- **GBA link protocol:** the compatibility code is now a stable explicit protocol revision, not a compile-time clock stamp. Identical protocol ROMs rebuilt at different times no longer fail the version check solely due to different build timestamps. Test actual cable lockstep and disconnection on two mGBA instances before shipping.
+- **ANT EYE collision:** the controlled ant now checks a body-sized footprint against the same water and cliff limits as 2D ants and slides along blocked terrain without falsely reporting a step. Combining forward movement and sidestepping no longer creates an unintended speed boost.
+- **Legibility and objectives:** visible food is prioritized ahead of decorative grass/rocks in the 80-object pool; ambient props are sparser. The first-person HUD names real-world obstacles, food, nests, and nearby enemies straight ahead.
+- **Local two-player ANT EYE:** SAME GBA > CO-OP CLASSIC supports entering ANT EYE from the pause menu, passing the console between turns. LINK CABLE and VERSUS remain map-based until networked camera and pilot ownership are implemented safely. This is not online multiplayer.
+
 ## ANT EYE panel
 The four rows under the view now read:
 ```
