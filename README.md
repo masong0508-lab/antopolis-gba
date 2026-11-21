@@ -48,8 +48,9 @@ Wave channel fix: the old code wrote `NR30 = 0xA0` (two-bank 64-sample mode). It
  home nest within **90 seconds**. A sprints (stamina-limited), B lays a
 scent trail, L/R sidestep. A successful tag or time-out wins for the cat;
 three deliveries win for the mouse. **Round two swaps viewpoints** so P1
-becomes the first-person mouse and P2 becomes the map hunter. Each round
-scores two points; the highest score wins. START leaves the hunt. The
+becomes the first-person mouse and P2 becomes the map hunter. Each round win
+awards three points, and every successfully delivered food load adds a point
+for the mouse even if caught; the highest combined score wins. START leaves the hunt. The
 hunter's map is a separate presentation-only renderer: it cannot advance
 the world one extra time compared with the first-person player.
 
