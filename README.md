@@ -54,6 +54,18 @@ GBA cable/emulator multiplayer, not network play. The internal source name
 `src/chase.c` is kept for build compatibility, but it no longer describes the
 game mode's rules.
 
+## Dual View link-screen synchronization (November 2026)
+
+Dual View now treats the rules, between-run results and final score as
+**shared two-player Ready gates**. Both players must press A or START after
+the screen appears; holding a button from the preceding menu does not
+silently confirm. Both linked clients wait until **both** players release
+their confirmation buttons before starting the next round or exiting to the
+menu. This fixes a possible split-state transition in which one cartridge
+would proceed while its partner was still looking at a results screen.
+The linked-mGBA smoke test now deliberately staggers both players' Ready
+presses and checks that the scout does not enter first-person mode early.
+
 ## Multiplayer and ANT EYE refinements (November 2026)
 
 - **GBA link protocol:** the compatibility code is now a stable explicit protocol revision, not a compile-time clock stamp. Identical protocol ROMs rebuilt at different times no longer fail the version check solely due to different build timestamps. Test actual cable lockstep and disconnection on two mGBA instances before shipping.
