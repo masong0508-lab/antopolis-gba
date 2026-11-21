@@ -1,3 +1,24 @@
+## Map Maker milestone: spatially fair food patches (November 2026)
+
+Hand-made maps can place berries anywhere, but the cartridge has 16
+preallocated patch centers. Previously the loader silently used only the
+first sixteen `f` cells in top-to-bottom scan order, so a large custom
+96x96 map could place all active food centers in the upper-left area.
+The import pass now chooses one authored berry center from each occupied
+region of a fixed 4x4 grid first, then fills unused center slots from
+other distinct marked cells. This handles 32x96 and 96x32 maps without
+bias and uses no heap, RNG, added persistent world arrays, or per-frame
+processing. Maps with sixteen or fewer marked patches preserve *all*
+their original centers and their previous scan order.
+
+The map editor now reports `99+` when a custom map exceeds 99 berries
+instead of silently showing 99, and labels over-cap maps `16 PATCHES
+LIVE`. Dense maps retain their visible berry drawings, but only 16
+patch centers can replenish their surrounding tiles in a match.
+`make test` exercises the shipped selector with small, dense,
+single-sector, rectangular, and 50 deterministic random worlds.
+Linked-mGBA and full ARM ROM builds remain required before merging.
+
 ## Milestone: terrain-edit clarity and flooded-food safety (November 2026)
 
 The bottom map HUD now warns **B LOSES FOOD** when the cursor is over

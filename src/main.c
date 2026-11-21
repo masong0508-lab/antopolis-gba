@@ -9,7 +9,8 @@
 #include "world_variation.h"
 #include "eye_floor_detail.h"
 #include "eye_scene_motion.h"
-#include "terrain_food.h"  // common flooded-berry rule, no extra world-state bytes
+#include "terrain_food.h"
+#include "food_patch.h"  // evenly sample authored Map Maker berries across large maps  // common flooded-berry rule, no extra world-state bytes
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 #include "font8.h"
@@ -1074,8 +1075,11 @@ static void hand_map(const HandMap *m) {           // a hand-made map from maps.
     hgt[y][x] = c == 'w' ? 0 : c == 's' ? 1 : c == 'h' ? 3 : 2;
     if (c == 'Y') { nestx[0] = x; nesty[0] = y; }
     if (c == 'R') { nestx[1] = x; nesty[1] = y; }
-    if (c == 'f' && npatch < 16) { pfx[npatch] = x; pfy[npatch] = y; npatch++; }
   }
+  // A hand map may paint thousands of berry cells, but the cartridge's
+  // existing patch system only supports sixteen centers. Spread these
+  // across the authored area instead of silently taking the first row.
+  npatch = food_patch_pick(m->cells, W, H, pfx, pfy);
 }
 static void gen_world(void) {
   const HandMap *hm = hmap(mapt);
@@ -3229,14 +3233,16 @@ static void ed_resize(u8 nw, u8 nh) {
 #define EM_N 7
 static const char *const EITEM[EM_N] = {"KEEP EDITING", "SAVE AND PLAY", "SAVE AND QUIT", "WIDTH", "HEIGHT", "CLEAR TO GRASS", "QUIT WITHOUT SAVING"};
 static void em_draw(u8 sel, u8 conf) {
-  u8 i, y, x, n = 0, ok;
-  for (y = 0; y < H; y++) for (x = 0; x < W; x++) n += (u8)(food[y][x] && hgt[y][x] && n < 250);
+  u8 i, y, x, ok;
+  u16 n = 0;
+  for (y = 0; y < H; y++) for (x = 0; x < W; x++) if (food[y][x] && hgt[y][x]) ++n;
   bfs(0); ok = dnp[0][nesty[1]][nestx[1]] != NOPATH;
   ov_fill(1, 3, 0, 19); ui_full();
   big(1, "MAP EDITOR");
   pm_rule(3);
   ps(2, 4, "SIZE", 9); pn(11, 4, mw, 3); ps(14, 4, "X", 10); pn(16, 4, mh, 3);
-  ps(2, 5, "BERRIES", 9); pn(11, 5, n, 3); if (n > 16) ps(14, 5, "GAME USES 16", 10);
+  ps(2, 5, "BERRIES", 9); if (n > 99u) ps(11, 5, "99+", 3); else pn(11, 5, (u8)n, 3);
+  if (n > FOOD_PATCH_LIMIT) ps(14, 5, "16 PATCHES LIVE", 10);
   ps(2, 6, "PATH", 9); ps(11, 6, ok ? "ANTS CAN WALK" : "NONE: GAME CUTS ONE", ok ? 13 : 8);
   ps(11, 7, "NEST TO NEST", 10);
   pm_rule(9);
