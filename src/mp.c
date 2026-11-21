@@ -17,7 +17,7 @@ static const char *const MPD[5] = {"BLACK ANTS AGAINST RED ANTS", "ONE EMPIRE, T
 static const u8 MPORD[5] = {0, 4, 1, 2, 3};          // the order LEFT / RIGHT steps through the games
 // Stable on-wire protocol revision. Build timestamps must NEVER decide whether two identical ROMs can link.
 // Bump this 12-bit value only when game state, input packets or lobby settings become incompatible.
-#define MP_BUILD 0xA71u
+#define MP_BUILD 0xA72u
 static u8 mp_locked(u8 k) { return (k == 1 && !emp_unlocked()) || (k == 3 && !verse_unlocked()); }
 
 // ---------- VERSUS (classic) ----------
@@ -58,6 +58,221 @@ static void vs_jump(u8 p) {                         // SELECT: home, your front 
   if (s->jj == 0) { cx = nestx[tm]; cy = nesty[tm]; say("HOME"); }
   sfx_spawn();
 }
+// ---------- LINK CO-OP ANT EYE ----------
+// Each GBA renders its OWN camera, but BOTH consoles apply BOTH players' inputs
+// in P1/P2 order to the same ants. Only two tiny 8.8 positions are needed;
+// no extra framebuffer, network snapshot, or heap allocation is required.
+// Enter from CO-OP CLASSIC with SELECT+START on either linked GBA.
+static u8 mp_pilot_near(u8 x, u8 y, u8 exclude) {
+  u8 i, best = MAXA; u16 bd = 0xFFFF, d;
+  for (i = 0; i < MAXA; i++) if (vok(i) && i != exclude) {
+    d = (u16)dist(ant[i].x, x) + dist(ant[i].y, y);
+    if (d < bd) { bd = d; best = i; }
+  }
+  return best;
+}
+static u8 mp_pilot_next(u8 old, u8 exclude) {
+  u8 i, idx, base = (u8)(old == MAXA ? MAXA - 1 : old);
+  for (i = 0; i < MAXA; i++) {
+    idx = (u8)((base + i + 1) % MAXA);
+    if (vok(idx) && idx != exclude) return idx;
+  }
+  return MAXA;
+}
+static void mp_pilot_bite(s32 px, s32 py, u8 fa) {
+  s32 cs = SINT[(fa + 64) & 255], sn = SINT[fa], dd, side, best = 410;
+  s32 dx, dy; u8 i, target = MAXA;
+  for (i = 0; i < MAXA; i++) if (ant[i].alive && ant[i].team) {
+    dx = (s32)ant[i].x * 256 + 128 - px;
+    dy = (s32)ant[i].y * 256 + 128 - py;
+    dd = (dx * cs + dy * sn) >> 8;
+    side = (-dx * sn + dy * cs) >> 8;
+    if (dd > -24 && dd < best && side > -192 && side < 192) {
+      best = dd; target = i;
+    }
+  }
+  if (target != MAXA) {
+    die(&ant[target], 0); sfx_hit(); return;
+  }
+  dx = (s32)nestx[1] * 256 + 128 - px;
+  dy = (s32)nesty[1] * 256 + 128 - py;
+  dd = (dx * cs + dy * sn) >> 8;
+  side = (-dx * sn + dy * cs) >> 8;
+  if (qhp[1] && dd > -24 && dd < 430 && side > -210 && side < 210) {
+    qhp[1]--; qfl[1] = 10; sfx_hit();
+  } else sfx_deny();
+}
+static void mp_eye(void) {
+  u8 vi[2], hp[2] = {3, 3}, cooldown[2] = {0, 0};
+  u8 bite_cd[2] = {0, 0}, held_scent[2] = {0, 0};
+  u8 i, local, other, cur, fa, x, y, n;
+  s32 px[2], py[2]; u16 angle[2], keys[2], prev[2];
+  u16 sky = BGPAL[0], pic[16];
+  u8 bob = 0;
+  // The two clients select the SAME two distinct workers from synchronized world data.
+  vi[0] = mp_pilot_near(pst[0].x, pst[0].y, MAXA);
+  vi[1] = mp_pilot_near(pst[1].x, pst[1].y, vi[0]);
+  for (i = 0; i < 2; i++) {
+    u8 slot = vi[i];
+    px[i] = (s32)(slot == MAXA ? nestx[0] : ant[slot].x) * 256 + 128;
+    py[i] = (s32)(slot == MAXA ? nesty[0] : ant[slot].y) * 256 + 128;
+    angle[i] = (u16)((slot < MAXA && ant[slot].fl ? 128u : 0u) << 8);
+    prev[i] = lk_k[i];  // do not instantly exit on the START that entered 3D
+  }
+  eye_ctl = vi[0]; eye_ctl2 = vi[1];
+  local = lk_me; other = (u8)(local ^ 1);
+  for (i = 0; i < 16; i++) pic[i] = BGPAL[112 + i];
+  // Reuse the proven single-player Mode-7 renderer and buffers.
+  hide_all(); vsync(); oam_flush();
+  floor_pal(); sky_init(); pano_init(); ov_clear(); floor_tiles();
+  fox = (s16)(px[local] >> 8) - 32;
+  foy = (s16)(py[local] >> 8) - 32;
+  floor_map((volatile u16 *)0x0600B000);
+  m7_sky(m7t[0]); m7_sky(m7t[1]);
+  fa = (u8)(angle[local] >> 8);
+  m7_build(m7t[0], fa, (s16)px[local], (s16)py[local]);
+  eye_scene(fa, px[local], py[local], vi[local], 0, 0);
+  eye_compass(fa, (u8)(px[local] >> 8), (u8)(py[local] >> 8));
+  emsgt = 0;
+  eye_panel(vi[local], hp[local], 0, px[local], py[local], fa);
+  ps(1, 16, local ? "P2 " : "P1 ", 13);
+  vsync(); eye_arm(m7t[0]); oam_flush(); eye_tab = m7t[0]; eye_irq_on(1);
+  BG2CNT = 0x8000 | (22 << 8) | (2 << 2) | 3 | 0x80;
+  BLDCNT = 0x2044;
+  BG0CNT = 3 | (27 << 8);
+  BG0HOFS = (u16)(fa * 5 + (fa >> 2)); BG0VOFS = 0;
+  DISPCNT = 0x1741;
+  while (!lk_err && lk_on && !over) {
+    u8 quit = 0;
+    vsync(); oam_flush(); frc++;
+    mp_hash(); (void)joy();
+    if (lk_err) break;
+    keys[0] = lk_k[0]; keys[1] = lk_k[1];
+    for (i = 0; i < 2; i++) {
+      u16 p = (u16)(keys[i] & ~prev[i]), k = keys[i];
+      s32 cs, sn, vx = 0, vy = 0, speed;
+      u8 cxv, cyv;
+      prev[i] = k;
+      if (p & J_START) quit = 1;  // either player may leave together
+      if (bite_cd[i]) bite_cd[i]--;
+      if (cooldown[i]) cooldown[i]--;
+      if ((p & J_SEL) && vi[i] < MAXA) {
+        n = mp_pilot_next(vi[i], vi[i ^ 1]);
+        if (n < MAXA) {
+          vi[i] = n;
+          px[i] = (s32)ant[n].x * 256 + 128;
+          py[i] = (s32)ant[n].y * 256 + 128;
+          hp[i] = 3;
+          if (i == 0) eye_ctl = n; else eye_ctl2 = n;
+        }
+      }
+      if (vi[i] >= MAXA || !vok(vi[i])) {
+        n = mp_pilot_near((u8)(px[i] >> 8), (u8)(py[i] >> 8), vi[i ^ 1]);
+        vi[i] = n;
+        if (i == 0) eye_ctl = n; else eye_ctl2 = n;
+        if (n < MAXA) {
+          px[i] = (s32)ant[n].x * 256 + 128;
+          py[i] = (s32)ant[n].y * 256 + 128;
+          hp[i] = 3;
+        } else continue; // spectator when no unclaimed worker survives
+      }
+      if (k & J_RIGHT) angle[i] += 410;
+      if (k & J_LEFT) angle[i] -= 410;
+      fa = (u8)(angle[i] >> 8);
+      cs = SINT[(fa + 64) & 255]; sn = SINT[fa];
+      speed = (s32)ESPD[O(O_EYESPD)];
+      if (k & J_UP) { vx += (cs * speed) >> 8; vy += (sn * speed) >> 8; }
+      if (k & J_DOWN) { vx -= (cs * speed) >> 9; vy -= (sn * speed) >> 9; }
+      if (k & J_L) { vx += (sn * speed * 3) >> 10; vy -= (cs * speed * 3) >> 10; }
+      if (k & J_R) { vx -= (sn * speed * 3) >> 10; vy += (cs * speed * 3) >> 10; }
+      if ((k & (J_UP | J_DOWN)) && (k & (J_L | J_R))) {
+        vx = vx * 3 / 4; vy = vy * 3 / 4;
+      }
+      if (vx || vy) eye_walk(&px[i], &py[i], vx, vy);
+      cxv = (u8)(px[i] >> 8); cyv = (u8)(py[i] >> 8);
+      { Ant *a = &ant[vi[i]];
+        if (a->x != cxv || a->y != cyv) {
+          a->ox = a->x; a->oy = a->y;
+          a->x = cxv; a->y = cyv;
+          if (a->x != a->ox) a->fl = a->x < a->ox;
+        }
+        a->age = 8;
+        if (!a->carry && food[cyv][cxv]) {
+          food[cyv][cxv] = 0; a->carry = 1; draw_dec(cxv, cyv); sfx_food();
+        }
+        if (a->carry && dist(cxv, nestx[0]) <= 1 && dist(cyv, nesty[0]) <= 1) {
+          a->carry = 0; if (stock[0] < 99) stock[0]++;
+          st_food++; mana = (u8)(mana + 2 > MANA_MAX ? MANA_MAX : mana + 2);
+          apr(2); sfx_spawn(); if (hp[i] < 3) hp[i]++;
+        }
+      }
+      held_scent[i] = (k & J_B) != 0;
+      if (held_scent[i]) ph[cyv][cxv] = 255;
+      if ((p & J_A) && !bite_cd[i]) {
+        mp_pilot_bite(px[i], py[i], fa);
+        bite_cd[i] = 16;
+      }
+      // Deterministic contact damage: both consoles process P1 then P2.
+      if (!cooldown[i] && !(frc & 15)) {
+        u8 j;
+        for (j = 0; j < MAXA; j++)
+          if (ant[j].alive && ant[j].team &&
+              dist(ant[j].x, cxv) + dist(ant[j].y, cyv) <= 1) {
+            cooldown[i] = 50;
+            if (hp[i]) hp[i]--;
+            if (!hp[i]) { die(&ant[vi[i]], 0); vi[i] = MAXA;
+              if (i == 0) eye_ctl = MAXA; else eye_ctl2 = MAXA; }
+            break;
+          }
+      }
+    }
+    if (quit) break;
+    tick_slice(); bfs_tick(250);
+    if (!qhp[1]) { over = 1; break; }
+    if (!qhp[0]) { over = 2; break; }
+    // Only the local camera and its picture differ: the shared world above
+    // and the link checksum never depend on camera or presentation.
+    fa = (u8)(angle[local] >> 8); vang = fa;
+    if ((s16)(px[local] >> 8) - fox < 16 || (s16)(px[local] >> 8) - fox > 47 ||
+        (s16)(py[local] >> 8) - foy < 16 || (s16)(py[local] >> 8) - foy > 47) {
+      fox = (s16)(px[local] >> 8) - 32;
+      foy = (s16)(py[local] >> 8) - 32;
+      floor_map((volatile u16 *)0x0600B000);
+    }
+    cur = eye_tab == m7t[0] ? 1 : 0;
+    m7_build(m7t[cur], fa, (s16)px[local], (s16)py[local]);
+    eye_tab = m7t[cur];
+    eye_scene(fa, px[local], py[local], vi[local], bite_cd[local] ? 4 : 0, bob);
+    if (!(frc & 3)) {
+      eye_compass(fa, (u8)(px[local] >> 8), (u8)(py[local] >> 8));
+      eye_panel(vi[local], hp[local], held_scent[local], px[local], py[local], fa);
+      ps(1, 16, local ? "P2 " : "P1 ", 13);
+      if (vi[other] < MAXA) eye_mark(fa,
+          (s16)ant[vi[other]].x - (s16)(px[local] >> 8),
+          (s16)ant[vi[other]].y - (s16)(py[local] >> 8), 'P', 9);
+    }
+    bob = (u8)((frc >> 3) & 1);
+    BG0HOFS = (u16)(fa * 5 + (fa >> 2));
+  }
+  eye_irq_on(0); vsync();
+  DMAR(0, 8) = 0; DMAR(1, 8) = 0; DMAR(2, 8) = 0;
+  for (i = 0; i < 2; i++) if (vi[i] < MAXA && vok(vi[i])) {
+    pst[i].x = ant[vi[i]].x; pst[i].y = ant[vi[i]].y;
+  }
+  eye_ctl = eye_ctl2 = MAXA;
+  hide_all(); oam_flush();
+  BGPAL[0] = sky; for (i = 0; i < 16; i++) BGPAL[112 + i] = pic[i];
+  DISPCNT = 0x0080; vsync();
+  BG0CNT = 2 | (2 << 2) | (28 << 8);
+  BG2CNT = 1 | (2 << 2) | (30 << 8); BLDCNT = 0xFF;
+  *(volatile u32 *)0x04000020 = 0x100;
+  *(volatile u32 *)0x04000024 = 0x1000000;
+  *(volatile u32 *)0x04000028 = 0;
+  *(volatile u32 *)0x0400002C = 0;
+  win_all(); ov_clear(); vs_hud();
+  vsync(); DISPCNT = 0x1F40;
+}
+
 static u8 vs_input(u8 p, u16 k) {                   // 0 go on, 1 quit, 2 a menu was used
   PSt *s = &pst[p]; u16 pr = k & ~s->prev; u8 dirs, fire, sw = (u8)(p && !mp_kind);   // sw: P2 of VERSUS acts with the red AP
   s->prev = k;
@@ -141,6 +356,17 @@ static void versus_play(void) {                     // VERSUS, and CO-OP CLASSIC
     mp_hash();
     k = joy();
     if (lk_err) { over = 3; break; }
+    // On linked CO-OP CLASSIC, either player may switch BOTH clients into
+    // synchronized 3D ant piloting, each with a separate camera and controls.
+    if (co && mp_on == 2 &&
+        (((lk_k[0] & (J_SEL | J_START)) == (J_SEL | J_START) && !(pst[0].prev & J_START)) ||
+         ((lk_k[1] & (J_SEL | J_START)) == (J_SEL | J_START) && !(pst[1].prev & J_START)))) {
+      mp_eye();
+      if (lk_err) { over = 3; break; }
+      pst[0].prev = pst[1].prev = 0x3FF;
+      ps_load(mp_local()); follow(); scroll_step(); vs_redraw();
+      continue;
+    }
     for (i = 0; i < (mp_on == 2 ? 2 : 1); i++) {
       u8 p = mp_on == 2 ? i : mp_turn;
       ps_load(p); r = vs_input(p, mp_on == 2 ? lk_k[p] : k); ps_save(p);
