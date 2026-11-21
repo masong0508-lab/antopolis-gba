@@ -9,9 +9,18 @@ static u8 chase_berry_bucket(u8 x, u8 y) {
 // ANT EYE stores 8.8 cell coordinates; the map uses eight screen pixels
 // per world tile. Thus each 1/32-cell movement advances one map pixel.
 static s32 chase_view_px(s32 position) { return position >> 5; }
+// Explain WHY the selected cell cannot accept a guide waypoint. Reuse
+// this same pure rule for A presses and the visible guide HUD, so the UI
+// can never claim a cell is valid when the actual game rejects it.
+// 0 valid, 1 water, 2 no home-connected path, 3 too near the scout.
+static u8 chase_marker_reason(u8 height, u16 home_path, u16 scout_distance) {
+  if (!height) return 1;
+  if (home_path == 0xFFFFu) return 2;
+  if (scout_distance < 3u) return 3;
+  return 0;
+}
 static u8 chase_marker_legal(u8 height, u16 home_path, u16 scout_distance) {
-  // Only reachable walkable land, and no instant 'place on scout' bonus.
-  return (u8)(height != 0 && home_path != 0xFFFFu && scout_distance >= 3u);
+  return (u8)(chase_marker_reason(height, home_path, scout_distance) == 0);
 }
 static u8 chase_team_points(u8 delivered, u8 complete) {
   return (u8)(delivered + (complete ? 3u : 0u));
