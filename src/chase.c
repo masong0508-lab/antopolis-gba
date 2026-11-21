@@ -116,7 +116,7 @@ static void chase_map_sprites(u8 hx, u8 hy, u8 rx, u8 ry, u8 scan) {
   if (scan) place16(MAXA + 11, 20, 8, rx * 8, ry * 8, 0);
   else spr_hide(MAXA + 11);
 }
-static void chase_hud_map(u8 hunter, u8 delivered, u8 scan_cd, u8 secs) {
+static void chase_hud_map(u8 hunter, u8 delivered, u16 scan_cd, u8 secs) {
   ov_fill(CHASE_PANEL_TILE, 1, 17, 19); // solid dark HUD behind bright text
   ps(0, 17, hunter ? "P2 CAT: MAP HUNTER" : "P1 CAT: MAP HUNTER", 8);
   ps(24, 17, "TIME", 10); pn(28, 17, secs, 9);
@@ -138,7 +138,8 @@ static void chase_hud_eye(u8 runner, u8 delivered, u8 energy, u8 secs, u8 carry)
 // Returns 1 for runner victory, 0 for hunter victory, 2 for quit/link loss.
 static u8 chase_round(u8 round) {
   u8 hunter = round, runner = (u8)(round ^ 1), vi, rx, ry, hx, hy;
-  u8 deliveries = 0, energy = 99, scan = 0, scan_cd = 0, tag_cd = 0;
+  u8 deliveries = 0, energy = 99, scan = 0, tag_cd = 0;
+  u16 scan_cd = 0;                 // 420 frame cooldown, never truncate to 8 bits
   u8 prevh = 0, prevr = 0, roundout = 0, cur, fa, is_eye;
   u16 sky = BGPAL[0], pic[16], angle = 0, k[2], frame;
   s32 px, py;
