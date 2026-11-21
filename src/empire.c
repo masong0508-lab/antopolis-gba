@@ -1130,7 +1130,25 @@ static void mp_tag(void) {                         // whose cursor this screen f
   if (!mp_on) return;
   pc(28, 18, 'P', mp_local() ? 8 : 13); pc(29, 18, (char)('1' + mp_local()), mp_local() ? 8 : 13);
 }
-static void mp_hash(void) { lk_hash = rs ^ ((u32)gt << 12) ^ ((u32)rf << 3) ^ ((u32)nbl << 24) ^ (u32)cash ^ ((u32)mana << 20) ^ ((u32)stock[0] << 8); }
+static void mp_hash(void) {
+  u32 h = rs ^ ((u32)gt << 12) ^ ((u32)rf << 3) ^ ((u32)nbl << 24) ^
+          (u32)cash ^ ((u32)mana << 20) ^ ((u32)stock[0] << 8) ^
+          ((u32)qhp[0] << 5) ^ ((u32)qhp[1] << 15) ^ ((u32)stock[1] << 25);
+  // Camera frames are local, but pilots and their inventory MUST match on both
+  // connected consoles. Mix both into the existing rolling 2-bit checksum.
+  // No 48-ant scan or other per-frame allocation is needed.
+  if (eye_ctl < MAXA) {
+    const Ant *a = &ant[eye_ctl];
+    h ^= ((u32)eye_ctl << 24) ^ ((u32)a->x << 15) ^ ((u32)a->y << 6) ^
+         ((u32)a->carry << 1) ^ ((u32)a->alive << 3);
+  }
+  if (eye_ctl2 < MAXA) {
+    const Ant *a = &ant[eye_ctl2];
+    h ^= ((u32)eye_ctl2 << 18) ^ ((u32)a->x << 9) ^ ((u32)a->y << 27) ^
+         ((u32)a->carry << 4) ^ ((u32)a->alive << 7);
+  }
+  lk_hash = h;
+}
 
 // ---------- the empire game loop ----------
 static void emp_resume(void) {                     // back from a menu: same camera as before
