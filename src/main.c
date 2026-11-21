@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include "art.h"
 #include "logo.h"
+#include "ambient_water.h"
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 #include "font8.h"
@@ -1959,7 +1960,7 @@ static void eye(void) {                              // play as one of your ants
     oam_flush();
     if (!(frc & 3)) { eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8)); eye_panel(vi, php, scent, px, py, fa); }   // text while the screen is not drawn
     frc++;
-    BGPAL[97] = (frc & 32) ? RGB(12,20,30) : RGB(9,17,29); BGPAL[98] = (frc & 16) ? RGB(22,27,31) : RGB(17,23,30);   // water ripples
+    BGPAL[97] = ant_water_shimmer(frc, 2); BGPAL[98] = ant_water_shimmer(frc, 3);   // water ripples
     k = joy(); p = k & ~prev; prev = k;
 #ifdef EYETEST
     if (vi < MAXA && !dead) {                          // test pilot: walk to food, then home; bite anything red in reach
@@ -2983,7 +2984,7 @@ static void play(void) {
     vsync(); frc++;
     shx = (shk && !O(O_SHAKE)) ? ((shk & 2) ? 2 : -2) : 0; if (shk) shk--;
     BG0HOFS = BG2HOFS = (u16)(scx + shx); BG0VOFS = BG2VOFS = (u16)scy; oam_flush();
-    BGPAL[176 + 3] = (frc & 32) ? RGB(14,22,31) : RGB(10,18,30); BGPAL[176 + 14] = (frc & 32) ? RGB(10,18,30) : RGB(14,22,31);   // water shimmer
+    BGPAL[176 + 3] = ant_water_shimmer(frc, 0); BGPAL[176 + 14] = ant_water_shimmer(frc, 1);   // water shimmer
     OBJPAL[32 + 3] = RGB(31, 26 + ((frc >> 2) & 3), (frc & 16) ? 4 : 12);                   // the cursor pulses
     for (n = 0; n < 2; n++) { for (mx = wx0; mx < (u8)(wx0 + 31) && mx < W; mx++) draw_dec(mx, (u8)(wy0 + hrow)); hrow = (u8)((hrow + 1) % 19); }   // trails fade in / out
     if (alt) alt--;
@@ -3269,7 +3270,7 @@ static u8 editor(void) {                            // returns 1 = play MY MAP n
   while (res == 255) {
     vsync(); frc++;
     BG0HOFS = BG2HOFS = (u16)scx; BG0VOFS = BG2VOFS = (u16)scy; oam_flush();
-    BGPAL[176 + 3] = (frc & 32) ? RGB(14,22,31) : RGB(10,18,30); BGPAL[176 + 14] = (frc & 32) ? RGB(10,18,30) : RGB(14,22,31);
+    BGPAL[176 + 3] = ant_water_shimmer(frc, 0); BGPAL[176 + 14] = ant_water_shimmer(frc, 1);
     OBJPAL[32 + 3] = RGB(31, 26 + ((frc >> 2) & 3), (frc & 16) ? 4 : 12);
     k = joy(); p = k & ~prev; prev = k;
     dirs = (u8)(k & 15); mx = cx; my = cy;
