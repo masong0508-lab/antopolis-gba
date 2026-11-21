@@ -234,7 +234,10 @@ static u8 chase_round(u8 round) {
   py = (s32)ant[vi].y * 256 + 128;
   rx = ant[vi].x; ry = ant[vi].y;
   angle = (u16)((ant[vi].fl ? 128u : 0u) << 8);
-  hx = nestx[1]; hy = nesty[1];
+  // Start the guide looking at the real scout, not the distant red
+  // enemy nest. The map now opens on the teammate the guide must direct.
+  // The first marker still requires moving the cursor >=3 land tiles.
+  hx = rx; hy = ry;
   is_eye = (u8)(lk_me == scout);
   for (i = 0; i < 16; i++) pic[i] = BGPAL[112 + i];
   if (is_eye) {
