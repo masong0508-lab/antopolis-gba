@@ -1,8 +1,8 @@
 // ============================================================================
-// CAT & MOUSE: asymmetric linked multiplayer.
-// Every game action is run on BOTH connected GBAs, in the same order. The
-// hunter's overhead screen and runner's ANT EYE never mutate world state.
-// One round per role; the winner is the best player after the two-round match.
+// DUAL VIEW EXPEDITION: linked asymmetric cooperative multiplayer.
+// A map GUIDE and a first-person ant SCOUT share one colony simulation.
+// Two 90-second expeditions swap viewpoints, and both players contribute to
+// one team score. Linked inputs are always applied in the same order.
 // ============================================================================
 #include "chase_logic.h"
 #define CHASE_TICKS 5400u                // 90 seconds at the game's 60 Hz VBlank
@@ -60,27 +60,24 @@ static u8 chase_goal(u8 rx, u8 ry, u8 *gx, u8 *gy) {
 }
 static void chase_rules(u8 round) {
   u16 k;
-  u8 hunter = round, runner = (u8)(round ^ 1), ready = 0;
+  u8 guide = round, scout = (u8)(round ^ 1), ready = 0;
   hide_all(); vsync(); oam_flush(); DISPCNT = 0x80;
-  ov_fill(1, 3, 0, 19); ui_full(); big(0, "CAT & MOUSE");
-  ps(2, 3, "TWO ROUNDS - SWAP ROLES", 9);
-  ps(2, 5, "CAT: OVERHEAD MAP VIEW", 8);
-  ps(2, 6, "D-PAD SEEK  A TAG  B SCAN", 3);
-  ps(2, 8, "MOUSE: FIRST PERSON VIEW", 13);
-  ps(2, 9, "WALK ON % FOOD - BRING TO $", 3);
-  ps(2, 10, "DELIVER THREE TO ESCAPE!", 13);
+  ov_fill(1, 3, 0, 19); ui_full(); big(0, "DUAL VIEW");
+  ps(2, 3, "TWO RUNS - SWAP VIEWS", 9);
+  ps(2, 5, "GUIDE: OVERHEAD ANT MAP", 8);
+  ps(2, 6, "D-PAD MOVE A MARK B FIND", 3);
+  ps(2, 8, "SCOUT: 3D ANT EYE", 13);
+  ps(2, 9, "FIND % FOOD - BRING TO $", 3);
+  ps(2, 10, "TEAM: DELIVER THREE LOADS", 13);
   ps(2, 11, "A SPRINT B SCENT L/R STRAFE", 3);
-  ps(2, 12, "HOLD B + STOP ON HILLS: HIDE", 13);
-  ps(2, 13, "CAT: TRACK HOT/COLD CLUES", 8);
-  ps(2, 14, "TAG OR TIMEOUT: CAT WINS", 8);
-  ps(2, 16, "ROUND", 10); pn(9, 16, (u8)(round + 1), 9);
-  if (lk_me == hunter) ps(2, 17, "YOUR JOB: HUNT FROM THE MAP", 8);
-  else if (lk_me == runner) ps(2, 17, "YOUR JOB: RUN IN ANT EYE", 13);
+  ps(2, 12, "FOLLOW ? GUIDE WAYPOINTS", 13);
+  ps(2, 13, "REACH MARK: SPRINT BOOST", 8);
+  ps(2, 14, "TIME LIMIT: 90 SECONDS", 8);
+  ps(2, 16, "EXPEDITION", 10); pn(14, 16, (u8)(round + 1), 9);
+  ps(2, 17, lk_me == guide ? "YOUR JOB: GUIDE FROM MAP" : "YOUR JOB: EXPLORE AS AN ANT", lk_me == guide ? 8 : 13);
   ps(2, 18, "P1 WAIT        P2 WAIT", 10);
   ps(2, 19, "BOTH PRESS A / START TO READY", 9);
   DISPCNT = 0x1B40; BLDY = 0;
-  // No player may skip the other person's instructions: both choose READY,
-  // and the role-specific 2D / 3D round starts on a shared lockstep frame.
   while (ready != 3 && !lk_err) {
     vsync(); mp_hash(); (void)joy();
     if ((lk_k[0] & (J_A | J_START)) && !(ready & 1)) {
@@ -138,21 +135,17 @@ static void chase_map_start(u8 hx, u8 hy) {
 }
 // Unlike draw_sprites(), this render function does NOT decrement world
 // animation counters. Every world mutation must happen on BOTH devices.
-static void chase_map_sprites(u8 hx, u8 hy, s32 px, s32 py, u8 revealed) {
+static void chase_map_sprites(u8 hx, u8 hy, s32 px, s32 py,
+                              u8 marked, u8 mx, u8 my) {
   u8 i, tl;
   Ant *a;
   for (i = 0; i < MAXA; i++) {
     a = &ant[i];
-    // The controlled mouse IS an ordinary colony ant in world state, but
-    // must not leak through the normal map-ant sprite pass while concealed.
-    if (!a->alive || (i == eye_ctl && !revealed)) {
-      spr_hide(i); continue;
-    }
+    if (!a->alive) { spr_hide(i); continue; }
     tl = a->carry ? 5 : a->sol ? 7 : 3;
     if (a->age < 8 && (((frc >> 2) + i) & 1)) tl++;
-    // Other workers use regular 2D interpolation. The human mouse already
-    // has sub-cell positions from ANT EYE; reuse those instead of snapping
-    // the sprite to a new 8px tile every time a cell boundary is crossed.
+    // The scout is the very same ant seen from the world map. Preserve the
+    // fractional ANT EYE coordinate for smooth movement, not tile snapping.
     if (i == eye_ctl)
       place_px(i, tl, a->team, chase_view_px(px), chase_view_px(py), a->fl);
     else
@@ -169,42 +162,34 @@ static void chase_map_sprites(u8 hx, u8 hy, s32 px, s32 py, u8 revealed) {
     if (fx[i].t) place_px(MAXA + 3 + i, fx[i].tile, 3, fx[i].x, fx[i].y, 0);
     else spr_hide(MAXA + 3 + i);
   }
-  if (revealed) place16(MAXA + 11, 20, 8, chase_view_px(px), chase_view_px(py), 0);
+  if (marked) place16(MAXA + 11, 20, 8, mx * 8, my * 8, 0);
   else spr_hide(MAXA + 11);
 }
-static void chase_hud_map(u8 hunter, u8 delivered, u16 scan_cd, u8 secs, u8 distance, u8 visible) {
-  ov_fill(CHASE_PANEL_TILE, 1, 17, 19); // solid dark HUD behind bright text
-  ps(0, 17, hunter ? "P2 CAT: MAP HUNTER" : "P1 CAT: MAP HUNTER", 8);
+static void chase_hud_map(u8 guide, u8 delivered, u8 marked, u8 secs) {
+  ov_fill(CHASE_PANEL_TILE, 1, 17, 19);
+  ps(0, 17, guide ? "P2 GUIDE: COLONY MAP" : "P1 GUIDE: COLONY MAP", 8);
   ps(24, 17, "TIME", 10); pn(28, 17, secs, 9);
-  ps(0, 18, "MOUSE FOOD:", 13); pn(13, 18, delivered, 9);
-  ps(16, 18, "OF 3", 3);
-  if (scan_cd) { ps(22, 18, "SCAN", 8); pn(28, 18, (u8)((scan_cd + 59u) / 60u), 8); }
-  else ps(21, 18, "SCAN OK", 13);
-  // Directionless proximity signal: readable clues without revealing the
-  // mouse's precise hiding square between limited scanner pulses.
-  ps(0, 19, (!(frc & 127) || (frc & 127) < 32) ? "D-PAD AIM A TAG B SCAN" :
-     visible ? "MOUSE SPOTTED! A TO TAG" :
-     distance <= 4 ? "HOT! MOUSE IS VERY CLOSE" :
-     distance <= 9 ? "WARM TRAIL - SEARCH HERE" :
-     "COLD TRAIL - USE B SCAN", distance <= 4 ? 8 : 10);
+  ps(0, 18, "FOOD DELIVERED", 13); pn(16, 18, delivered, 9);
+  ps(18, 18, "/3", 3);
+  ps(22, 18, marked ? "MARK ON" : "NO MARK", marked ? 13 : 10);
+  ps(0, 19, "D-PAD MOVE A MARK B FIND SCOUT", 10);
 }
-static void chase_hud_eye(u8 runner, u8 delivered, u8 energy, u8 secs, u8 carry, u8 danger, u8 hidden) {
-  ov_fill(CHASE_PANEL_TILE, 1, 16, 19); // solid dark HUD behind first-person text
-  ps(0, 16, runner ? "P2 MOUSE: ANT EYE" : "P1 MOUSE: ANT EYE", 13);
+static void chase_hud_eye(u8 scout, u8 delivered, u8 energy, u8 secs,
+                          u8 carry, u8 marked) {
+  ov_fill(CHASE_PANEL_TILE, 1, 16, 19);
+  ps(0, 16, scout ? "P2 SCOUT: ANT EYE" : "P1 SCOUT: ANT EYE", 13);
   ps(24, 16, "TIME", 10); pn(28, 16, secs, 9);
-  ps(0, 17, hidden ? "HIDDEN IN COVER - STAY STILL" :
-     danger <= 3 ? "CAT NEAR! SPRINT OR HIDE!" :
-     carry ? "FOOD HELD: REACH HOME $" :
-     "FIND % FOOD, BRING TO $", danger <= 3 ? 8 : carry ? 13 : 3);
+  ps(0, 17, carry ? "FOOD HELD: RETURN HOME $" :
+     marked ? "GUIDE MARK: FOLLOW ?" :
+     "FIND % FOOD - BRING TO $", carry ? 13 : marked ? 14 : 3);
   ps(0, 18, "HOME DELIVERIES:", 10); pn(18, 18, delivered, 13);
   ps(21, 18, "OF 3", 3); ps(26, 18, "SP", 10); pn(28, 18, energy, 9);
-  ps(0, 19, "\1 SPRINT \2 HIDE/SCENT L/R SIDE", 10);
+  ps(0, 19, "\1 SPRINT \2 SCENT L/R STRAFE", 10);
 }
-// Returns 1 for runner victory, 0 for hunter victory, 2 for quit/link loss.
+// Returns 1 when the team delivered 3 loads, 0 at time-out/loss, 2 on abort.
 static u8 chase_round(u8 round) {
-  u8 hunter = round, runner = (u8)(round ^ 1), vi, rx, ry, hx, hy;
-  u8 deliveries = 0, energy = 99, scan = 0, tag_cd = 0, hidden = 0;
-  u16 scan_cd = 0;                 // 420 frame cooldown, never truncate to 8 bits
+  u8 guide = round, scout = (u8)(round ^ 1), vi, rx, ry, hx, hy;
+  u8 deliveries = 0, energy = 99, marked = 0, mx = 0, my = 0;
   u8 prevh = 0, prevr = 0, roundout = 0, cur, fa, is_eye;
   u16 sky = BGPAL[0], pic[16], angle = 0, k[2], frame;
   s32 px, py;
@@ -221,7 +206,7 @@ static u8 chase_round(u8 round) {
   rx = ant[vi].x; ry = ant[vi].y;
   angle = (u16)((ant[vi].fl ? 128u : 0u) << 8);
   hx = nestx[1]; hy = nesty[1];
-  is_eye = (u8)(lk_me == runner);
+  is_eye = (u8)(lk_me == scout);
   for (i = 0; i < 16; i++) pic[i] = BGPAL[112 + i];
   if (is_eye) {
     // First-person entry is recorded in the same save-RAM milestone used by
@@ -232,26 +217,28 @@ static u8 chase_round(u8 round) {
   prevh = lk_k[hunter]; prevr = lk_k[runner];
   for (frame = 0; frame < CHASE_TICKS && !lk_err; frame++) {
     u16 hp, rp;
-    u16 distance;
-    u8 revealed;
     u8 secs = (u8)((CHASE_TICKS - frame + 59) / 60);
     u8 moved = 0;
     vsync(); frc++;
     // Keep a single shared world checksum despite different local cameras.
     mp_hash();
     lk_hash ^= ((u32)rx << 24) ^ ((u32)ry << 16) ^ ((u32)hx << 8) ^
-               (u32)hy ^ ((u32)deliveries << 12) ^ (u32)scan_cd;
+               (u32)hy ^ ((u32)deliveries << 12) ^
+               ((u32)mx << 4) ^ ((u32)my << 20) ^ ((u32)marked << 30);
     (void)joy();
     if (lk_err) { roundout = 2; break; }
-    k[0] = lk_k[hunter]; k[1] = lk_k[runner];
+    k[0] = lk_k[guide]; k[1] = lk_k[scout];
     hp = (u16)(k[0] & ~prevh); rp = (u16)(k[1] & ~prevr);
     prevh = k[0]; prevr = k[1];
     if ((hp | rp) & J_START) { roundout = 2; break; }
-    if (scan) scan--;
-    if (scan_cd) scan_cd--;
-    if (tag_cd) tag_cd--;
-    if ((hp & J_B) && !scan_cd) {
-      scan = 110; scan_cd = 420; sfx_mana();
+    // The GUIDE marks a reachable destination; B refocuses the overhead map
+    // on the real scout position. No hunter/targeting mechanic is involved.
+    if (hp & J_B) { hx = rx; hy = ry; sfx_food(); }
+    if (hp & J_A) {
+      if (chase_marker_legal(hgt[hy][hx], dnp[0][hy][hx],
+                             (u16)(dist(hx, rx) + dist(hy, ry)))) {
+        mx = hx; my = hy; marked = 1; sfx_mana();
+      } else sfx_deny();
     }
     // Cursor covers one map cell per eight frames; accurate tagging takes
     // deliberate pursuit rather than near-instant map-wide teleporting.
@@ -261,7 +248,7 @@ static u8 chase_round(u8 round) {
       if ((k[0] & J_UP) && hy) hy--;
       if ((k[0] & J_DOWN) && hy + 1 < H) hy++;
     }
-    // Mouse: normal ANT EYE movement + stamina-based sprint.
+    // Scout: normal ANT EYE movement + stamina-based sprint.
     if (k[1] & J_RIGHT) angle += 410;
     if (k[1] & J_LEFT) angle -= 410;
     fa = (u8)(angle >> 8);
@@ -284,10 +271,7 @@ static u8 chase_round(u8 round) {
       if (vx || vy) moved = eye_walk(&px, &py, vx, vy);
     }
     rx = (u8)(px >> 8); ry = (u8)(py >> 8);
-    // Holding scent while motionless on tall ground conceals the mouse
-    // from distant scanner sweeps. Getting close or tagging still works.
-    // Pure input/world data: both consoles compute the same concealment.
-    hidden = (u8)(!moved && (k[1] & J_B) && hgt[ry][rx] == 3);
+    // Pheromone trails and movements both affect the same ant colony data.
     if (moved) {
       Ant *a = &ant[vi];
       a->ox = a->x; a->oy = a->y; a->x = rx; a->y = ry;
@@ -304,12 +288,12 @@ static u8 chase_round(u8 round) {
       sfx_mana();
       if (deliveries >= CHASE_GOAL) { roundout = 1; break; }
     }
-    // The 2D cat cannot tag before the mouse gets a short head start.
-    if ((hp & J_A) && !tag_cd && frame > 180) {
-      tag_cd = 24;
-      if (dist(hx, rx) + dist(hy, ry) <= 1) {
-        roundout = 0; sfx_hit(); break;
-      } else sfx_deny();
+    // A reached guide waypoint restores some sprint energy and disappears.
+    // Rejecting markers placed next to the scout prevents free energy spam.
+    if (marked && dist(rx, mx) + dist(ry, my) <= 1) {
+      marked = 0;
+      energy = (u8)(energy > 79 ? 99 : energy + 20);
+      sfx_food();
     }
     if (!(frame & 7)) { tick_slice(); bfs_tick(200); }
     // Replenish before drawing either perspective. Only the map client
@@ -325,10 +309,7 @@ static u8 chase_round(u8 round) {
       for (i = 0; i < 2; i++) if (qfl[i]) qfl[i]--;
     }
     if (!vok(vi) || !qhp[0]) { roundout = 0; break; }
-    // Derive *one* reveal decision for map sprites, scanner marker and
-    // hunter HUD: no hidden-mouse leak through another draw pass.
-    distance = (u16)(dist(hx, rx) + dist(hy, ry));
-    revealed = chase_revealed(scan, ant[vi].carry, hidden, distance);
+    // Local cameras differ, but linked game state and guide markers match.
     // The PRESENTATION alone diverges. No world-tick / FX mutations from
     // drawing; this prevents 2D/3D client disagreement and cable desync.
     if (is_eye) {
@@ -354,18 +335,19 @@ static u8 chase_round(u8 round) {
         eye_compass(fa, rx, ry);
         if (!ant[vi].carry && chase_goal(rx, ry, &gx, &gy))
           eye_mark(fa, (s16)gx - rx, (s16)gy - ry, '%', 13);
-        chase_hud_eye(runner, deliveries, energy, secs, ant[vi].carry,
-                       (u8)(dist(hx, rx) + dist(hy, ry)), hidden);
+        if (marked)
+          eye_mark(fa, (s16)mx - rx, (s16)my - ry, '?', 14);
+        chase_hud_eye(scout, deliveries, energy, secs, ant[vi].carry,
+                       marked);
       }
     } else {
       cx = hx; cy = hy;
       follow(); scroll_step(); win_sync();
       BG0HOFS = BG2HOFS = (u16)scx;
       BG0VOFS = BG2VOFS = (u16)scy;
-      chase_map_sprites(hx, hy, px, py, revealed);
+      chase_map_sprites(hx, hy, px, py, marked, mx, my);
       oam_flush();
-      if (!(frame & 7)) chase_hud_map(hunter, deliveries, scan_cd, secs,
-                          (u8)distance, revealed);
+      if (!(frame & 7)) chase_hud_map(guide, deliveries, marked, secs);
     }
   }
   if (is_eye) chase_eye_stop(sky, pic);
@@ -375,17 +357,15 @@ static u8 chase_round(u8 round) {
 }
 static void chase_result(u8 round, u8 outcome, const u8 *score) {
   u16 k;
-  u8 winner = outcome ? (u8)(round ^ 1) : round;
   hide_all(); vsync(); oam_flush(); DISPCNT = 0x80;
   ov_fill(1, 3, 0, 19); ui_full();
-  big(1, "CHASE RESULTS");
-  ps(3, 5, outcome ? "MOUSE ESCAPED WITH FOOD!" : "CAT CAUGHT THE MOUSE!", outcome ? 13 : 8);
-  ps(3, 8, "ROUND WINNER:", 10);
-  ps(18, 8, winner ? "PLAYER 2" : "PLAYER 1", 9);
-  ps(3, 11, "P1 SCORE", 13); pn(20, 11, score[0], 13);
-  ps(3, 13, "P2 SCORE", 8); pn(20, 13, score[1], 8);
-  ps(3, 15, "ROUND WIN +3  EACH FOOD +1", 10);
-  ps(2, 17, round ? "MATCH DONE!" : "NEXT: SWAP CAT AND MOUSE", 3);
+  big(1, "DUAL VIEW");
+  ps(3, 5, outcome ? "SUPPLY RUN COMPLETE!" : "RUN ENDED: TIME OR DANGER", outcome ? 13 : 8);
+  ps(3, 8, "TEAM SUPPLY REPORT", 10);
+  ps(3, 11, "RUN 1 SCORE", 13); pn(20, 11, score[0], 13);
+  ps(3, 13, "RUN 2 SCORE", 8); pn(20, 13, score[1], 8);
+  ps(3, 15, "DELIVERY +1  COMPLETION +3", 10);
+  ps(2, 17, round ? "BOTH VIEWS COMPLETED" : "NEXT: SWAP VIEWPOINTS", 3);
   ps(2, 19, "A / START: CONTINUE", 9);
   DISPCNT = 0x1B40; BLDY = 0;
   while (!lk_err) {
@@ -400,13 +380,13 @@ static void chase_result(u8 round, u8 outcome, const u8 *score) {
 static void chase_final(const u8 *score) {
   u16 k;
   hide_all(); vsync(); oam_flush(); DISPCNT = 0x80;
-  ov_fill(1, 3, 0, 19); ui_full(); big(1, "CAT & MOUSE");
-  ps(3, 5, score[0] > score[1] ? "PLAYER 1 WINS!" :
-           score[1] > score[0] ? "PLAYER 2 WINS!" : "DRAW - EVEN SCORES!", 9);
-  ps(3, 8, "PLAYER 1", 13); pn(19, 8, score[0], 13);
-  ps(3, 10, "PLAYER 2", 8); pn(19, 10, score[1], 8);
-  ps(3, 13, "TWO ROUNDS COMPLETE.", 3);
-  ps(3, 15, "NEXT: NEW HUNT OR GAME", 3);
+  ov_fill(1, 3, 0, 19); ui_full(); big(1, "DUAL VIEW");
+  ps(3, 5, "TWO VIEWPOINTS - ONE COLONY", 9);
+  ps(3, 8, "EXPEDITION 1", 13); pn(20, 8, score[0], 13);
+  ps(3, 10, "EXPEDITION 2", 8); pn(20, 10, score[1], 8);
+  ps(3, 13, "TOTAL TEAM SCORE", 3);
+  pn(20, 13, (u8)(score[0] + score[1]), 9);
+  ps(3, 15, "SWAP AND PLAY AGAIN!", 3);
   ps(3, 19, "A / START: BACK TO MENU", 9);
   DISPCNT = 0x1B40; BLDY = 0;
   while (!lk_err) {
@@ -421,17 +401,14 @@ static void chase_final(const u8 *score) {
 static void chase_play(void) {
   u8 round, result, score[2] = {0, 0};
   for (round = 0; round < 2 && !lk_err; round++) {
-    // Rebuild the arena each round so both runners have fair food supplies,
-    // rather than inheriting the other runner's picked-up items.
+    // Rebuild the world each run so each scout gets a fair food supply.
     newgame();
     chase_rules(round);
     if (lk_err) break;
     result = chase_round(round);
     if (result == 2) { over = 3; break; }
-    // Reward actual foraging effort plus the round victory, so two matches
-    // where both cats win need not end in an automatic, unrewarding draw.
-    score[round ^ 1] += chase_last_food;
-    score[result ? (round ^ 1) : round] += 3;
+    // Team scoring rewards food gathered in either view plus completed runs.
+    score[round] = chase_team_points(chase_last_food, result);
     chase_result(round, result, score);
     if (lk_err) break;
     if (round == 0) { vram_reload(); opts_apply(); }

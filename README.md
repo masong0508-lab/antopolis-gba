@@ -28,30 +28,29 @@ CAT & MOUSE and the larger empire/city modes. For simultaneous control,
 each GBA must run the **same current ROM** over a working GBA link cable.
 The two players see their *own* screens, not one mirrored view.
 
-**CAT & MOUSE (GBA link only):** a focused two-round competitive hunt. In
-round one, **P1 CAT** watches the overhead map, moving a targeting cursor
-with the D-pad, pressing A to tag a nearby runner ant, or B for a limited
-reveal scan. **P2 MOUSE** sees the immersive ANT EYE 3D view. Find the
-`%` food markers, walk over berries and bring **three loads** back to the
-`home nest within **90 seconds**. A sprints (stamina-limited), B lays a
-scent trail, L/R sidestep. The mouse's compass now guides toward reachable berries even when they are
-behind the camera, and the cat's map does not reveal a concealed mouse through
-the ordinary ant-sprite layer. When spotted, the mouse and spotting marker
-now move at smooth pixel-level positions rather than jumping between tiles. Close-range sight (within two tiles), scanner
-pulses and visible food-carrying expose the runner; hill cover defeats
-long-range scans. A full sprint now lasts approximately 3.3 seconds.
-During the hunt, a deterministic supply service keeps eight berries available
-on passable tiles close to home: ordinary ants cannot quietly make the
-three-delivery objective unwinnable. Fresh berries also update on the
-hunter's map. No extra textures, dynamic allocations or network data
-are needed, and the service runs approximately once every two seconds.
-A successful tag or time-out wins for the cat;
-three deliveries win for the mouse. **Round two swaps viewpoints** so P1
-becomes the first-person mouse and P2 becomes the map hunter. Each round win
-awards three points, and every successfully delivered food load adds a point
-for the mouse even if caught; the highest combined score wins. START leaves the hunt. The
-hunter's map is a separate presentation-only renderer: it cannot advance
-the world one extra time compared with the first-person player.
+**DUAL VIEW (GBA link only):** a cooperative 2D/3D expedition in the
+same live ant colony world. One GBA player is the **GUIDE**, using the normal
+overhead world map. D-pad moves the map cursor, **A** marks reachable terrain
+for the scout and **B** jumps the guide cursor to the scout's live position.
+The other player is the **SCOUT**, inhabiting a real worker ant in ANT EYE.
+Move and turn with the D-pad, strafe with L/R, hold **A** for stamina-limited
+sprinting and hold **B** to lay scent. Find berries (the `%` compass cue),
+carry **three loads** to the home nest (`$`), and follow a guide waypoint
+(`?` compass cue) for a one-time stamina boost. Guide markers must be at
+least three tiles from the scout and placed on reachable land, so the guide
+must actually plan routes rather than mint infinite sprint energy.
+
+Each run lasts **90 seconds**. Then the players swap perspectives, so both
+get to experience the overhead colony and immersive ant world. Every food
+delivery adds one shared team point; completing the three-delivery objective
+adds a three-point bonus. Two runs produce a **team score**, not a
+hunter-versus-prey winner. Newly available food is replenished deterministically
+near home, and the overhead view shows the scout's fractional movement
+rather than snapping between tiles. Both linked devices use the same world,
+supplies, waypoints and score; only camera presentation differs. This is local
+GBA cable/emulator multiplayer, not network play. The internal source name
+`src/chase.c` is kept for build compatibility, but it no longer describes the
+game mode's rules.
 
 ## Multiplayer and ANT EYE refinements (November 2026)
 

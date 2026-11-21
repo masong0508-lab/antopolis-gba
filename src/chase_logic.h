@@ -1,5 +1,5 @@
-// Pure CAT & MOUSE spotting rule, also exercised by the host regression test.
-// No allocation, VRAM writes or random state: both GBA peers can evaluate it.
+// Small pure helpers for DUAL VIEW expedition geometry, team scoring and
+// deterministic berry supply. Host regression tests exercise each helper.
 #ifndef ANTOPOLIS_CHASE_LOGIC_H
 #define ANTOPOLIS_CHASE_LOGIC_H
 // Integer-only 8-bucket spread, stable across builds and both machines.
@@ -9,10 +9,11 @@ static u8 chase_berry_bucket(u8 x, u8 y) {
 // ANT EYE stores 8.8 cell coordinates; the map uses eight screen pixels
 // per world tile. Thus each 1/32-cell movement advances one map pixel.
 static s32 chase_view_px(s32 position) { return position >> 5; }
-static u8 chase_revealed(u8 scan, u8 carrying, u8 hidden, u16 distance) {
-  // The hunter always spots a mouse within two tiles, even in tall cover.
-  if (distance <= 2u) return 1;
-  // Cover defeats long-range scans and the giveaway of carried food.
-  return (u8)((scan || carrying) && (!hidden || distance <= 3u));
+static u8 chase_marker_legal(u8 height, u16 home_path, u16 scout_distance) {
+  // Only reachable walkable land, and no instant 'place on scout' bonus.
+  return (u8)(height != 0 && home_path != 0xFFFFu && scout_distance >= 3u);
+}
+static u8 chase_team_points(u8 delivered, u8 complete) {
+  return (u8)(delivered + (complete ? 3u : 0u));
 }
 #endif

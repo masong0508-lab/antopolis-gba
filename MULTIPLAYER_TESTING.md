@@ -36,53 +36,34 @@ linked mGBA cores. This is local GBA link-cable multiplayer; not IP networking.
    return to the same cooperative strategy game, with the pilots' final
    positions visible on the map.
 
-## Smoke test C: CAT & MOUSE, asymmetric 2D / 3D
+## Smoke test C: DUAL VIEW, cooperative 2D / 3D expedition
 
-1. Both ROMs select **2 PLAYERS > CAT & MOUSE > LINK CABLE**.
-   SAME GBA is intentionally disabled for this simultaneous asymmetric mode.
-2. Accept the world loading facts card. On the mode's instructional card,
-   **both P1 and P2 must press A or START**. The screen should change from
-   `P1 WAIT / P2 WAIT` to the individual `READY` states before the round starts.
-   One person pressing the button must not skip the other's instructions.
-   **Round one:** Player 1 (the **CAT**) stays on the normal overhead map;
-   Player 2 (the **MOUSE**) enters the real first-person ANT EYE renderer.
-   It is an error if both screens are the same or if both become 3D.
-3. CAT moves the map targeting cursor with the D-pad, taps **A** to tag the
-   mouse within one map tile, and presses **B** for a short reveal scan
-   subject to its cooldown. The map must show the same terrain, berries
-   and ants that exist in the mouse's world. The cat's bottom HUD gives
-   HOT/WARM/COLD distance clues between scans; after a scan or a visible
-   carried-food trail, the mouse's position is temporarily revealed.
-4. MOUSE walks/turns with D-pad, sidesteps with L/R, sprints with A
-   (stamina must drain only while moving, at half-rate for ~3.3 seconds
-   of continuous sprint from full), and lays scent with B. Holding
-   B while **not moving on height-3 hills** should mark the mouse hidden:
-   distant scan markers disappear until the hunter closes within 3 tiles.
-   The runner's **% compass bearing** must point to reachable berry tiles
-   even when looking away from them; while carrying food, return toward
-   the **$ home marker**. Walk over food, bring it home and deliver
-   **three loads** to escape. The normal black-ant world sprite must
-   NEVER reveal the mouse while the scanner marker is hidden; within
-   two tiles, the mouse becomes visible even without scanning.
-   While revealed, the mouse sprite and red spotting marker must move
-   smoothly by individual pixels as the 3D mouse walks, not teleport once
-   per 8-pixel tile.
-   Winning by delivery should not require hitting the red queen.
-   After ordinary AI workers consume nearby food, confirm that new reachable
-   berries grow on BOTH clients' world state, show visually on the hunter's
-   tile map, and are available to the mouse. Both devices must still report
-   the same score and must not desynchronize during replenishment.
-5. Let the first **90-second** round expire without delivering all food.
-   Both GBAs must show the same cat-win result and per-player scores.
-6. Advance together and confirm a **fresh arena** is generated so the
-   second runner gets a fair berry supply. **Round two swaps roles:**
-   P1 now sees ANT EYE and P2 sees the overhead map.
-7. Press START on one device. Both devices must exit safely instead of
-   leaving one in an orphaned 3D camera or a hanging link wait.
-8. Test actual berry deliveries, capture, stamina regeneration, scanner
-   cooldown, result scoring, low-RAM hardware, sound timing and cable
-   removal manually as the scripted suite exercises only representative
-   movement/controls and the time-out role-swap path.
+1. Both ROMs choose **2 PLAYERS > DUAL VIEW > LINK CABLE**. SAME GBA
+   remains unavailable for simultaneous independent camera views.
+2. Both players press A/START on the shared briefing. Run one puts P1 on
+   the overhead GUIDE map and P2 in the first-person SCOUT ant view.
+3. Guide: navigate the map with D-pad. Press A on passable reachable
+   ground at least 3 tiles from the scout to place a marker. The marker
+   must appear on the overhead map and as a **? bearing** on the 3D compass.
+   A on water, unreachable ground, or the scout's current tile must fail.
+   B must move the guide cursor to the scout's real position.
+4. Scout: find **% food** on the compass, collect it by walking and deliver
+   to the **$ home nest**. A runs using limited sprint energy, B lays scent,
+   L/R strafes. Walking to the guide marker consumes it and adds up to
+   20 sprint-energy points. Both clients must agree on that event.
+5. Both players must see the same colony, food, queen state and delivered
+   food count. A periodic refill must keep nearby food obtainable.
+6. After three deliveries, the shared expedition succeeds. If time runs
+   out or the scout dies first, it ends without the +3 completion bonus.
+   Neither case should produce a cat/mouse hunt result or individual winner.
+7. Start the second run and confirm **P2 becomes GUIDE** on the map and
+   **P1 becomes SCOUT** in ANT EYE. The new world is generated fairly.
+8. After the two runs, show **one team score**: +1 per delivery, +3 per
+   completed run. Pressing START during a run quits both safely.
+9. Verify the real GBA cable, sound, packet synchronization, cursor-to-scout
+   teleport, waypoint feedback, marker validation, stamina, berry delivery,
+   and real-world frame rate manually; the existing linked emulator smoke
+   covers setup, both camera roles and return rather than every objective.
 
 **Automated evidence:** the new `tools/linked_smoke.py --scenario chase`
 is exercised by CI alongside `--scenario co-op`. A two-core mGBA run
@@ -108,8 +89,8 @@ complete mechanics/long-session verification.
 ## Technical invariants
 
 - Link payload: 10 key bits, two rolling checksum bits, four sequence bits.
-- Build/protocol token: `0xA75`; both cartridges must match.
-- Visibility is driven by one pure rule for the hunter HUD, marker and mouse
+- Build/protocol token: `0xA76`; both cartridges must match.
+- Visibility is driven by one pure rule for the guide HUD, marker and mouse
   sprite; check with `make test` before the ROM build.
 - A seeded 8-phase pass restores up to eight reachable berries, about every
   128 linked frames. It never reads local camera state to choose tiles and

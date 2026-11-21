@@ -228,7 +228,7 @@ def main():
         press(A)
         tick(100)
         snapshot("02_multiplayer_menu")
-        # Menu order: VERSUS -> CO-OP CLASSIC -> CAT & MOUSE.
+        # Menu order: VERSUS -> CO-OP CLASSIC -> DUAL VIEW.
         press(RIGHT)
         if args.scenario == "chase":
             press(RIGHT)  # explicit asymmetric map/first-person mode
@@ -254,22 +254,22 @@ def main():
         tick(120)
         snapshot("05_map_ready" if args.scenario == "co-op" else "05_chase_rules")
         if args.scenario == "chase":
-            # Round one: P1 hunts on the OVERHEAD MAP, P2 runs in ANT EYE.
+            # Run one: P1 guides from the OVERHEAD MAP, P2 explores in ANT EYE.
             press(A, ports=(0, 1))
             tick(120)
             snapshot("06_cat_map_vs_mouse_eye")
             report["eye_sram"] = save_info()
             if not report["eye_sram"][1]["ant_eye_achievement_7"]:
-                raise AssertionError("P2 mouse never entered first-person ANT EYE")
+                raise AssertionError("P2 scout never entered first-person ANT EYE")
             if report["eye_sram"][0]["ant_eye_achievement_7"]:
-                raise AssertionError("P1 cat incorrectly switched out of the map view")
+                raise AssertionError("P1 guide incorrectly switched out of the map view")
             if not report["screens"]["06_cat_map_vs_mouse_eye"]["different"]:
-                raise AssertionError("2D cat and 3D mouse have identical pictures")
+                raise AssertionError("2D guide and 3D scout have identical pictures")
             state["keys"][0] = {LEFT}
             state["keys"][1] = {UP}
             tick(80)
             state["keys"] = [set(), set()]
-            press(B, ports=(0,))  # hunter's scanner
+            press(B, ports=(0,))  # guide's FIND SCOUT shortcut
             press(A, ports=(1,), held=20)  # mouse sprint
             snapshot("07_cat_scans_mouse_sprints")
             # Let the 90-second chase run to its round result. Neither input
@@ -297,7 +297,7 @@ def main():
             press(START, ports=(0,))
             tick(90)
             snapshot("12_return_from_hunt")
-            report["result"] = "PASS: real linked 2D/3D CAT & MOUSE, input, round end, swapped roles, safe exit"
+            report["result"] = "PASS: real linked 2D/3D DUAL VIEW expedition, input, role swap, safe exit"
         else:
             # Classic co-op: both players enter independent ANT EYE cameras.
             press(SELECT, START, ports=(0,), held=4)

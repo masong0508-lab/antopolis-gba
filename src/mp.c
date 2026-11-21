@@ -13,12 +13,12 @@
 static u8 mp_how, mp_sub = 255, mp_size = 1, mp_riv = 1, mp_sel;
 static u8 mp_supply;  // linked co-op supply-run combo; survives switching between map and ANT EYE
 static const u8 MPSZ[4] = {32, 48, 64, 96};
-static const char *const MPK[6] = {"VERSUS", "CO-OP EMPIRE", "CO-OP CITY", "CO-OP ANTVERSE", "CO-OP CLASSIC", "CAT & MOUSE"};
-static const char *const MPD[6] = {"BLACK ANTS AGAINST RED ANTS", "ONE EMPIRE, TWO RULERS", "ONE CITY, TWO MAYORS", "EVERYTHING, TOGETHER", "TWO GODS, ONE ANT COLONY", "2D HUNTER VS 3D MOUSE"};
-static const u8 MPORD[6] = {0, 4, 5, 1, 2, 3};       // CAT & MOUSE appears alongside the familiar Classic games
+static const char *const MPK[6] = {"VERSUS", "CO-OP EMPIRE", "CO-OP CITY", "CO-OP ANTVERSE", "CO-OP CLASSIC", "DUAL VIEW"};
+static const char *const MPD[6] = {"BLACK ANTS AGAINST RED ANTS", "ONE EMPIRE, TWO RULERS", "ONE CITY, TWO MAYORS", "EVERYTHING, TOGETHER", "TWO GODS, ONE ANT COLONY", "MAP GUIDE AND 3D SCOUT"};
+static const u8 MPORD[6] = {0, 4, 5, 1, 2, 3};       // DUAL VIEW appears alongside the familiar Classic games
 // Stable on-wire protocol revision. Build timestamps must NEVER decide whether two identical ROMs can link.
 // Bump this 12-bit value only when game state, input packets or lobby settings become incompatible.
-#define MP_BUILD 0xA75u
+#define MP_BUILD 0xA76u
 static u8 mp_locked(u8 k) { return (k == 1 && !emp_unlocked()) || (k == 3 && !verse_unlocked()); }
 
 // ---------- VERSUS (classic) ----------
@@ -507,7 +507,7 @@ static void mp_run(u8 how) {                        // how: 1 same GBA, 2 link c
   case 4:                                          // CO-OP CLASSIC: the host's options and cheats, both gods on the black side
     newgame(); versus_play();
     break;
-  case 5:                                          // CAT & MOUSE: two linked GBAs, two different viewpoints
+  case 5:                                          // DUAL VIEW: two linked GBAs, two different viewpoints
     chase_play();
     break;
   case 1:
@@ -558,7 +558,7 @@ static void mp_draw(void) {
   else ps(14, 9, "SET BY THE GAME", 15);
   ps(3, 11, mp_kind == 2 ? "MONEY" : "RIVALS", mp_sel == 4 ? 9 : 3);
   if (mp_kind == 0) ps(14, 11, "EACH OTHER!", 15);
-  else if (mp_kind == 5) ps(14, 11, "HUNT / ESCAPE", 13);
+  else if (mp_kind == 5) ps(14, 11, "GUIDE THE SCOUT", 13);
   else if (mp_kind == 4) ps(14, 11, "THE RED ANTS", 8);
   else if (mp_kind == 2) { static const char *const MN[4] = {"EASY", "NORMAL", "HARD", "SANDBOX"}; ps(12, 11, "<", 10); ps(14, 11, mp_sub == 255 ? MN[cmoney] : "SET", 9); ps(29, 11, ">", 10); }
   else if (mp_sub == 255 || mp_kind == 3) { ps(12, 11, "<", 10); pc(14, 11, (char)('0' + mp_riv), 9); ps(29, 11, ">", 10); }
