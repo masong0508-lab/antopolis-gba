@@ -244,10 +244,15 @@ def main():
         # completes, NOT by the harness or emulator.
         if not all(x["link_achievement_48"] for x in report["link_sram"]):
             raise AssertionError("GBA cable handshake or linked lobby did not complete on BOTH consoles")
+        # Antopolis deliberately pauses at the completed "A GO ON" loading
+        # facts card. Both consoles must confirm before the shared game starts.
+        press(A, ports=(0, 1))
+        tick(120)
+        snapshot("05_map_ready")
         # The first pilot alone triggers the shared 3D transition.
         press(SELECT, START, ports=(0,), held=4)
         tick(100)
-        snapshot("05_two_pilots")
+        snapshot("06_two_pilots")
         report["eye_sram"] = save_info()
         if not all(x["ant_eye_achievement_7"] for x in report["eye_sram"]):
             raise AssertionError("linked 3D co-op did not start on BOTH consoles")
@@ -258,10 +263,10 @@ def main():
         state["keys"] = [set(), set()]
         press(A, ports=(0,))
         press(B, ports=(1,), held=25)
-        snapshot("06_independent_controls")
+        snapshot("07_independent_controls")
         press(START, ports=(1,))
         tick(90)
-        snapshot("07_back_to_map")
+        snapshot("08_back_to_map")
         report["end_sram"] = save_info()
         report["result"] = "PASS: dual-core cable lobby + synchronized ANT EYE entered on both GBAs"
     except Exception as exc:
