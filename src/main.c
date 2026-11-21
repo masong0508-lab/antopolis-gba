@@ -487,7 +487,8 @@ static const char HELP[] =
   "THE RED ANTS KILL YOURS\n"
   "\n"
   "#TIPS\n"
-  "DARK EDGES ARE CLIFFS: NO WAY\n";
+  "DARK EDGES ARE CLIFFS: NO WAY\n"
+  "B ON BERRY SAND: FOOD LOST\n";
 static void help_show(void) {
   const char *s = HELP; u8 y = 1, x, g;
   hide_all(); vsync(); oam_flush();
