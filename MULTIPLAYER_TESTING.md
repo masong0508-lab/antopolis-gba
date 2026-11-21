@@ -58,6 +58,19 @@ linked mGBA cores. This is local GBA link-cable multiplayer; not IP networking.
 - Each player owns a different worker; AI must not move a human-owned worker.
 - No dynamic memory allocation or additional framebuffers in the mode.
 
-**Current validation:** ROM compilation and artifact upload via GitHub
-Actions. Physical link play, dual-emulator play, timing and disconnect
-behavior require independent execution to qualify as tested.
+**Current validation:** automated two-instance mGBA integration **PASSED**
+(2,845 emulated frames in workflow run
+https://github.com/masong0508-lab/antopolis-gba/actions/runs/44859788127).
+Both ROMs entered a connected CO-OP CLASSIC match (confirmed by saved
+link-achievement flag 48); both subsequently entered live 3D ANT EYE
+(confirmed by saved achievement 7), accepted separate P1/P2 controller
+inputs, and returned to their map views. Eight genuine dual-emulator
+screenshots and the assertion report are preserved as an Actions artifact.
+The subsequent run also passed and contains the matching native emulator
+core and ROM for repeatable replay:
+https://github.com/masong0508-lab/antopolis-gba/actions/runs/44859806374.
+
+**Not yet validated:** physical cable hardware, actual GBA FPS and sound
+quality, long-session desync, unplug/replug recovery, and every alternate
+GBA multiplayer game mode. The automated first-person test exercises the
+entry, input and exit path, not every co-op mechanic or win condition.
