@@ -272,10 +272,32 @@ def main():
             press(B, ports=(0,))  # hunter's scanner
             press(A, ports=(1,), held=20)  # mouse sprint
             snapshot("07_cat_scans_mouse_sprints")
-            press(START, ports=(1,))
+            # Let the 90-second chase run to its round result. Neither input
+            # controller quits, so the timer (or in-world game result) must
+            # bring both linked emulators to the SAME result card.
+            report["round_one_seconds"] = tick(5500)
+            snapshot("08_first_round_result")
+            # The scorecard accepts A / START. The next arena has its own
+            # deterministic loading screen and an explicit "A GO ON" gate.
+            press(A, ports=(0, 1))
+            tick(1300)
+            snapshot("09_second_arena_loaded")
+            press(A, ports=(0, 1))
+            tick(120)
+            snapshot("10_swapped_role_rules")
+            press(A, ports=(0, 1))
+            tick(120)
+            snapshot("11_roles_swapped")
+            report["round_two_sram"] = save_info()
+            if not report["round_two_sram"][0]["ant_eye_achievement_7"]:
+                raise AssertionError("P1 did not become the 3D mouse in round two")
+            if not report["screens"]["11_roles_swapped"]["different"]:
+                raise AssertionError("roles swapped but two views became identical")
+            # Runner P1 quits safely; both must leave the session together.
+            press(START, ports=(0,))
             tick(90)
-            snapshot("08_return_from_hunt")
-            report["result"] = "PASS: link handshake, 2D map hunter, P2 3D mouse, independent controls"
+            snapshot("12_return_from_hunt")
+            report["result"] = "PASS: real linked 2D/3D CAT & MOUSE, input, round end, swapped roles, safe exit"
         else:
             # Classic co-op: both players enter independent ANT EYE cameras.
             press(SELECT, START, ports=(0,), held=4)
