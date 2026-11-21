@@ -73,6 +73,7 @@ def main():
     parser.add_argument("rom", type=pathlib.Path)
     parser.add_argument("core", type=pathlib.Path)
     parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path("build/link-smoke"))
+    parser.add_argument("--scenario", choices=["co-op", "chase"], default="co-op")
     args = parser.parse_args()
     args.out.mkdir(parents=True, exist_ok=True)
 
@@ -227,10 +228,13 @@ def main():
         press(A)
         tick(100)
         snapshot("02_multiplayer_menu")
-        # Menu order: VERSUS -> CO-OP CLASSIC by pressing RIGHT once.
+        # Menu order: VERSUS -> CO-OP CLASSIC -> CAT & MOUSE.
         press(RIGHT)
+        if args.scenario == "chase":
+            press(RIGHT)  # explicit asymmetric map/first-person mode
         press(DOWN)      # second row: PLAY ON
-        press(RIGHT)     # SAME GBA -> LINK CABLE
+        if args.scenario == "co-op":
+            press(RIGHT)  # SAME GBA -> LINK CABLE (chase is link-only)
         snapshot("03_link_selected")
         press(START)
         # The link handshake may complete long before the deterministic
@@ -244,31 +248,54 @@ def main():
         # completes, NOT by the harness or emulator.
         if not all(x["link_achievement_48"] for x in report["link_sram"]):
             raise AssertionError("GBA cable handshake or linked lobby did not complete on BOTH consoles")
-        # Antopolis deliberately pauses at the completed "A GO ON" loading
-        # facts card. Both consoles must confirm before the shared game starts.
+        # Antopolis pauses at "A GO ON" after map generation. Both consoles
+        # must confirm before subsequent input reaches the new match.
         press(A, ports=(0, 1))
         tick(120)
-        snapshot("05_map_ready")
-        # The first pilot alone triggers the shared 3D transition.
-        press(SELECT, START, ports=(0,), held=4)
-        tick(100)
-        snapshot("06_two_pilots")
-        report["eye_sram"] = save_info()
-        if not all(x["ant_eye_achievement_7"] for x in report["eye_sram"]):
-            raise AssertionError("linked 3D co-op did not start on BOTH consoles")
-        # Exercise *different* directional inputs on each connected GBA.
-        state["keys"][0] = {UP}
-        state["keys"][1] = {RIGHT}
-        tick(75)
-        state["keys"] = [set(), set()]
-        press(A, ports=(0,))
-        press(B, ports=(1,), held=25)
-        snapshot("07_independent_controls")
-        press(START, ports=(1,))
-        tick(90)
-        snapshot("08_back_to_map")
+        snapshot("05_map_ready" if args.scenario == "co-op" else "05_chase_rules")
+        if args.scenario == "chase":
+            # Round one: P1 hunts on the OVERHEAD MAP, P2 runs in ANT EYE.
+            press(A, ports=(0, 1))
+            tick(120)
+            snapshot("06_cat_map_vs_mouse_eye")
+            report["eye_sram"] = save_info()
+            if not report["eye_sram"][1]["ant_eye_achievement_7"]:
+                raise AssertionError("P2 mouse never entered first-person ANT EYE")
+            if report["eye_sram"][0]["ant_eye_achievement_7"]:
+                raise AssertionError("P1 cat incorrectly switched out of the map view")
+            if not report["screens"]["06_cat_map_vs_mouse_eye"]["different"]:
+                raise AssertionError("2D cat and 3D mouse have identical pictures")
+            state["keys"][0] = {LEFT}
+            state["keys"][1] = {UP}
+            tick(80)
+            state["keys"] = [set(), set()]
+            press(B, ports=(0,))  # hunter's scanner
+            press(A, ports=(1,), held=20)  # mouse sprint
+            snapshot("07_cat_scans_mouse_sprints")
+            press(START, ports=(1,))
+            tick(90)
+            snapshot("08_return_from_hunt")
+            report["result"] = "PASS: link handshake, 2D map hunter, P2 3D mouse, independent controls"
+        else:
+            # Classic co-op: both players enter independent ANT EYE cameras.
+            press(SELECT, START, ports=(0,), held=4)
+            tick(100)
+            snapshot("06_two_pilots")
+            report["eye_sram"] = save_info()
+            if not all(x["ant_eye_achievement_7"] for x in report["eye_sram"]):
+                raise AssertionError("linked 3D co-op did not start on BOTH consoles")
+            state["keys"][0] = {UP}
+            state["keys"][1] = {RIGHT}
+            tick(75)
+            state["keys"] = [set(), set()]
+            press(A, ports=(0,))
+            press(B, ports=(1,), held=25)
+            snapshot("07_independent_controls")
+            press(START, ports=(1,))
+            tick(90)
+            snapshot("08_back_to_map")
+            report["result"] = "PASS: dual-core cable lobby + synchronized ANT EYE entered on both GBAs"
         report["end_sram"] = save_info()
-        report["result"] = "PASS: dual-core cable lobby + synchronized ANT EYE entered on both GBAs"
     except Exception as exc:
         report["result"] = "FAIL: " + repr(exc)
         raise
