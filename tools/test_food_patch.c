@@ -150,8 +150,11 @@ int main(void) {
     assert(!food_start_anchor(heights,128u,32u,32u,4u,4u,27u,27u,
                               &ax,&ay));
     assert(ax==20u && ay==21u);
-    /* Cliff >1 above the nest is not safely traversable. */
+    /* A 2->3 slope is a legal ant step; a 1->3 cliff is not. */
     heights[6u*128u+4u]=3u;
+    assert(food_start_anchor(heights,128u,32u,32u,4u,4u,27u,27u,
+                             &ax,&ay));
+    heights[4u*128u+4u]=1u;
     assert(!food_start_anchor(heights,128u,32u,32u,4u,4u,27u,27u,
                               &ax,&ay));
   }
