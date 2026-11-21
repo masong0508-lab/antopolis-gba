@@ -1073,6 +1073,9 @@ static void hand_map(const HandMap *m) {           // a hand-made map from maps.
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
     c = m->cells[y * W + x];
     hgt[y][x] = c == 'w' ? 0 : c == 's' ? 1 : c == 'h' ? 3 : 2;
+    // Painted berries are exact initial food positions, not merely
+    // scatter centers. Even >16 marked tiles remain visible in play.
+    food[y][x] = food_patch_authored_tile(c, hgt[y][x]);
     if (c == 'Y') { nestx[0] = x; nesty[0] = y; }
     if (c == 'R') { nestx[1] = x; nesty[1] = y; }
   }
