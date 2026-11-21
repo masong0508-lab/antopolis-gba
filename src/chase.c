@@ -257,6 +257,17 @@ static u8 chase_round(u8 round) {
     u8 secs = (u8)((CHASE_TICKS - frame + 59) / 60);
     u8 moved = 0;
     vsync(); frc++;
+    // Palette-only ambient water matches the solo strategy/ANT EYE modes.
+    // This is presentation-local: the guide and scout intentionally write
+    // DIFFERENT palette entries but identical linked simulation state.
+    // No tile-map rewrites, network packets, timers or new image buffers.
+    if (is_eye) {
+      BGPAL[97] = ant_water_shimmer(frc, 2);
+      BGPAL[98] = ant_water_shimmer(frc, 3);
+    } else {
+      BGPAL[176 + 3] = ant_water_shimmer(frc, 0);
+      BGPAL[176 + 14] = ant_water_shimmer(frc, 1);
+    }
     // Keep a single shared world checksum despite different local cameras.
     mp_hash();
     lk_hash ^= ((u32)rx << 24) ^ ((u32)ry << 16) ^ ((u32)hx << 8) ^
