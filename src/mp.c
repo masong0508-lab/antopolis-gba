@@ -17,7 +17,7 @@ static const char *const MPD[5] = {"BLACK ANTS AGAINST RED ANTS", "ONE EMPIRE, T
 static const u8 MPORD[5] = {0, 4, 1, 2, 3};          // the order LEFT / RIGHT steps through the games
 // Stable on-wire protocol revision. Build timestamps must NEVER decide whether two identical ROMs can link.
 // Bump this 12-bit value only when game state, input packets or lobby settings become incompatible.
-#define MP_BUILD 0xA72u
+#define MP_BUILD 0xA73u
 static u8 mp_locked(u8 k) { return (k == 1 && !emp_unlocked()) || (k == 3 && !verse_unlocked()); }
 
 // ---------- VERSUS (classic) ----------
