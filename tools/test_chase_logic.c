@@ -35,6 +35,26 @@ int main(void) {
   assert(!chase_both_released(0x0001u, 0x0008u, ready_mask));
   assert(chase_both_released(0u, 0u, ready_mask));
   assert(chase_both_released(0x0080u, 0x0002u, ready_mask));
+  // The scout sees the actual gameplay priority: a waypoint bonus
+  // overrides carrying food briefly, then guidance returns to home/food.
+  assert(chase_scout_message(0, 0, 0) == 0);
+  assert(chase_scout_message(0, 1, 0) == 1);
+  assert(chase_scout_message(1, 0, 0) == 2);
+  assert(chase_scout_message(1, 1, 0) == 2);
+  assert(chase_scout_message(0, 0, 60) == 3);
+  assert(chase_scout_message(1, 1, 1) == 3);
+  // Real HUD repaint cache must notice that a transient reward both
+  // appeared and expired even if seconds, food and stamina stay constant.
+  {
+    ChaseHudCache cache = {255, 255, 255, 255, 255};
+    u8 task = chase_scout_message(1, 0, 0);
+    assert(chase_hud_needs_update(&cache, 88, 1, 0, 90, task));
+    task = chase_scout_message(1, 0, 60);
+    assert(chase_hud_needs_update(&cache, 88, 1, 0, 90, task));
+    assert(!chase_hud_needs_update(&cache, 88, 1, 0, 90, task));
+    task = chase_scout_message(1, 0, 0);
+    assert(chase_hud_needs_update(&cache, 88, 1, 0, 90, task));
+  }
   // The first frame draws every panel. Stable frames must not flood VRAM
   // with redundant 3/4-row clears; changes to any displayed field must
   // still redraw promptly on the next eight-frame HUD opportunity.
