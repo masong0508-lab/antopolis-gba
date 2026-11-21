@@ -116,4 +116,26 @@ assert nest_pixels[11][12] == 8, "The burrow opening lost its dark core"
 assert any(nest_pixels[y][x] == 4 for y in range(7, 20) for x in range(24))
 assert any(nest_pixels[y][x] == 10 for y in range(14, 24) for x in range(24))
 print("GBA nest rendering PASS: 9 unchanged-size mound tiles, opening, grass and soil fringe")
+# Validate every graphics mode actually consumes the tested helpers:
+# two solo overhead panels (game/editor), solo ANT EYE and both linked
+# DUAL VIEW clients. Palette-only changes must remain presentation-local.
+assert '#include "ambient_water.h"' in world
+assert '#include "world_variation.h"' in world
+assert '#include "eye_floor_detail.h"' in world
+assert world.count("ant_water_shimmer(frc, 0)") == 2
+assert world.count("ant_water_shimmer(frc, 1)") == 2
+assert world.count("ant_water_shimmer(frc, 2)") == 1
+assert world.count("ant_water_shimmer(frc, 3)") == 1
+assert "world_interior_flip(h, (u8)c, x, y)" in world
+assert "eye_floor_pixel(t,x,y)" in world
+assert "eye_floor_pixel(t,(u8)(x+1u),y)" in world
+linked = Path("src/chase.c").read_text()
+assert "if (is_eye) {" in linked
+for palette, phase in ((97, 2), (98, 3)):
+    assert f"BGPAL[{palette}] = ant_water_shimmer(frc, {phase})" in linked
+for palette, phase in ((3, 0), (14, 1)):
+    assert f"BGPAL[176 + {palette}] = ant_water_shimmer(frc, {phase})" in linked
+assert linked.index("if (is_eye) {\n      BGPAL[97]") < linked.index(
+    "// Keep a single shared world checksum")
+print("GBA environmental modes PASS: solo/linked overhead + ANT EYE all use palette-only animation")
 print("GBA edge art PASS: 324 terrain tiles exactly match 4bpp atlas, foam + cliff strata")
