@@ -1,3 +1,25 @@
+## Map Maker: painted berry tiles now appear in gameplay (November 2026)
+
+Hand-made maps (including saved MY MAP) previously treated each `f`
+letter as a *candidate regrowth center* only. Random scatter might
+place berries near that tile but not on the painted tile itself. On
+maps with more than 16 painted berry cells, the 16-center limit could
+silently discard the other marked positions from the starting world.
+
+Now **every painted `f` tile is an actual initial food tile on that
+exact square**. The existing 16-center distribution remains in place
+for randomized neighboring patches and future regrowth. Even a world
+with hundreds of authored berries starts with every marked berry
+present. Existing unmarked terrain, nest coordinates, fixed food
+storage and random-number sequence are preserved. The import assigns
+the food flag during the existing map-cell pass: no extra heap, extra
+persistent buffers or per-frame scans.
+
+The native regression checks actual `food_patch_authored_tile`
+cartridge logic across all 81 map dimensions, sparse and >16-berry
+worlds, impassable water, and nest symbols. Linked two-console
+emulation and ARM compilation remain required before merge.
+
 ## Starter forage reliability — river, islands and narrow maps
 
 Procedurally generated worlds place a food patch near each starting
