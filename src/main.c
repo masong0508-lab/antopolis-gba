@@ -8,6 +8,7 @@
 #include "ambient_water.h"
 #include "world_variation.h"
 #include "eye_floor_detail.h"
+#include "eye_scene_motion.h"
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 #include "font8.h"
@@ -1788,7 +1789,7 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
       along = hx * cs + hy * sn; side = -hx * sn + hy * cs;   // its heading against the view: away / toward / left / right
       view = (along > 0 && (along > (side < 0 ? -side : side) * 2)) ? 1 : (along < 0 && (-along > (side < 0 ? -side : side) * 2)) ? 2 : (side < 0 ? 3 : 0);
       rx += (i * 37 & 63) - 32; ry += (i * 23 & 63) - 32;
-      eo_add(rx, ry, 0, a->team, (u8)(view | (mv << 2) | (a->carry << 3)), ux, uy, cs, sn);
+      eo_add(rx, ry, 0, a->team, (u8)(view | (mv << 2) | (a->carry << 3) | (eye_ant_stride(a->age, mv) << 4)), ux, uy, cs, sn);
       if (a->team) { u16 dd = (u16)(dist(a->x, vx) + dist(a->y, vy)); if (dd < be && dd < 12) { be = dd; eex = a->x; eey = a->y; ehas_e = 1; } }
     }
     for (i = 0; i < 8; i++) if (fx[i].t) eo_add((s32)fx[i].x * 32 + 128, (s32)fx[i].y * 32 + 128, 7, fx[i].tile, fx[i].t, ux, uy, cs, sn);
@@ -1815,9 +1816,18 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
       // nest and ant visibility and avoid needless projection/OAM costs.
       if ((u16)dist(x, vx) + dist(y, vy) > 9 && ((x ^ y) & 1)) continue;
       r = ehash(x, y);
-      if (h == 2) t = r < 28 ? 0 : r < 34 ? 1 : r < 38 ? 4 : 255;
-      else if (h == 1) t = r < 20 ? 2 : r > 242 ? 5 : 255;
-      else if (h == 3) t = r < 38 ? 3 : r < 58 ? 2 : 255;
+      // Shore reeds only proliferate beside ACTUAL water. Other
+      // landmarks remain sparse and tied to their terrain class.
+      // Only potential reeds need four neighboring height checks.
+      {
+        u8 shore = 0;
+        if (h == 1 && r > 210)
+          shore = (u8)((x && hgt[y][x - 1] == 0) ||
+                  (x + 1 < W && hgt[y][x + 1] == 0) ||
+                  (y && hgt[y - 1][x] == 0) ||
+                  (y + 1 < H && hgt[y + 1][x] == 0));
+        t = eye_ground_decor(h, r, shore);
+      }
       if (t != 255) eo_add((s32)x * 256 + 40 + (r & 0x7F) + (r >> 3 & 15), (s32)y * 256 + 60 + ((r * 7) & 0x7F), 5, t, 0, ux, uy, cs, sn);
     }
   }
@@ -1839,12 +1849,12 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
     if (yg > 127) yg = 127;
     switch (o->kind) {
     case 0: {
-      u8 view = o->b & 3, mv = (o->b >> 2) & 1, car = (o->b >> 3) & 1, fr = (u8)(((frc >> 3) + eord[j]) & 1);
+      u8 view = o->b & 3, mv = (o->b >> 2) & 1, car = (o->b >> 3) & 1, fr = (o->b >> 4) & 1;
       m = scb_of(sc); pal = o->a;
       if (view == 1) tile = EY2T + 48; else if (view == 2) tile = EY2T + 32;
       else tile = (u16)(mv && fr ? EY2T + (car ? 16 : 0) : BIGT + (car ? 16 : 0));
       if (view == 3) m = (u8)(m + 16);
-      espr(xx, yg - (13 * SCB[m & 15] >> 8) - (mv && view && view < 3 && fr ? 1 : 0), tile, pal, 2, m);
+      espr(xx, yg - (13 * SCB[m & 15] >> 8) - (mv && fr ? 1 : 0), tile, pal, 2, m);
       espr(xx, yg - (13 * SCB[m & 15] >> 8), EY2T + 64, 6, 2, m & 15);   // its shadow, just behind it
       break; }
     case 2: m = scb_of(sc * 3 / 2); espr(xx, yg - (13 * SCB[m] >> 8), BIGT + 32, o->a, 2, (u8)(o->a ? m + 16 : m)); break;
@@ -1853,7 +1863,16 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
     default: {
       static const u8 DSC[6] = {5, 4, 3, 6, 4, 6};          // size of each decor kind, in quarters of an ant
       m = scb_of(sc * DSC[o->a] / 4); tile = (u16)(EY2T + 96 + o->a * 4);
-      espr(xx, yg - (6 * SCB[m] >> 8), tile, 6, 1, (u8)((eord[j] & 1) ? m + 16 : m)); break; }
+      // Anchored to WORLD coordinates: foliage does not change facing
+      // when nearby ants enter/leave the sorted scene. The 1px sway
+      // applies to soft flora only, not stones, mounds or mushrooms.
+      {
+        u8 seed = (u8)((o->rx >> 8) ^ ((o->ry >> 8) << 1));
+        int bloom_x = xx + eye_plant_sway((u8)frc, seed, o->a);
+        espr(bloom_x, yg - (6 * SCB[m] >> 8), tile, 6, 1,
+             (u8)((seed & 1u) ? m + 16 : m));
+      }
+      break; }
     case 7: m = scb_of(sc * 2); espr(xx, yg - (8 * SCB[m] >> 8) - (30 - o->b) / 2, o->a, 3, 0, m); break;
     }
   }
