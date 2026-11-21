@@ -116,7 +116,7 @@ static void chase_map_sprites(u8 hx, u8 hy, u8 rx, u8 ry, u8 scan) {
   if (scan) place16(MAXA + 11, 20, 8, rx * 8, ry * 8, 0);
   else spr_hide(MAXA + 11);
 }
-static void chase_hud_map(u8 hunter, u8 delivered, u16 scan_cd, u8 secs) {
+static void chase_hud_map(u8 hunter, u8 delivered, u16 scan_cd, u8 secs, u8 distance, u8 visible) {
   ov_fill(CHASE_PANEL_TILE, 1, 17, 19); // solid dark HUD behind bright text
   ps(0, 17, hunter ? "P2 CAT: MAP HUNTER" : "P1 CAT: MAP HUNTER", 8);
   ps(24, 17, "TIME", 10); pn(28, 17, secs, 9);
@@ -124,13 +124,21 @@ static void chase_hud_map(u8 hunter, u8 delivered, u16 scan_cd, u8 secs) {
   ps(16, 18, "OF 3", 3);
   if (scan_cd) { ps(22, 18, "SCAN", 8); pn(28, 18, (u8)(scan_cd / 60), 8); }
   else ps(21, 18, "SCAN OK", 13);
-  ps(0, 19, "PAD AIM \1 TAG \2 SCAN \5 QUIT", 10);
+  // Directionless proximity signal: readable clues without revealing the
+  // mouse's precise hiding square between limited scanner pulses.
+  ps(0, 19, visible ? "MOUSE SPOTTED! A TO TAG" :
+     distance <= 4 ? "HOT! MOUSE IS VERY CLOSE" :
+     distance <= 9 ? "WARM TRAIL - SEARCH HERE" :
+     "COLD TRAIL - USE B SCAN", distance <= 4 ? 8 : 10);
 }
-static void chase_hud_eye(u8 runner, u8 delivered, u8 energy, u8 secs, u8 carry) {
+static void chase_hud_eye(u8 runner, u8 delivered, u8 energy, u8 secs, u8 carry, u8 danger, u8 hidden) {
   ov_fill(CHASE_PANEL_TILE, 1, 16, 19); // solid dark HUD behind first-person text
   ps(0, 16, runner ? "P2 MOUSE: ANT EYE" : "P1 MOUSE: ANT EYE", 13);
   ps(24, 16, "TIME", 10); pn(28, 16, secs, 9);
-  ps(0, 17, carry ? "CARRY FOOD HOME TO $ !" : "FIND % FOOD, RETURN TO $", carry ? 13 : 3);
+  ps(0, 17, hidden ? "HIDDEN IN COVER - STAY STILL" :
+     danger <= 3 ? "CAT NEAR! SPRINT OR HIDE!" :
+     carry ? "FOOD HELD: REACH HOME $" :
+     "FIND % FOOD, BRING TO $", danger <= 3 ? 8 : carry ? 13 : 3);
   ps(0, 18, "HOME DELIVERIES:", 10); pn(18, 18, delivered, 13);
   ps(21, 18, "OF 3", 3); ps(26, 18, "SP", 10); pn(28, 18, energy, 9);
   ps(0, 19, "\1 RUN \2 SCENT L/R SIDE \5 QUIT", 10);
@@ -138,7 +146,7 @@ static void chase_hud_eye(u8 runner, u8 delivered, u8 energy, u8 secs, u8 carry)
 // Returns 1 for runner victory, 0 for hunter victory, 2 for quit/link loss.
 static u8 chase_round(u8 round) {
   u8 hunter = round, runner = (u8)(round ^ 1), vi, rx, ry, hx, hy;
-  u8 deliveries = 0, energy = 99, scan = 0, tag_cd = 0;
+  u8 deliveries = 0, energy = 99, scan = 0, tag_cd = 0, hidden = 0;
   u16 scan_cd = 0;                 // 420 frame cooldown, never truncate to 8 bits
   u8 prevh = 0, prevr = 0, roundout = 0, cur, fa, is_eye;
   u16 sky = BGPAL[0], pic[16], angle = 0, k[2], frame;
@@ -215,6 +223,10 @@ static u8 chase_round(u8 round) {
       if (vx || vy) moved = eye_walk(&px, &py, vx, vy);
     }
     rx = (u8)(px >> 8); ry = (u8)(py >> 8);
+    // Holding scent while motionless on tall ground conceals the mouse
+    // from distant scanner sweeps. Getting close or tagging still works.
+    // Pure input/world data: both consoles compute the same concealment.
+    hidden = (u8)(!moved && (k[1] & J_B) && hgt[ry][rx] == 3);
     if (moved) {
       Ant *a = &ant[vi];
       a->ox = a->x; a->oy = a->y; a->x = rx; a->y = ry;
@@ -264,16 +276,21 @@ static u8 chase_round(u8 round) {
       BG0HOFS = (u16)(fa * 5 + (fa >> 2));
       if (!(frame & 7)) {
         eye_compass(fa, rx, ry);
-        chase_hud_eye(runner, deliveries, energy, secs, ant[vi].carry);
+        chase_hud_eye(runner, deliveries, energy, secs, ant[vi].carry,
+                       (u8)(dist(hx, rx) + dist(hy, ry)), hidden);
       }
     } else {
       cx = hx; cy = hy;
       follow(); scroll_step(); win_sync();
       BG0HOFS = BG2HOFS = (u16)scx;
       BG0VOFS = BG2VOFS = (u16)scy;
-      chase_map_sprites(hx, hy, rx, ry, scan || ant[vi].carry);
+      chase_map_sprites(hx, hy, rx, ry,
+                        (u8)((scan || ant[vi].carry) &&
+                        (!hidden || dist(hx, rx) + dist(hy, ry) <= 3)));
       oam_flush();
-      if (!(frame & 7)) chase_hud_map(hunter, deliveries, scan_cd, secs);
+      if (!(frame & 7)) chase_hud_map(hunter, deliveries, scan_cd, secs,
+                          (u8)(dist(hx, rx) + dist(hy, ry)),
+                          (u8)((scan || ant[vi].carry) && !hidden));
     }
   }
   if (is_eye) chase_eye_stop(sky, pic);
