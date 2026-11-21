@@ -123,7 +123,7 @@ static void chase_hud_map(u8 hunter, u8 delivered, u8 scan_cd, u8 secs) {
   ps(0, 18, "MOUSE FOOD:", 13); pn(13, 18, delivered, 9);
   ps(16, 18, "OF 3", 3);
   if (scan_cd) { ps(22, 18, "SCAN", 8); pn(28, 18, (u8)(scan_cd / 60), 8); }
-  else ps(21, 18, "SCAN READY", 13);
+  else ps(21, 18, "SCAN OK", 13);
   ps(0, 19, "PAD AIM \1 TAG \2 SCAN \5 QUIT", 10);
 }
 static void chase_hud_eye(u8 runner, u8 delivered, u8 energy, u8 secs, u8 carry) {
