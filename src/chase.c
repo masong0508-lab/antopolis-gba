@@ -165,14 +165,17 @@ static void chase_map_sprites(u8 hx, u8 hy, s32 px, s32 py,
   if (marked) place16(MAXA + 11, 20, 8, mx * 8, my * 8, 0);
   else spr_hide(MAXA + 11);
 }
-static void chase_hud_map(u8 guide, u8 delivered, u8 marked, u8 secs) {
+static void chase_hud_map(u8 guide, u8 delivered, u8 marked, u8 secs,
+                          u8 can_mark) {
   ov_fill(CHASE_PANEL_TILE, 1, 17, 19);
   ps(0, 17, guide ? "P2 GUIDE: COLONY MAP" : "P1 GUIDE: COLONY MAP", 8);
   ps(24, 17, "TIME", 10); pn(28, 17, secs, 9);
   ps(0, 18, "FOOD DELIVERED", 13); pn(16, 18, delivered, 9);
   ps(18, 18, "/3", 3);
   ps(22, 18, marked ? "MARK ON" : "NO MARK", marked ? 13 : 10);
-  ps(0, 19, "D-PAD MOVE A MARK B FIND SCOUT", 10);
+  // Make the action available at this cursor explicit. B always recenters.
+  ps(0, 19, can_mark ? "D-PAD MAP A MARK B FIND SCOUT" :
+     "A: NEEDS LAND 3 FROM SCOUT", 10);
 }
 static void chase_hud_eye(u8 scout, u8 delivered, u8 energy, u8 secs,
                           u8 carry, u8 marked) {
@@ -180,10 +183,10 @@ static void chase_hud_eye(u8 scout, u8 delivered, u8 energy, u8 secs,
   ps(0, 16, scout ? "P2 SCOUT: ANT EYE" : "P1 SCOUT: ANT EYE", 13);
   ps(24, 16, "TIME", 10); pn(28, 16, secs, 9);
   ps(0, 17, carry ? "FOOD HELD: RETURN HOME $" :
-     marked ? "GUIDE MARK: FOLLOW ?" :
-     "FIND % FOOD - BRING TO $", carry ? 13 : marked ? 14 : 3);
-  ps(0, 18, "HOME DELIVERIES:", 10); pn(18, 18, delivered, 13);
-  ps(21, 18, "OF 3", 3); ps(26, 18, "SP", 10); pn(28, 18, energy, 9);
+     marked ? "FOLLOW GUIDE ? COMPASS MARK" :
+     "FIND FOOD % AND BRING HOME $", carry ? 13 : marked ? 14 : 3);
+  ps(0, 18, "DELIVERIES", 10); pn(12, 18, delivered, 13);
+  ps(14, 18, "/3", 3); ps(19, 18, "STAMINA", 10); pn(28, 18, energy, 9);
   ps(0, 19, "\1 SPRINT \2 SCENT L/R STRAFE", 10);
 }
 // Returns 1 when the team delivered 3 loads, 0 at time-out/loss, 2 on abort.
@@ -347,7 +350,10 @@ static u8 chase_round(u8 round) {
       BG0VOFS = BG2VOFS = (u16)scy;
       chase_map_sprites(hx, hy, px, py, marked, mx, my);
       oam_flush();
-      if (!(frame & 7)) chase_hud_map(guide, deliveries, marked, secs);
+      if (!(frame & 7))
+        chase_hud_map(guide, deliveries, marked, secs,
+          chase_marker_legal(hgt[hy][hx], dnp[0][hy][hx],
+            (u16)(dist(hx, rx) + dist(hy, ry))));
     }
   }
   if (is_eye) chase_eye_stop(sky, pic);
