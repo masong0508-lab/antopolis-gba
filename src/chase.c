@@ -23,7 +23,7 @@ static void chase_food(void) {           // accessible nearby berries, not rando
 }
 static void chase_rules(u8 round) {
   u16 k;
-  u8 hunter = round, runner = (u8)(round ^ 1);
+  u8 hunter = round, runner = (u8)(round ^ 1), ready = 0;
   hide_all(); vsync(); oam_flush(); DISPCNT = 0x80;
   ov_fill(1, 3, 0, 19); ui_full(); big(0, "CAT & MOUSE");
   ps(2, 3, "TWO ROUNDS - SWAP ROLES", 9);
@@ -39,11 +39,19 @@ static void chase_rules(u8 round) {
   ps(2, 16, "ROUND", 10); pn(9, 16, (u8)(round + 1), 9);
   if (lk_me == hunter) ps(2, 17, "YOUR JOB: HUNT FROM THE MAP", 8);
   else if (lk_me == runner) ps(2, 17, "YOUR JOB: RUN IN ANT EYE", 13);
-  ps(2, 19, "A / START: BEGIN THE CHASE", 9);
+  ps(2, 18, "P1 WAIT        P2 WAIT", 10);
+  ps(2, 19, "BOTH PRESS A / START TO READY", 9);
   DISPCNT = 0x1B40; BLDY = 0;
-  while (1) {
-    vsync(); mp_hash(); k = joy();
-    if (lk_err || (k & (J_A | J_START))) break;
+  // No player may skip the other person's instructions: both choose READY,
+  // and the role-specific 2D / 3D round starts on a shared lockstep frame.
+  while (ready != 3 && !lk_err) {
+    vsync(); mp_hash(); (void)joy();
+    if ((lk_k[0] & (J_A | J_START)) && !(ready & 1)) {
+      ready |= 1; ps(2, 18, "P1 READY", 13); sfx_food();
+    }
+    if ((lk_k[1] & (J_A | J_START)) && !(ready & 2)) {
+      ready |= 2; ps(17, 18, "P2 READY", 13); sfx_food();
+    }
   }
   while (!lk_err) {
     vsync(); mp_hash(); k = joy();
