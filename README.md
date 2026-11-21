@@ -24,7 +24,7 @@ mission card explains the win condition. Press START for HELP/PAUSE, or
 SELECT+START to walk around the real world as an ant.
 
 **Two players:** choose the 2 PLAYER title card for VERSUS, CLASSIC CO-OP,
-CAT & MOUSE and the larger empire/city modes. For simultaneous control,
+DUAL VIEW and the larger empire/city modes. For simultaneous control,
 each GBA must run the **same current ROM** over a working GBA link cable.
 The two players see their *own* screens, not one mirrored view.
 
@@ -72,7 +72,7 @@ resources, nearby hazards, and the actual actions available: A **bite**,
 hold B **lay pheromone scent**, L/R **sidestep**, SELECT **switch ant**,
 and START **return to the overhead map**. The game displays contextual
 obstacle warnings (water, cliffs and enemies) instead of pretending a
-blocked step is movement. The competitive CAT & MOUSE version of this
+blocked step is movement. The cooperative DUAL VIEW version of this
 panel deliberately uses **different controls** (A sprints, B leaves
 scent) and a prominent food-delivery objective and round timer.
 
@@ -163,7 +163,7 @@ Civilization + Age of Empires + Tropico + SimCity, played on the normal map scre
   checked). OPTIONS > LOADING FACTS switches them off.
 
 ## 2 PLAYERS (home screen: 2 PLAYER)
-- VERSUS, CO-OP CLASSIC, CO-OP EMPIRE, CO-OP CITY, CO-OP ANTVERSE and the new **CAT & MOUSE**. CAT & MOUSE is exclusively for two linked GBAs; the others support same-console play.
+- VERSUS, CO-OP CLASSIC, CO-OP EMPIRE, CO-OP CITY, CO-OP ANTVERSE and the new **DUAL VIEW**. DUAL VIEW is exclusively for two linked GBAs; the others support same-console play.
 - The previous modes work for two: VERSUS (black ants against red ants), CO-OP CLASSIC (two gods, one colony), CO-OP EMPIRE,
   CO-OP CITY and CO-OP ANTVERSE.
 - PLAY ON: SAME GBA = take turns with a turn clock (30 to 120 seconds) and a "pass the GBA" card between turns.

@@ -571,7 +571,7 @@ static void mp_draw(void) {
     ps(3, 15, lk ? "LOCKED" : "START!", mp_sel == 6 ? 9 : lk ? 15 : 13);
     ps((u8)(15 - (blen2(d) + 1) / 2), 17, d, lk ? 8 : 2); }
   if (mp_kind == 4 && mp_how) ps(1, 18, "LINK CO-OP: SEL+START = 3D", 10);
-  if (mp_kind == 5) ps(1, 18, "LINK: CAT MAP / MOUSE ANT EYE", 10);
+  if (mp_kind == 5) ps(1, 18, "LINK: GUIDE MAP / SCOUT EYE", 10);
   ps(1, 19, "< > CHANGE  \1 GO  \2 BACK", 10);
 }
 static void mp_menu(void) {

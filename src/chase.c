@@ -12,12 +12,12 @@
 // One 4bpp tile, outside the MAPT 832..975 generated-map atlas.
 // Pixel index 1 in palette 1 is black. No image asset/framebuffer needed.
 #define CHASE_PANEL_TILE 976
-static u8 chase_last_food;   // the mouse's completed deliveries count even if caught
+static u8 chase_last_food;   // the scout's completed deliveries for team scoring
 // Both peers generate identical supplies from map data, never RNG. Workers
-// still consume food normally, but cannot permanently starve the mouse's
+// still consume food normally, but cannot permanently starve the scout's
 // three-delivery win condition. Keep at least eight nearby reachable berries.
-// The hunter's BG map must refresh newly grown berries on its own cartridge;
-// the mouse client has BG2 in first-person mode and must NOT write the map.
+// The guide's BG map must refresh newly grown berries on its own cartridge;
+// the first-person client has BG2 in first-person mode and must NOT write the map.
 static void chase_food(u8 map_visible) {
   s16 x, y;
   u8 supply = 0, phase;
@@ -44,7 +44,7 @@ static void chase_food(u8 map_visible) {
 }
 // Cheap, bounded objective search: the hunt guarantees reachable food around
 // the black nest. Recheck at HUD cadence, not per camera frame. The compass
-// then guides the runner even when the food is behind the camera.
+// then guides the scout even when the food is behind the camera.
 static u8 chase_goal(u8 rx, u8 ry, u8 *gx, u8 *gy) {
   s16 x, y;
   u16 best = 0xFFFFu, d;
@@ -210,11 +210,11 @@ static u8 chase_round(u8 round) {
   for (i = 0; i < 16; i++) pic[i] = BGPAL[112 + i];
   if (is_eye) {
     // First-person entry is recorded in the same save-RAM milestone used by
-    // the tested two-pilot mode; only the local mouse actually enters 3D.
+    // the tested two-pilot mode; only the local scout actually enters 3D.
     tev |= 16; ach_get(7);
     chase_eye_start(px, py, (u8)(angle >> 8), vi);
   } else chase_map_start(hx, hy);
-  prevh = lk_k[hunter]; prevr = lk_k[runner];
+  prevh = lk_k[guide]; prevr = lk_k[scout];
   for (frame = 0; frame < CHASE_TICKS && !lk_err; frame++) {
     u16 hp, rp;
     u8 secs = (u8)((CHASE_TICKS - frame + 59) / 60);
@@ -232,7 +232,7 @@ static u8 chase_round(u8 round) {
     prevh = k[0]; prevr = k[1];
     if ((hp | rp) & J_START) { roundout = 2; break; }
     // The GUIDE marks a reachable destination; B refocuses the overhead map
-    // on the real scout position. No hunter/targeting mechanic is involved.
+    // on the real scout position. This is guidance, not targeting.
     if (hp & J_B) { hx = rx; hy = ry; sfx_food(); }
     if (hp & J_A) {
       if (chase_marker_legal(hgt[hy][hx], dnp[0][hy][hx],
@@ -256,7 +256,7 @@ static u8 chase_round(u8 round) {
       s32 cs = SINT[(fa + 64) & 255], sn = SINT[fa];
       s32 vx = 0, vy = 0, speed = ESPD[O(O_EYESPD)];
       if ((k[1] & J_A) && (k[1] & (J_UP | J_DOWN | J_L | J_R)) && energy) {
-        // A useful chase-length sprint (~3.3 s from full stamina), rather
+        // A useful expedition-length sprint (~3.3 s from full stamina), rather
         // than draining the entire meter in only 99 video frames.
         speed = speed * 2; if (!(frame & 1)) energy--;
       }
@@ -322,8 +322,8 @@ static u8 chase_round(u8 round) {
       m7_build(m7t[cur], fa, (s16)px, (s16)py);
       eye_tab = m7t[cur];
       // ANT EYE world objects use shadow OAM, so upload their changes.
-      // The previous chase loop never flushed OAM after eye_scene, leaving
-      // living ants and other props visually frozen in the mouse's view.
+      // The previous asymmetric loop never flushed OAM after eye_scene, leaving
+      // living ants and other props visually frozen in the scout's view.
       // Scene/OAM at 30Hz with 60Hz camera matrix and lockstep world ticks.
       if (!(frame & 1)) {
         eye_scene(fa, px, py, vi, 0, (u8)((frc >> 3) & 1));

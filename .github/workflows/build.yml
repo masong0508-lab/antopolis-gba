@@ -12,7 +12,7 @@ jobs:
         with: { name: empire-ants-gba, path: build/empire-ants.gba }
 
   chase-logic:
-    name: CAT & MOUSE host logic regression
+    name: DUAL VIEW host logic regression
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

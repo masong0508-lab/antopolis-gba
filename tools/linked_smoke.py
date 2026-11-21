@@ -234,7 +234,7 @@ def main():
             press(RIGHT)  # explicit asymmetric map/first-person mode
         press(DOWN)      # second row: PLAY ON
         if args.scenario == "co-op":
-            press(RIGHT)  # SAME GBA -> LINK CABLE (chase is link-only)
+            press(RIGHT)  # SAME GBA -> LINK CABLE (dual-view is link-only)
         snapshot("03_link_selected")
         press(START)
         # The link handshake may complete long before the deterministic
@@ -270,9 +270,9 @@ def main():
             tick(80)
             state["keys"] = [set(), set()]
             press(B, ports=(0,))  # guide's FIND SCOUT shortcut
-            press(A, ports=(1,), held=20)  # mouse sprint
-            snapshot("07_cat_scans_mouse_sprints")
-            # Let the 90-second chase run to its round result. Neither input
+            press(A, ports=(1,), held=20)  # scout sprint
+            snapshot("07_guide_finds_scout_sprints")
+            # Let the 90-second expedition run to its round result. Neither input
             # controller quits, so the timer (or in-world game result) must
             # bring both linked emulators to the SAME result card.
             report["round_one_seconds"] = tick(5500)
@@ -290,10 +290,10 @@ def main():
             snapshot("11_roles_swapped")
             report["round_two_sram"] = save_info()
             if not report["round_two_sram"][0]["ant_eye_achievement_7"]:
-                raise AssertionError("P1 did not become the 3D mouse in round two")
+                raise AssertionError("P1 did not become the 3D scout in run two")
             if not report["screens"]["11_roles_swapped"]["different"]:
                 raise AssertionError("roles swapped but two views became identical")
-            # Runner P1 quits safely; both must leave the session together.
+            # Scout P1 quits safely; both must leave the session together.
             press(START, ports=(0,))
             tick(90)
             snapshot("12_return_from_hunt")

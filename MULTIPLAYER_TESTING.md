@@ -55,7 +55,7 @@ linked mGBA cores. This is local GBA link-cable multiplayer; not IP networking.
    food count. A periodic refill must keep nearby food obtainable.
 6. After three deliveries, the shared expedition succeeds. If time runs
    out or the scout dies first, it ends without the +3 completion bonus.
-   Neither case should produce a cat/mouse hunt result or individual winner.
+   Neither case should produce a competitive hunt result or individual winner.
 7. Start the second run and confirm **P2 becomes GUIDE** on the map and
    **P1 becomes SCOUT** in ANT EYE. The new world is generated fairly.
 8. After the two runs, show **one team score**: +1 per delivery, +3 per
@@ -90,8 +90,9 @@ complete mechanics/long-session verification.
 
 - Link payload: 10 key bits, two rolling checksum bits, four sequence bits.
 - Build/protocol token: `0xA76`; both cartridges must match.
-- Visibility is driven by one pure rule for the guide HUD, marker and mouse
-  sprite; check with `make test` before the ROM build.
+- Guide waypoint legality, shared scoring, fractional map positions and
+  deterministic berry buckets use pure host-tested helpers. Run `make test`
+  before building the ROM.
 - A seeded 8-phase pass restores up to eight reachable berries, about every
   128 linked frames. It never reads local camera state to choose tiles and
   writes BG map tiles only on the map-rendering console. The host test checks
