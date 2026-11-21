@@ -23,6 +23,18 @@ int main(void) {
         assert(chase_marker_legal((u8)h, path, d) ==
                (chase_marker_reason((u8)h, path, d) == 0));
       }
+  // Ready confirmations are individual rising edges, not pre-held A/START.
+  const u16 ready_mask = 0x0009u;
+  assert(!chase_ready_press(0x0001u, 0x0001u, ready_mask));
+  assert(!chase_ready_press(0x0008u, 0x0001u, ready_mask));
+  assert(!chase_ready_press(0u, 0u, ready_mask));
+  assert(chase_ready_press(0u, 0x0001u, ready_mask));
+  assert(chase_ready_press(0u, 0x0008u, ready_mask));
+  assert(!chase_both_released(0x0001u, 0u, ready_mask));
+  assert(!chase_both_released(0u, 0x0008u, ready_mask));
+  assert(!chase_both_released(0x0001u, 0x0008u, ready_mask));
+  assert(chase_both_released(0u, 0u, ready_mask));
+  assert(chase_both_released(0x0080u, 0x0002u, ready_mask));
   assert(chase_team_points(0, 0) == 0);
   assert(chase_team_points(2, 0) == 2);
   assert(chase_team_points(3, 1) == 6);
