@@ -166,16 +166,21 @@ static void chase_map_sprites(u8 hx, u8 hy, s32 px, s32 py,
   else spr_hide(MAXA + 11);
 }
 static void chase_hud_map(u8 guide, u8 delivered, u8 marked, u8 secs,
-                          u8 can_mark) {
+                          u8 marker_reason) {
   ov_fill(CHASE_PANEL_TILE, 1, 17, 19);
   ps(0, 17, guide ? "P2 GUIDE: COLONY MAP" : "P1 GUIDE: COLONY MAP", 8);
   ps(24, 17, "TIME", 10); pn(28, 17, secs, 9);
   ps(0, 18, "FOOD DELIVERED", 13); pn(16, 18, delivered, 9);
   ps(18, 18, "/3", 3);
   ps(22, 18, marked ? "MARK ON" : "NO MARK", marked ? 13 : 10);
-  // Make the action available at this cursor explicit. B always recenters.
-  ps(0, 19, can_mark ? "D-PAD MAP A MARK B FIND SCOUT" :
-     "A: NEEDS LAND 3 FROM SCOUT", 10);
+  // Make the reason for a rejected A press visible instead of just buzzing.
+  // This uses the exact same deterministic rule as waypoint placement.
+  ps(0, 19,
+     marker_reason == 1 ? "MARK: WATER PICK DRY LAND" :
+     marker_reason == 2 ? "MARK: NO ROUTE FROM NEST" :
+     marker_reason == 3 ? "MARK: TOO CLOSE TO SCOUT" :
+                          "D-PAD MAP A MARK B FIND SCOUT",
+     marker_reason ? 8 : 10);
 }
 static void chase_hud_eye(u8 scout, u8 delivered, u8 energy, u8 secs,
                           u8 carry, u8 marked) {
@@ -352,7 +357,7 @@ static u8 chase_round(u8 round) {
       oam_flush();
       if (!(frame & 7))
         chase_hud_map(guide, deliveries, marked, secs,
-          chase_marker_legal(hgt[hy][hx], dnp[0][hy][hx],
+          chase_marker_reason(hgt[hy][hx], dnp[0][hy][hx],
             (u16)(dist(hx, rx) + dist(hy, ry))));
     }
   }
