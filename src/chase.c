@@ -115,9 +115,10 @@ static void chase_hud_map(u8 hunter, u8 delivered, u8 scan_cd, u8 secs) {
   ps(0, 17, hunter ? "P2 CAT: MAP HUNTER" : "P1 CAT: MAP HUNTER", 8);
   ps(24, 17, "TIME", 10); pn(28, 17, secs, 9);
   ps(0, 18, "MOUSE FOOD:", 13); pn(13, 18, delivered, 9);
-  ps(16, 18, "OF 3  TAG!", 3);
-  ps(0, 19, "D-PAD SEEK  A TAG  B SCAN", 10);
-  if (scan_cd) ps(26, 19, "WAIT", 8);
+  ps(16, 18, "OF 3", 3);
+  if (scan_cd) { ps(22, 18, "SCAN", 8); pn(28, 18, (u8)(scan_cd / 60), 8); }
+  else ps(21, 18, "SCAN READY", 13);
+  ps(0, 19, "PAD AIM \1 TAG \2 SCAN \5 QUIT", 10);
 }
 static void chase_hud_eye(u8 runner, u8 delivered, u8 energy, u8 secs, u8 carry) {
   ov_fill(UIB + 31, 1, 16, 19);   // cover the busy ground texture behind tiny HUD text
@@ -126,7 +127,7 @@ static void chase_hud_eye(u8 runner, u8 delivered, u8 energy, u8 secs, u8 carry)
   ps(0, 17, carry ? "CARRY FOOD HOME TO $ !" : "FIND % FOOD, RETURN TO $", carry ? 13 : 3);
   ps(0, 18, "HOME DELIVERIES:", 10); pn(18, 18, delivered, 13);
   ps(21, 18, "OF 3", 3); ps(26, 18, "SP", 10); pn(28, 18, energy, 9);
-  ps(0, 19, "A SPRINT B SCENT L/R STRAFE", 10);
+  ps(0, 19, "\1 RUN \2 SCENT L/R SIDE \5 QUIT", 10);
 }
 // Returns 1 for runner victory, 0 for hunter victory, 2 for quit/link loss.
 static u8 chase_round(u8 round) {
