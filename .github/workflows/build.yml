@@ -1,5 +1,11 @@
 name: Build ROM
 on: [push, pull_request, workflow_dispatch]
+# A burst of rapid gameplay/UI commits should build the newest revision
+# rather than queueing many obsolete ROMs and long emulator smoke runs.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
