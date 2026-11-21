@@ -451,11 +451,14 @@ static void hud(void) {
   if (spd != 4) ps(14, 17, SPTAG[spd], 2);
   ps(17, 17, "RED", 8); for (i = 0; i < qbase; i++) pc((u8)(21 + i), 17, '#', i < qhp[1] ? 8 : 15);
   pc(27, 17, '@', 8); pn(28, 17, ncnt[1], 8);
-  pc(0, 18, '&', 14); pn(1, 18, mana, 14);
-  for (i = 0; i < 10; i++) BGMAP1[18 * 32 + 3 + i] = (u16)((mana > 2 * i ? BAR_F : BAR_E) | (14 << 12));
-  pc(14, 18, '%', 13); pn(15, 18, stock[0], 13);
-  pc(18, 18, '^', 2); pn(19, 18, appr, 2);
-  pc(22, 18, '~', 1); pn(23, 18, (u8)(s / 60 > 99 ? 99 : s / 60), 1); pc(25, 18, ':', 1); pz(26, 18, (u8)(s % 60), 1);
+  // Label every strategic resource, not just cryptic symbols. The shorter
+  // seven-pip AP bar costs fewer BG writes and preserves the 30-column HUD.
+  ps(0, 18, "AP", 14); pn(2, 18, mana, 14);
+  for (i = 0; i < 7; i++) BGMAP1[18 * 32 + 5 + i] = (u16)((mana > 3 * i ? BAR_F : BAR_E) | (14 << 12));
+  ps(13, 18, "F", 13); pn(14, 18, stock[0], 13);
+  ps(17, 18, "POP", 2); pn(20, 18, appr, 2);
+  ps(23, 18, "T", 1); pn(24, 18, (u8)(s / 60 > 99 ? 99 : s / 60), 1);
+  pc(26, 18, ':', 1); pz(27, 18, (u8)(s % 60), 1);
   if (msgt) { psx(0, 19, msg, 2); msgt--; return; }
   cur_info();
 }
@@ -2940,10 +2943,41 @@ static void end_card(void) {
   pm_rule(18);
   ps(9, 19, "PRESS \5 START", 9);
 }
+// Explain the actual win condition before the very first ordinary game.
+// Only once per boot; players can start subsequent matches immediately.
+static u8 mission_seen;
+static void mission_brief(void) {
+  u16 k;
+  if (mission_seen || tutor) return;
+  mission_seen = 1;
+  hide_all(); vsync(); oam_flush(); DISPCNT = 0x80;
+  ov_fill(1, 3, 0, 19); ui_full(); big(0, "SAVE THE COLONY");
+  ps(2, 3, "YOU COMMAND THE BLACK ANTS.", 13);
+  ps(2, 5, "WIN: DEFEAT THE RED QUEEN.", 8);
+  ps(2, 6, "PROTECT YOUR OWN QUEEN!", 13);
+  pm_rule(8);
+  ps(2, 9, "ANTS FIND FOOD AND FIGHT.", 3);
+  ps(2, 10, "YOU BUILD PATHS WITH LAND.", 3);
+  ps(2, 12, "D-PAD MOVE THE CURSOR", 10);
+  ps(2, 13, "\1 RAISE LAND   \2 LOWER LAND", 3);
+  ps(2, 14, "AP RECHARGES. SPEND WISELY.", 3);
+  ps(2, 15, "SELECT+A: TRADE FOOD FOR AP", 3);
+  ps(2, 16, "SELECT+START: PILOT AN ANT", 9);
+  ps(2, 19, "\1 PLAY  \5 HELP/PAUSE", 9);
+  DISPCNT = 0x1B40; BLDY = 0;
+  while (joy()) vsync();
+  do { vsync(); k = joy(); } while (!(k & (J_A | J_B | J_START)));
+  while (joy()) vsync();
+  DISPCNT = 0x80; win_all(); ov_clear(); hud();
+  BG0HOFS = BG2HOFS = (u16)scx; BG0VOFS = BG2VOFS = (u16)scy;
+  BG2CNT = 1 | (2 << 2) | (30 << 8);
+  hide_all(); oam_flush(); DISPCNT = 0x1F40;
+}
 static void play(void) {
   u16 k, prev, p, last = 0; u8 dirs, rep = 0, fire, t = 4, ki = 0, selused = 0, selprev = 0, n, mx, my;
   while (joy()) vsync();
   prev = 0;
+  mission_brief();
   if (tutor) { tut = 1; tut_enter(); prev = joy(); }
   while (!over) {
     vsync(); frc++;
