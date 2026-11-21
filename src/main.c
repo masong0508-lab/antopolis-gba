@@ -1740,6 +1740,9 @@ typedef struct { s32 rx, ry; s16 d, sd; u8 kind, a, b, c; } EObj;   // rx, ry: w
 // kind: 0 ant (a = team, b = view+flags), 2 queen (a = team), 3 mound, 4 food, 5 decor (a = type), 6 jaw-food (not sorted)
 EWRAM static EObj eo[EOMAX]; static u8 eon, eord[EOMAX];
 static const s16 SCB[16] = {20, 25, 31, 38, 47, 59, 73, 90, 112, 139, 172, 213, 264, 328, 406, 504};
+// Perspective matrix factors are immutable: precompute the 16 divisions once
+// as 32 bytes of ROM data instead of making the ARM7 divide 16 times/frame.
+static const s16 EYSCALE[16] = {3276, 2621, 2114, 1724, 1394, 1110, 897, 728, 585, 471, 381, 307, 248, 199, 161, 130};
 static u8 scb_of(s32 sc) { u8 i; for (i = 15; i && SCB[i] > sc; i--) {} if (i < 15 && sc - SCB[i] > SCB[i + 1] - sc) i++; return i; }
 static void eo_add(s32 rx, s32 ry, u8 kind, u8 a, u8 b, s32 fx, s32 fy, s32 cs, s32 sn) {
   s32 dx = rx - fx, dy = ry - fy, d = (dx * cs + dy * sn) >> 8, sd;
@@ -1805,7 +1808,7 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
   }
   hide_all();
   for (i = 0; i < 16; i++) {                          // the 32 shared matrices: 16 sizes, normal and mirrored
-    s16 pa = (s16)(65536 / SCB[i]);
+    s16 pa = EYSCALE[i];
     oam[(i * 4) * 4 + 3] = (u16)pa; oam[(i * 4 + 1) * 4 + 3] = 0; oam[(i * 4 + 2) * 4 + 3] = 0; oam[(i * 4 + 3) * 4 + 3] = (u16)pa;
     oam[((16 + i) * 4) * 4 + 3] = (u16)-pa; oam[((16 + i) * 4 + 1) * 4 + 3] = 0; oam[((16 + i) * 4 + 2) * 4 + 3] = 0; oam[((16 + i) * 4 + 3) * 4 + 3] = (u16)pa;
   }
