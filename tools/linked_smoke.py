@@ -233,7 +233,10 @@ def main():
         press(RIGHT)     # SAME GBA -> LINK CABLE
         snapshot("03_link_selected")
         press(START)
-        report["link_wait_seconds"] = tick(700)
+        # The link handshake may complete long before the deterministic
+        # world builder finishes its map/ant/path generation on BOTH GBAs.
+        # Never inject SELECT+START on the loading-facts screen.
+        report["link_wait_seconds"] = tick(1300)
         snapshot("04_after_link")
         report["link_sram"] = save_info()
         print("LINK SRAM", json.dumps(report["link_sram"]), flush=True)
