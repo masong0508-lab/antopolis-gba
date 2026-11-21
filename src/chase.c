@@ -138,7 +138,7 @@ static void chase_map_start(u8 hx, u8 hy) {
 }
 // Unlike draw_sprites(), this render function does NOT decrement world
 // animation counters. Every world mutation must happen on BOTH devices.
-static void chase_map_sprites(u8 hx, u8 hy, u8 rx, u8 ry, u8 revealed) {
+static void chase_map_sprites(u8 hx, u8 hy, s32 px, s32 py, u8 revealed) {
   u8 i, tl;
   Ant *a;
   for (i = 0; i < MAXA; i++) {
@@ -150,8 +150,14 @@ static void chase_map_sprites(u8 hx, u8 hy, u8 rx, u8 ry, u8 revealed) {
     }
     tl = a->carry ? 5 : a->sol ? 7 : 3;
     if (a->age < 8 && (((frc >> 2) + i) & 1)) tl++;
-    place_px(i, tl, a->team, a->ox * 8 + (a->x - a->ox) * a->age,
-             a->oy * 8 + (a->y - a->oy) * a->age, a->fl);
+    // Other workers use regular 2D interpolation. The human mouse already
+    // has sub-cell positions from ANT EYE; reuse those instead of snapping
+    // the sprite to a new 8px tile every time a cell boundary is crossed.
+    if (i == eye_ctl)
+      place_px(i, tl, a->team, chase_view_px(px), chase_view_px(py), a->fl);
+    else
+      place_px(i, tl, a->team, a->ox * 8 + (a->x - a->ox) * a->age,
+               a->oy * 8 + (a->y - a->oy) * a->age, a->fl);
   }
   for (i = 0; i < 2; i++) {
     if (qhp[i]) place16(MAXA + i, 16, qfl[i] ? 4 : i,
@@ -163,7 +169,7 @@ static void chase_map_sprites(u8 hx, u8 hy, u8 rx, u8 ry, u8 revealed) {
     if (fx[i].t) place_px(MAXA + 3 + i, fx[i].tile, 3, fx[i].x, fx[i].y, 0);
     else spr_hide(MAXA + 3 + i);
   }
-  if (revealed) place16(MAXA + 11, 20, 8, rx * 8, ry * 8, 0);
+  if (revealed) place16(MAXA + 11, 20, 8, chase_view_px(px), chase_view_px(py), 0);
   else spr_hide(MAXA + 11);
 }
 static void chase_hud_map(u8 hunter, u8 delivered, u16 scan_cd, u8 secs, u8 distance, u8 visible) {
@@ -356,7 +362,7 @@ static u8 chase_round(u8 round) {
       follow(); scroll_step(); win_sync();
       BG0HOFS = BG2HOFS = (u16)scx;
       BG0VOFS = BG2VOFS = (u16)scy;
-      chase_map_sprites(hx, hy, rx, ry, revealed);
+      chase_map_sprites(hx, hy, px, py, revealed);
       oam_flush();
       if (!(frame & 7)) chase_hud_map(hunter, deliveries, scan_cd, secs,
                           (u8)distance, revealed);

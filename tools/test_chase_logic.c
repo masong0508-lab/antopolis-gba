@@ -2,6 +2,7 @@
 #include <stdio.h>
 typedef unsigned char u8;
 typedef unsigned short u16;
+typedef signed int s32;
 #include "../src/chase_logic.h"
 int main(void) {
   // Close pursuit must be meaningful, even against concealed runners.
@@ -25,6 +26,12 @@ int main(void) {
       assert(bucket < 8);
       assert(bucket == (u8)((x * 17u + y * 29u) & 7u));
     }
-  puts("CAT & MOUSE visibility and supply phases passed");
+  // First-person fractional movement should not snap to tile edges on
+  // the hunter's screen. 8.8-cell coordinates convert to 8px tiles.
+  assert(chase_view_px(0) == 0);
+  assert(chase_view_px(256) == 8);
+  assert(chase_view_px(511) == 15);
+  assert(chase_view_px(5 * 256 + 128) == 44);
+  puts("CAT & MOUSE visibility, supply and movement tests passed");
   return 0;
 }

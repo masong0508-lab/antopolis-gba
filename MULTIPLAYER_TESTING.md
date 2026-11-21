@@ -64,6 +64,9 @@ linked mGBA cores. This is local GBA link-cable multiplayer; not IP networking.
    **three loads** to escape. The normal black-ant world sprite must
    NEVER reveal the mouse while the scanner marker is hidden; within
    two tiles, the mouse becomes visible even without scanning.
+   While revealed, the mouse sprite and red spotting marker must move
+   smoothly by individual pixels as the 3D mouse walks, not teleport once
+   per 8-pixel tile.
    Winning by delivery should not require hitting the red queen.
    After ordinary AI workers consume nearby food, confirm that new reachable
    berries grow on BOTH clients' world state, show visually on the hunter's

@@ -36,7 +36,8 @@ reveal scan. **P2 MOUSE** sees the immersive ANT EYE 3D view. Find the
 `home nest within **90 seconds**. A sprints (stamina-limited), B lays a
 scent trail, L/R sidestep. The mouse's compass now guides toward reachable berries even when they are
 behind the camera, and the cat's map does not reveal a concealed mouse through
-the ordinary ant-sprite layer. Close-range sight (within two tiles), scanner
+the ordinary ant-sprite layer. When spotted, the mouse and spotting marker
+now move at smooth pixel-level positions rather than jumping between tiles. Close-range sight (within two tiles), scanner
 pulses and visible food-carrying expose the runner; hill cover defeats
 long-range scans. A full sprint now lasts approximately 3.3 seconds.
 During the hunt, a deterministic supply service keeps eight berries available
