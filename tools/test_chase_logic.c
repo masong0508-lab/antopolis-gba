@@ -35,6 +35,24 @@ int main(void) {
   assert(!chase_both_released(0x0001u, 0x0008u, ready_mask));
   assert(chase_both_released(0u, 0u, ready_mask));
   assert(chase_both_released(0x0080u, 0x0002u, ready_mask));
+  // The first frame draws every panel. Stable frames must not flood VRAM
+  // with redundant 3/4-row clears; changes to any displayed field must
+  // still redraw promptly on the next eight-frame HUD opportunity.
+  {
+    ChaseHudCache cache = {255, 255, 255, 255, 255};
+    assert(chase_hud_needs_update(&cache, 90, 0, 0, 0, 0));
+    for (u16 f = 0; f < 60; f++)
+      assert(!chase_hud_needs_update(&cache, 90, 0, 0, 0, 0));
+    assert(chase_hud_needs_update(&cache, 89, 0, 0, 0, 0));
+    assert(chase_hud_needs_update(&cache, 89, 1, 0, 0, 0));
+    assert(chase_hud_needs_update(&cache, 89, 1, 1, 0, 0));
+    assert(chase_hud_needs_update(&cache, 89, 1, 1, 3, 0));
+    assert(chase_hud_needs_update(&cache, 89, 1, 1, 3, 1));
+    assert(!chase_hud_needs_update(&cache, 89, 1, 1, 3, 1));
+    // A new round's panel is invalidated even when scores coincide.
+    cache.seconds = 255;
+    assert(chase_hud_needs_update(&cache, 90, 0, 0, 99, 0));
+  }
   assert(chase_team_points(0, 0) == 0);
   assert(chase_team_points(2, 0) == 2);
   assert(chase_team_points(3, 1) == 6);
