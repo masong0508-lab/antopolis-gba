@@ -56,8 +56,8 @@ processing. Maps with sixteen or fewer marked patches preserve *all*
 their original centers and their previous scan order.
 
 The map editor now reports `99+` when a custom map exceeds 99 berries
-instead of silently showing 99, and labels over-cap maps `16 PATCHES
-LIVE`. Dense maps retain their visible berry drawings, but only 16
+instead of silently showing 99, and labels over-cap maps `16 REGROW
+SITES`. Dense maps retain their visible berry drawings, but only 16
 patch centers can replenish their surrounding tiles in a match.
 `make test` exercises the shipped selector with small, dense,
 single-sector, rectangular, and 50 deterministic random worlds.
