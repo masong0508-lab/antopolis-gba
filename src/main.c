@@ -1785,6 +1785,7 @@ static void espr(int cx, int cy, u16 tile, u8 pal, u8 sz, u8 m) {   // one affin
 static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
   s32 cs = SINT[(fa + 64) & 255], sn = SINT[fa];
   u8 i, j, x0, y0, x1, y1, x, y;
+  u8 vx = (u8)(ux >> 8), vy = (u8)(uy >> 8);
   eon = 0; ehas_f = 0; ehas_e = 0;
   { u16 bd = 999, be = 999;
     for (i = 0; i < MAXA; i++) if (ant[i].alive && i != vi) {
@@ -1796,7 +1797,7 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
       view = (along > 0 && (along > (side < 0 ? -side : side) * 2)) ? 1 : (along < 0 && (-along > (side < 0 ? -side : side) * 2)) ? 2 : (side < 0 ? 3 : 0);
       rx += (i * 37 & 63) - 32; ry += (i * 23 & 63) - 32;
       eo_add(rx, ry, 0, a->team, (u8)(view | (mv << 2) | (a->carry << 3)), ux, uy, cs, sn);
-      if (a->team) { u16 dd = (u16)(dist(a->x, (u8)(ux >> 8)) + dist(a->y, (u8)(uy >> 8))); if (dd < be && dd < 12) { be = dd; eex = a->x; eey = a->y; ehas_e = 1; } }
+      if (a->team) { u16 dd = (u16)(dist(a->x, vx) + dist(a->y, vy)); if (dd < be && dd < 12) { be = dd; eex = a->x; eey = a->y; ehas_e = 1; } }
     }
     for (i = 0; i < 8; i++) if (fx[i].t) eo_add((s32)fx[i].x * 32 + 128, (s32)fx[i].y * 32 + 128, 7, fx[i].tile, fx[i].t, ux, uy, cs, sn);
     for (i = 0; i < 2; i++) {
@@ -1810,13 +1811,17 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
     for (y = y0; y <= y1; y++) for (x = x0; x <= x1; x++) {
       if (!hgt[y][x] || is_nest(x, y) || !food[y][x]) continue;
       eo_add((s32)x * 256 + 128, (s32)y * 256 + 128, 4, 0, 0, ux, uy, cs, sn);
-      { u16 dd = (u16)(dist(x, (u8)(ux >> 8)) + dist(y, (u8)(uy >> 8)));
+      { u16 dd = (u16)(dist(x, vx) + dist(y, vy));
         if (dd < bd) { bd = dd; efx = x; efy = y; ehas_f = 1; } }
     }
     // Sparse, deterministic scenery: keep the paths readable and avoid OAM clutter.
     for (y = y0; y <= y1; y++) for (x = x0; x <= x1; x++) {
       u8 h = hgt[y][x], r, t = 255;
       if (!h || is_nest(x, y) || food[y][x]) continue;
+      // Level of detail for background only. Near scenery remains full;
+      // far decorations are thinned deterministically to preserve food,
+      // nest and ant visibility and avoid needless projection/OAM costs.
+      if ((u16)dist(x, vx) + dist(y, vy) > 9 && ((x ^ y) & 1)) continue;
       r = ehash(x, y);
       if (h == 2) t = r < 28 ? 0 : r < 34 ? 1 : r < 38 ? 4 : 255;
       else if (h == 1) t = r < 20 ? 2 : r > 242 ? 5 : 255;
