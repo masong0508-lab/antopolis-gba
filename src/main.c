@@ -1453,6 +1453,7 @@ static void ng_text(void) {                        // the settings on the left (
   static const u8 NGR[7] = {4, 7, 10, 11, 13, 14, 16};
   for (y = 3; y < 18; y++) for (x = 1; x < 17; x++) BGMAP1[y * 32 + x] = (u16)(1 | (3 << 12));
   ov_fill(1, 3, 16, 17);
+  ps(2, 3, "SEL: RESEED", 10);
   for (s = 0; s < 7; s++) if (tsel == s) BGMAP1[NGR[s] * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
   ps(3, 4, "LEVEL", tsel == 0 ? 9 : 3); if (wins[diff]) { pn(10, 4, wins[diff], 13); ps(13, 4, "WON", 10); }
   ps(3, 5, "<", 10); ps((u8)(9 - blen2(DNAME[diff]) / 2), 5, DNAME[diff], 9); ps(14, 5, ">", 10);
@@ -1471,7 +1472,6 @@ static void ng_draw(void) {
   ov_fill(1, 3, 0, 19); ui_full();
   big(0, "NEW GAME"); pm_rule(2); pm_rule(18);
   ps(1, 19, "\1 GO \2 BACK L GUIDE R WILD", 10);
-  ps(2, 3, "SEL: NEW MAP SEED", 10);
   ng_text(); ng_preview();
 }
 static u8 newgame_menu(void) {                     // 0 = back, 1 = play, 2 = open the editor (to make MY MAP first)
