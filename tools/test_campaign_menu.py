@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Verify restored campaign missions through real ROM input and video.
+"""Verify the expanded 56-mission campaign through real ROM input and video.
 
 The fixture is a valid battery save with all old 50 missions completed and
 the existing MISSION MASTER trophy earned. The test reads the actual 240x160
-video pixels to verify the menu total, both finale entries and their briefing.
+video pixels to verify the expanded menu total, unchanged original finales and bonus expeditions.
 No live game variables, CPU state or ROM bytes are patched.
 """
 from __future__ import annotations
@@ -70,17 +70,22 @@ def run(rom, core, out):
         emulator.press(LEFT)
         emulator.press(A, released=180)
         emulator.snapshot("01_antverse_menu")
-        expect_text(emulator, 23, 6, "52", "antverse_total")
+        expect_text(emulator, 23, 6, "56", "antverse_total")
         emulator.press(A, released=80)
         emulator.snapshot("02_missions_first_page")
         expect_text(emulator, 6, 2, "50", "old_progress_loaded")
-        expect_text(emulator, 12, 2, "52", "mission_total")
-        emulator.press(UP, released=80)  # wrap from first mission to the real final entry
-        emulator.snapshot("03_restored_finales")
-        expect_text(emulator, 2, 9, "51", "penultimate_number")
-        expect_text(emulator, 5, 9, "EVERYTHING", "penultimate_title")
-        expect_text(emulator, 2, 11, "52", "final_number")
-        expect_text(emulator, 5, 11, "GRAND FINALE", "final_title")
+        expect_text(emulator, 12, 2, "56", "mission_total")
+        # Wrap to #56 and move up to the unchanged two original finales.
+        for _ in range(6):
+            emulator.press(UP, released=80)
+        emulator.snapshot("03_original_finales_and_bonus")
+        expect_text(emulator, 2, 3, "51", "penultimate_number")
+        expect_text(emulator, 5, 3, "EVERYTHING", "penultimate_title")
+        expect_text(emulator, 2, 5, "52", "final_number")
+        expect_text(emulator, 5, 5, "GRAND FINALE", "final_title")
+        expect_text(emulator, 2, 7, "53", "bonus_number")
+        expect_text(emulator, 5, 7, "SCOUTS FIRST", "bonus_title")
+        emulator.press(DOWN, released=80)  # select GRAND FINALE #52
         emulator.press(A, released=100)
         emulator.snapshot("04_grand_finale_briefing")
         expect_text(emulator, 2, 5, "THREE WILD RIVALS, HOSTILE".replace(",", " "), "final_briefing")
@@ -100,7 +105,7 @@ def run(rom, core, out):
             assert C.string_at(pointer + 9303, 1)[0] & 0x80
         emulator.report["passed"] = True
         emulator.report["save_check"] = "old 50 mission bits and previously earned Mission Master retained"
-        print("Campaign ROM PASS: 52 total, both finale entries, final briefing and gameplay reached, old progress retained")
+        print("Campaign ROM PASS: 56 total, original finales and bonus visible, old progress retained")
     except Exception as error:
         emulator.report["passed"] = False
         emulator.report["error"] = str(error)
