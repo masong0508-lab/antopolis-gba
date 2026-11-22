@@ -12,6 +12,7 @@
 #include "terrain_food.h"
 #include "food_patch.h"  // evenly sample authored Map Maker berries across large maps
 #include "editor_nest.h" // keep both queen starts distinct after Map Maker resizes
+#include "practice_queen.h" // protect the last queen heart at the actual hit site
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 #include "font8.h"
@@ -955,7 +956,7 @@ static void step_ant(Ant *a) {
   }
   if (!a->carry && qhp[e] && a->x == nestx[e] && a->y == nesty[e]) {
     if (a->sol) {
-      if (rnd() & 1) {
+      if ((rnd() & 1) && practice_queen_can_lose_hp(qhp[e], sandbox, tut, mp_on)) {
         qhp[e]--; qfl[e] = 10; fx_add(a->x, a->y, FX_HEART); if (!e) qlost = 1;
         if (e == 0) { apr(-3); alert(a->x, a->y, "QUEEN ATTACKED!  \6 LOOK"); }
         if (qhp[e]) sfx_hit(); else sfx_qdead();
@@ -2151,7 +2152,17 @@ static void eye(void) {                              // play as one of your ants
           if (dd > -40 && dd < bdd && (sd < 0 ? -sd : sd) < 230) { bdd = dd; bj = i; }
         }
         if (bj != 255) { if (cht[17] || rnd() % 100 < 70) { die(&ant[bj], 0); esay("GOT HIM!", 13); sfx_hit(); if (++e_bit >= 10) ach_get(33); } else esay("MISSED! BITE AGAIN", 2); }
-        else if (dist(cxv, nestx[1]) <= 1 && dist(cyv, nesty[1]) <= 1 && qhp[1]) { qhp[1]--; qfl[1] = 10; sfx_hit(); esay(qhp[1] ? "THE RED QUEEN IS HURT!" : "THE RED QUEEN FALLS!", 13); if (!qhp[1]) { ach_get(34); e_qk = 1; } }
+        else if (dist(cxv, nestx[1]) <= 1 && dist(cyv, nesty[1]) <= 1 && qhp[1]) {
+          if (practice_queen_can_lose_hp(qhp[1], sandbox, tut, mp_on)) {
+            qhp[1]--; qfl[1] = 10; sfx_hit();
+            esay(qhp[1] ? "THE RED QUEEN IS HURT!" : "THE RED QUEEN FALLS!", 13);
+            if (!qhp[1]) { ach_get(34); e_qk = 1; }
+          } else {
+            // Practice is not a win condition. No fake knockout, trophy,
+            // or match-ending death sound when a queen is at one heart.
+            sfx_deny(); esay("PRACTICE QUEEN SAFE", 13);
+          }
+        }
       }
       // red ants bite back
       if (hurt) hurt--;
