@@ -1972,6 +1972,7 @@ static u8 eye_ahead(s32 px, s32 py, u8 fa) {
 }
 static const char *emsg; static u8 emsgt, emsgc;   // ANT EYE message (the counters e_del.. are declared near newgame)
 static void esay(const char *m, u8 c) { emsg = m; emsgt = 90; emsgc = c; }
+static void classic_outcome_tick(void);          // shared by the map and both ANT EYE loops
 static void eye_panel(u8 vi, u8 php, u8 scent, s32 px, s32 py, u8 fa) {
   static const char *const WARN[8] = {
     0, "WORLD EDGE - TURN BACK", "WATER AHEAD - TURN", "CLIFF AHEAD - TURN", 0,
@@ -2058,7 +2059,7 @@ static void eye(void) {                              // play as one of your ants
 #endif
     if (p & J_START) break;
     if (dead && !--dead) break;
-    if (over || !qhp[0] || !qhp[1]) break;
+    if (over) break;
     if ((p & J_SEL) && !dead) {                        // switch to the next ant
       i = 0; do { vi = (vi == MAXA) ? 0 : vi + 1; } while (!vok(vi) && ++i <= MAXA);
       if (vi < MAXA) { px = (s32)ant[vi].x * 256 + 128; py = (s32)ant[vi].y * 256 + 128; eye_ctl = vi; php = 3; } else { eye_ctl = 255; px = (s32)nestx[0] * 256 + 128; py = (s32)nesty[0] * 256 + 128; }
@@ -2118,6 +2119,8 @@ static void eye(void) {                              // play as one of your ants
     if (moving) bob = (u8)((frc >> 3) & 1); else bob = 0;
     // the world goes on
     tick_slice(); bfs_tick(250);
+    classic_outcome_tick();
+    if (over) break;                             // a goal or deadline also ends a first-person session
     if (emsgt) emsgt--;
     if ((px >> 8) - fox < 16 || (px >> 8) - fox > 47 || (py >> 8) - foy < 16 || (py >> 8) - foy > 47) {
       fox = (s16)(px >> 8) - 32; foy = (s16)(py >> 8) - 32; floor_map((volatile u16 *)0x0600B000);
@@ -2873,6 +2876,28 @@ static void tut_enter(void) {                        // show lessons until one n
 
 // ---------- play ----------
 static u8 mis_on; static u8 mis_ok(void); static const u16 *mis_lim_p(void);   // ANTVERSE missions (missions.c): a goal checked while playing
+static void classic_outcome_tick(void) {
+  if (over) return;                             // keep a decided result (including an explicit quit)
+  // A camera change must not remove the tutorial / sandbox protections.
+  // Restore after simulation as well, so a last-heart hit cannot end a lesson.
+  if (!mp_on && (tut || sandbox)) {
+    qhp[0] = qhp[1] = qbase;
+    if (tut && appr < 50) appr = 50;
+    if (sandbox) { mana = MANA_MAX; appr = 99; }
+    return;
+  }
+  // Preserve the normal map's precedence: queens, match clock, mission goal,
+  // then mission deadline. Both linked peers use only shared colony state.
+  if (!qhp[1]) over = 1; else if (!qhp[0]) over = 2;
+  if (O(O_TIME) && !over && (u32)gt * 2 / 15 >= (O(O_TIME) == 1 ? 300u : O(O_TIME) == 2 ? 600u : 1200u)) {
+    count(ncnt);                                // ANT EYE can change the population between colony ticks
+    timeup = 1; over = (u8)(ncnt[0] + qhp[0] * 3 >= ncnt[1] + qhp[1] * 3 ? 1 : 2);
+  }
+  if (!mp_on && mis_on && !over && !(frc & 15)) {
+    if (mis_ok()) over = 4;
+    else if (*mis_lim_p() && (u32)gt * 2 / 15 >= (u32)*mis_lim_p() * 60) over = 5;
+  }
+}
 static u16 calc_score(u32 secs) {                 // 300/600/900 by level + speed bonus + 5 per ant + popularity + 10 per queen HP
   u16 sc = (u16)(300 * (diff + 1));
   if (secs < 600) sc = (u16)(sc + 600 - secs);
@@ -3130,11 +3155,7 @@ static void play(void) {
       if (tut && !msgt && THINT[tut - 1]) { msg = THINT[tut - 1]; msgt = 1; }   // keep the lesson goal on the HUD
       hud();
     } else if ((mx != cx || my != cy) && !msgt) { ov_fill(1, 1, 19, 19); cur_info(); }
-    if (!qhp[1]) over = 1; else if (!qhp[0]) over = 2;
-    if (O(O_TIME) && !tut && !sandbox && !over && (u32)gt * 2 / 15 >= (O(O_TIME) == 1 ? 300u : O(O_TIME) == 2 ? 600u : 1200u)) {
-      timeup = 1; over = (u8)(ncnt[0] + qhp[0] * 3 >= ncnt[1] + qhp[1] * 3 ? 1 : 2);   // time is up: more ants (and hearts) wins
-    }
-    if (mis_on && !over && !(frc & 15)) { if (mis_ok()) over = 4; else if (*mis_lim_p() && (u32)gt * 2 / 15 >= (u32)*mis_lim_p() * 60) over = 5; }   // a mission goal met / out of time
+    classic_outcome_tick();
     draw_sprites();
   }
   music_stop();
