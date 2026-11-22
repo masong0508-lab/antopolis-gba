@@ -64,13 +64,14 @@ jobs:
             build/link-smoke/chase/06_cat_map_vs_mouse_eye.png \
             build/link-smoke/chase/11_roles_swapped.png \
             build/link-smoke/chase/eye_visual_audit.json
-      - name: Verify authored saves, campaign access and live HUD
+      - name: Verify authored saves, campaign access, live HUD and first-person objectives
         run: |
           CORE=build/link-smoke/linked-core.so
           python3 -u tools/test_editor_roundtrip.py build/empire-ants.gba "$CORE" --out build/link-smoke/editor 2>build/link-smoke/editor-serial.log
           python3 -u tools/test_editor_roundtrip.py build/empire-ants.gba "$CORE" --tall --out build/link-smoke/editor-tall 2>build/link-smoke/editor-tall-serial.log
           python3 -u tools/test_campaign_menu.py build/empire-ants.gba "$CORE" --out build/link-smoke/campaign 2>build/link-smoke/campaign-serial.log
           python3 -u tools/test_colony_hud.py build/empire-ants.gba "$CORE" --out build/link-smoke/colony-hud 2>build/link-smoke/colony-hud-serial.log
+          python3 -u tools/test_eye_missions.py build/empire-ants.gba "$CORE" --out build/link-smoke/eye-missions 2>build/link-smoke/eye-missions-serial.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:

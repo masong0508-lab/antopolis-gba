@@ -247,8 +247,8 @@ static void mp_eye(void) {
     if (quit) break;
     tick_slice(); bfs_tick(250);
     if (emsgt) emsgt--;  // transient panel feedback expires just as in solo ANT EYE
-    if (!qhp[1]) { over = 1; break; }
-    if (!qhp[0]) { over = 2; break; }
+    classic_outcome_tick();
+    if (over) break;
     // Only the local camera and its picture differ: the shared world above
     // and the link checksum never depend on camera or presentation.
     fa = (u8)(angle[local] >> 8); vang = fa;
@@ -407,10 +407,7 @@ static void versus_play(void) {                     // VERSUS, and CO-OP CLASSIC
     n = SPN[spd]; if (n && (sf++ & SPM[spd])) n = 0;
     for (; n; n--) tick_slice();
     if (++t >= 8 || (mp_on == 2 ? lk_k[lk_me] : k)) { t = 0; count(ncnt); vs_hud(); }
-    if (!qhp[1]) over = 1; else if (!qhp[0]) over = 2;
-    if (O(O_TIME) && !over && (u32)gt * 2 / 15 >= (O(O_TIME) == 1 ? 300u : O(O_TIME) == 2 ? 600u : 1200u)) {
-      timeup = 1; over = (u8)(ncnt[0] + qhp[0] * 3 >= ncnt[1] + qhp[1] * 3 ? 1 : 2);
-    }
+    classic_outcome_tick();
     draw_sprites(); mp_cursor2();
   }
   music_stop();

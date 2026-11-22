@@ -1,3 +1,26 @@
+## ANT EYE objectives and match endings
+
+Classic and ANT EYE now share the same outcome checks. Finishing a
+first-person mission objective opens the mission result automatically;
+players no longer have to leave ANT EYE to receive completion credit.
+The Classic match clock and campaign deadline also keep working in
+first person, including linked Classic co-op. Timed results count the
+current surviving ants before deciding the winner.
+
+Tutorial and sandbox games retain their queen protection in ANT EYE,
+including after simulation damage. Ordinary combat keeps its existing
+queen-defeat precedence, and an already decided result is preserved.
+The checks use existing state and add no save fields or world buffers.
+
+The native regression exercises the production outcome function at
+deadline boundaries and in protected modes. The real-ROM regression
+boots two mGBA instances, selects SCENT MASTER with controller input,
+lays scent, and requires the result card and mission-9 save bit without
+pressing START to leave first person. It then checks the campaign menu
+reports 1/52 completed. The previous release fails that regression at
+the automatic-result check. Existing linked co-op, DUAL VIEW, Map Maker,
+campaign-menu and HUD checks remain part of the release workflow.
+
 ## Playability pass: readable HUDs, reliable maps, complete campaign
 
 - **Readable during play:** the overhead HUD, ANT EYE status panel and
