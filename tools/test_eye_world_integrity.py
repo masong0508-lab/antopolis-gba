@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Run production floor-cache and drowning rules without GBA hardware.
+"""Run production floor-cache, movement and drowning rules without GBA hardware.
 
 The fixture supplies registers/world storage, then compiles unchanged
 function bodies from main.c and mp.c. Incremental VRAM updates must equal
 a full rebuild without touching the adjacent packed cell, and pilot death
-must have the same exactly-once bookkeeping as ordinary ant death.
+must have the same exactly-once bookkeeping as ordinary ant death. A dry
+pilot stranded by a neighboring terrain change must recover within its
+own cell, while valid wall/corner collisions remain unchanged.
 """
 from __future__ import annotations
 
@@ -33,7 +35,7 @@ FIXTURE = r"""
 #include <stdio.h>
 #include <string.h>
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32;
-typedef int8_t s8; typedef int16_t s16;
+typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 #define MAXA 48
 #define MAXW 128
 #define MAXH 96
@@ -177,9 +179,105 @@ static void drowning_and_selection(void) {
   assert(mp_pilot_near(10, 10, MAXA) == MAXA);
   assert(mp_pilot_next(MAXA, MAXA) == MAXA);
 }
+static void movement_recovery(void) {
+  static const s8 directions[8][2] = {
+    {-1,-1}, {0,-1}, {1,-1}, {-1,0}, {1,0}, {-1,1}, {0,1}, {1,1}
+  };
+  static const u8 heights[3][2] = {{2,0}, {1,3}, {3,1}};
+  static const u8 speeds[3] = {14,20,28};
+  u8 hazard, direction, speed;
+  W = H = 32;
+  for (hazard = 0; hazard < 3; hazard++)
+    for (direction = 0; direction < 8; direction++)
+      for (speed = 0; speed < 3; speed++) {
+        s8 dx = directions[direction][0], dy = directions[direction][1];
+        s32 px = 10 * 256 + (dx < 0 ? 8 : dx > 0 ? 248 : 128);
+        s32 py = 10 * 256 + (dy < 0 ? 8 : dy > 0 ? 248 : 128);
+        s32 before_x = px, before_y = py;
+        memset(hgt, heights[hazard][0], sizeof hgt);
+        assert(eye_space(px, py, 10, 10));
+        // Flood or raise/lower the neighbor beneath the ant's feet while
+        // its center remains on dry land. This trapped the old small steps.
+        hgt[10 + dy][10 + dx] = heights[hazard][1];
+        assert(!eye_space(px, py, 10, 10));
+        assert(!eye_walk(&px, &py, 0, 0)); // recovery requires movement input
+        assert(px == before_x && py == before_y);
+        assert(eye_walk(&px, &py, -dx * speeds[speed], -dy * speeds[speed]));
+        assert(px >> 8 == 10 && py >> 8 == 10);
+        assert(px - before_x >= -40 && px - before_x <= 40);
+        assert(py - before_y >= -40 && py - before_y <= 40);
+        assert(eye_space(px, py, 10, 10));
+        before_x = px; before_y = py;
+        assert(eye_walk(&px, &py, -dx * speeds[speed], -dy * speeds[speed]));
+        assert(px == before_x - dx * speeds[speed]);
+        assert(py == before_y - dy * speeds[speed]);
+      }
+
+  // No recovery can save a center under water, even when an adjacent dry
+  // tile lies within a fast/cheat step. Drowning owns this state instead.
+  for (direction = 0; direction < 8; direction++) {
+    s8 dx = directions[direction][0], dy = directions[direction][1];
+    s32 px = 10 * 256 + (dx < 0 ? 0 : dx > 0 ? 255 : 128);
+    s32 py = 10 * 256 + (dy < 0 ? 0 : dy > 0 ? 255 : 128);
+    s32 before_x = px, before_y = py;
+    memset(hgt, 1, sizeof hgt); hgt[10][10] = 0;
+    assert(!eye_walk(&px, &py, dx * 42, dy * 42));
+    assert(px == before_x && py == before_y);
+  }
+
+  // A valid pose still slides along a diagonal obstruction, cannot enter
+  // water/cliffs, and walks across a one-level ramp without correction.
+  {
+    s32 px = 10 * 256 + 215, py = 10 * 256 + 215;
+    memset(hgt, 2, sizeof hgt); hgt[11][11] = 0;
+    assert(eye_space(px, py, 10, 10));
+    assert(eye_walk(&px, &py, 20, 20));
+    assert(px == 10 * 256 + 235 && py == 10 * 256 + 215);
+    assert(eye_space(px, py, 10, 10));
+    for (hazard = 0; hazard < 3; hazard++) {
+      u8 attempt;
+      memset(hgt, heights[hazard][0], sizeof hgt);
+      hgt[10][11] = heights[hazard][1];
+      px = 10 * 256 + 215; py = 10 * 256 + 128;
+      assert(eye_space(px, py, 10, 10));
+      for (attempt = 0; attempt < 60; attempt++) {
+        assert(!eye_walk(&px, &py, 20, 0));
+        assert(px == 10 * 256 + 215 && py == 10 * 256 + 128);
+      }
+    }
+    for (hazard = 1; hazard <= 3; hazard += 2) {
+      memset(hgt, 2, sizeof hgt); hgt[10][11] = hazard;
+      px = 10 * 256 + 248; py = 10 * 256 + 128;
+      assert(eye_walk(&px, &py, 20, 0));
+      assert(px == 11 * 256 + 12 && py == 10 * 256 + 128);
+    }
+  }
+
+  // Both small and large worlds retain solid borders. If an already
+  // invalid footprint overlaps a border, repair it inside that same cell.
+  for (W = 32; W <= 96; W += 64) {
+    u8 corner; H = W; memset(hgt, 2, sizeof hgt);
+    for (corner = 0; corner < 4; corner++) {
+      u8 x = (corner & 1) ? (u8)(W - 1) : 0;
+      u8 y = (corner & 2) ? (u8)(H - 1) : 0;
+      s8 dx = (corner & 1) ? 1 : -1, dy = (corner & 2) ? 1 : -1;
+      s32 px = x * 256 + (dx < 0 ? 40 : 215);
+      s32 py = y * 256 + (dy < 0 ? 40 : 215);
+      s32 before_x = px, before_y = py;
+      assert(eye_space(px, py, x, y));
+      assert(!eye_walk(&px, &py, dx * 20, dy * 20));
+      assert(px == before_x && py == before_y);
+      px = x * 256 + (dx < 0 ? 8 : 248);
+      py = y * 256 + (dy < 0 ? 8 : 248);
+      assert(!eye_space(px, py, x, y));
+      assert(eye_walk(&px, &py, -dx * 20, -dy * 20));
+      assert(px >> 8 == x && py >> 8 == y && eye_space(px, py, x, y));
+    }
+  }
+}
 int main(void) {
-  assert_dry_art(); cache_updates(); water_by_nests(); drowning_and_selection();
-  puts("ANT EYE world PASS: 81 sizes, cache borders/recentering, preserved packed neighbors, dry art, flooded nest aprons, exactly-once drowning and dry pilot selection");
+  assert_dry_art(); cache_updates(); water_by_nests(); drowning_and_selection(); movement_recovery();
+  puts("ANT EYE world PASS: 81 sizes, cache borders/recentering, packed neighbors, dry art, flooded nest aprons, drowning, dry pilot selection, dry-cell movement recovery and preserved collisions");
   return 0;
 }
 """
@@ -190,7 +288,7 @@ def main() -> None:
     source = (root / "src/main.c").read_text()
     mp = (root / "src/mp.c").read_text()
     names = ["dist", "is_nest", "near_nest", "apr", "die", "ant_drown",
-             "floor_cell", "floor_map", "floor_changed", "vok"]
+             "floor_cell", "floor_map", "floor_changed", "vok", "can_go", "eye_space", "eye_walk"]
     program = FIXTURE + "\n".join(function(source, name) for name in names)
     program += "\n" + function(mp, "mp_pilot_near") + "\n" + function(mp, "mp_pilot_next") + TESTS
     with tempfile.TemporaryDirectory(prefix="antopolis-world-") as folder:

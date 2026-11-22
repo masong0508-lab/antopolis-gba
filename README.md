@@ -1,3 +1,24 @@
+## ANT EYE movement recovery and reliable compass goals
+
+A worker whose center is still on dry ground can now recover when a
+neighboring flood or cliff change overlaps its feet. After a fully blocked
+movement request, an already invalid footprint is moved into the safe
+interior of that same cell. The correction is at most 40/256 of a cell per
+axis. It cannot cross a cell boundary or rescue an underwater center;
+ordinary wall collision, corner sliding and one-level ramps keep their
+previous behavior. Solo, linked ANT EYE and DUAL VIEW share this helper.
+The link compatibility revision is now A77, so pairing with an older
+cartridge shows UPDATE BOTH GBAS before a match can start.
+The native production-code regression covers eight hazard directions,
+three movement speeds, world edges, no-input behavior and normal collision.
+
+Compass goals now remain visible when several markers share a bearing.
+Food has priority while foraging and home has priority while carrying.
+Co-op teammate markers preserve that active goal. DUAL VIEW keeps the
+guide's waypoint prominent while exploring and home prominent while
+carrying, using one food-goal bearing. Marker positions are unchanged;
+the fix uses the existing tile map without another world scan or buffer.
+
 ## ANT EYE terrain and worker safety
 
 Floods and earthquakes now update the first-person floor where terrain
