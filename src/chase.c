@@ -119,7 +119,7 @@ static void chase_eye_start(s32 px, s32 py, u8 fa, u8 vi) {
   m7_sky(m7t[0]); m7_sky(m7t[1]);
   m7_build(m7t[0], fa, (s16)px, (s16)py);
   eye_scene(fa, px, py, vi, 0, 0);
-  eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8));
+  eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8), ant[vi].carry);
   vsync(); eye_arm(m7t[0]); oam_flush(); eye_tab = m7t[0]; eye_irq_on(1);
   BG2CNT = 0x8000 | (22 << 8) | (2 << 2) | 3 | 0x80;
   BLDCNT = 0x2044;
@@ -215,6 +215,22 @@ static void chase_hud_eye(u8 scout, u8 delivered, u8 energy, u8 secs,
   ps(0, 18, "DELIVERIES", 10); pn(12, 18, delivered, 13);
   ps(14, 18, "/3", 3); ps(19, 18, "STAMINA", 10); pn(28, 18, energy, 9);
   ps(0, 19, "\1 SPRINT \2 SCENT L/R STRAFE", 10);
+}
+// Match the same goal priority as chase_scout_message: carry home first,
+// otherwise follow a guide marker, otherwise seek one food target.
+static void chase_compass(u8 fa, u8 rx, u8 ry, u8 carry,
+                          u8 marked, u8 mx, u8 my) {
+  u8 gx, gy;
+  // Choose the existing bounded expedition target BEFORE drawing. These
+  // are camera-only fields, not linked world/checksum state. A second %
+  // drawn afterwards could leave two contradictory food directions.
+  if (!carry && chase_goal(rx, ry, &gx, &gy)) {
+    efx = gx; efy = gy; ehas_f = 1;
+  }
+  eye_compass(fa, rx, ry, carry);
+  if (marked)
+    eye_aux_mark(fa, (s16)mx - rx, (s16)my - ry, '?', 14,
+                 carry ? '$' : 0);
 }
 // Returns 1 when the team delivered 3 loads, 0 at time-out/loss, 2 on abort.
 static u8 chase_round(u8 round) {
@@ -380,12 +396,7 @@ static u8 chase_round(u8 round) {
       }
       BG0HOFS = (u16)(fa * 5 + (fa >> 2));
       if (!(frame & 7)) {
-        u8 gx, gy;
-        eye_compass(fa, rx, ry);
-        if (!ant[vi].carry && chase_goal(rx, ry, &gx, &gy))
-          eye_mark(fa, (s16)gx - rx, (s16)gy - ry, '%', 13);
-        if (marked)
-          eye_mark(fa, (s16)mx - rx, (s16)my - ry, '?', 14);
+        chase_compass(fa, rx, ry, ant[vi].carry, marked, mx, my);
         // The compass is live, but static words/counters need no VRAM
         // clears until time, food, stamina or the current task changes.
         u8 task_message = chase_scout_message(ant[vi].carry, marked,

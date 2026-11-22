@@ -1802,21 +1802,34 @@ static u8 bearing(s16 dx, s16 dy) {                   // angle (0..255, 0 = east
   for (a = 0; a < 64; a++) { v = (s32)dx * SINT[((a << 2) + 64) & 255] + (s32)dy * SINT[a << 2]; if (v > bv) { bv = v; b = (u8)(a << 2); } }
   return b;
 }
-static void eye_mark(u8 fa, s16 dx, s16 dy, char c, u8 p) {
+static u8 eye_mark_column(u8 fa, s16 dx, s16 dy) {
   s16 r = (s16)(((bearing(dx, dy) - fa + 128) & 255) - 128); s8 x = (s8)(15 + r * 15 / 64);
-  if (x < 0) x = 0; if (x > 29) x = 29; pc((u8)x, 0, c, p);
+  if (x < 0) x = 0; if (x > 29) x = 29;
+  return (u8)x;
+}
+static void eye_mark(u8 fa, s16 dx, s16 dy, char c, u8 p) {
+  pc(eye_mark_column(fa, dx, dy), 0, c, p);
+}
+// A teammate/waypoint can share the goal's bearing, especially at a
+// clamped screen edge. Keep the glyph named by the task at its true
+// bearing; never nudge a marker sideways or allocate a priority buffer.
+static void eye_aux_mark(u8 fa, s16 dx, s16 dy, char c, u8 p, char goal) {
+  u8 x = eye_mark_column(fa, dx, dy);
+  if (goal && (BGMAP1[x] & 0x3FFu) == (u16)(FT + gi(goal))) return;
+  pc(x, 0, c, p);
 }
 static u8 efx, efy, eex, eey, ehas_f, ehas_e;           // the nearest food / enemy seen this frame (for the compass)
-static void eye_compass(u8 fa, u8 vx, u8 vy) {        // row 0: N E S W + home, red nest, the nearest food and enemy
+static void eye_compass(u8 fa, u8 vx, u8 vy, u8 carrying) { // row 0: reference markers, then the active food/home goal
   static const char CL[4] = {'E', 'S', 'W', 'N'};
   u8 k; s16 r; s8 c;
   ov_fill(1, 1, 0, 0);
   pc(15, 0, '+', 15);
   for (k = 0; k < 4; k++) { r = (s16)(((k * 64 - fa + 128) & 255) - 128); c = (s8)(15 + r * 15 / 64); if (c >= 0 && c < 30) pc((u8)c, 0, CL[k], 15); }
-  if (ehas_f) eye_mark(fa, (s16)efx - vx, (s16)efy - vy, '%', 13);
   if (ehas_e) eye_mark(fa, (s16)eex - vx, (s16)eey - vy, '!', 8);
   if (vx != nestx[1] || vy != nesty[1]) eye_mark(fa, (s16)nestx[1] - vx, (s16)nesty[1] - vy, '@', 8);
+  if (carrying && ehas_f) eye_mark(fa, (s16)efx - vx, (s16)efy - vy, '%', 13);
   if (vx != nestx[0] || vy != nesty[0]) eye_mark(fa, (s16)nestx[0] - vx, (s16)nesty[0] - vy, '$', 2);
+  if (!carrying && ehas_f) eye_mark(fa, (s16)efx - vx, (s16)efy - vy, '%', 13);
 }
 // ---- the things on the floor ----
 #define EOMAX 80
@@ -1966,6 +1979,7 @@ static u8 eye_space(s32 px, s32 py, u8 fromx, u8 fromy) {
 static u8 eye_walk(s32 *px, s32 *py, s32 dx, s32 dy) {
   u8 cx0 = (u8)(*px >> 8), cy0 = (u8)(*py >> 8), moved = 0;
   s32 n;
+  if (cx0 >= W || cy0 >= H || !hgt[cy0][cx0]) return 0; // drowning owns an underwater center
   if (dx) {
     n = *px + dx;
     if (eye_space(n, *py, cx0, cy0)) { *px = n; cx0 = (u8)(n >> 8); moved = 1; }
@@ -1973,6 +1987,18 @@ static u8 eye_walk(s32 *px, s32 *py, s32 dx, s32 dy) {
   if (dy) {
     n = *py + dy;
     if (eye_space(*px, n, cx0, cy0)) { *py = n; moved = 1; }
+  }
+  // A flood or earthquake can invalidate a foot over the neighboring
+  // cell while this center is still dry. Small escape steps then fail
+  // forever. Only after a blocked move, pull the feet inside this SAME
+  // cell (the 40-unit radius above): at most 40/256 cell on either axis.
+  // Already-valid wall/corner collisions never enter this correction.
+  if (!moved && (dx || dy) && !eye_space(*px, *py, cx0, cy0)) {
+    s32 lo = (s32)cx0 * 256 + 40, hi = (s32)cx0 * 256 + 215;
+    if (*px < lo) *px = lo; else if (*px > hi) *px = hi;
+    lo = (s32)cy0 * 256 + 40; hi = (s32)cy0 * 256 + 215;
+    if (*py < lo) *py = lo; else if (*py > hi) *py = hi;
+    moved = 1;
   }
   return moved;
 }
@@ -2055,7 +2081,7 @@ static void eye(void) {                              // play as one of your ants
   m7_sky(m7t[0]); m7_sky(m7t[1]);
   fa = (u8)(a16 >> 8);
   m7_build(m7t[0], fa, (s16)px, (s16)py);
-  eye_scene(fa, px, py, vi, 0, 0); eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8)); emsgt = 0;
+  eye_scene(fa, px, py, vi, 0, 0); eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8), (u8)(vi < MAXA && ant[vi].carry)); emsgt = 0;
   esay(vi < MAXA ? "FIND FOOD % - RETURN HOME $" : "NO WORKERS LEFT: JUST LOOK", 2); eye_panel(vi, php, 0, px, py, fa);
   while (joy()) vsync();
   vsync(); eye_arm(m7t[0]); oam_flush(); eye_tab = m7t[0]; eye_irq_on(1);
@@ -2068,7 +2094,7 @@ static void eye(void) {                              // play as one of your ants
     s32 mvx = 0, mvy = 0; s32 cs, sn; u8 cxv, cyv, moving = 0;
     vsync();
     oam_flush();
-    if (!(frc & 3)) { eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8)); eye_panel(vi, php, scent, px, py, fa); }   // text while the screen is not drawn
+    if (!(frc & 3)) { eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8), (u8)(vi < MAXA && ant[vi].carry)); eye_panel(vi, php, scent, px, py, fa); }   // text while the screen is not drawn
     frc++;
     BGPAL[97] = ant_water_shimmer(frc, 2); BGPAL[98] = ant_water_shimmer(frc, 3);   // water ripples
     k = joy(); p = k & ~prev; prev = k;

@@ -18,7 +18,7 @@ static const char *const MPD[6] = {"BLACK ANTS AGAINST RED ANTS", "ONE EMPIRE, T
 static const u8 MPORD[6] = {0, 4, 5, 1, 2, 3};       // DUAL VIEW appears alongside the familiar Classic games
 // Stable on-wire protocol revision. Build timestamps must NEVER decide whether two identical ROMs can link.
 // Bump this 12-bit value only when game state, input packets or lobby settings become incompatible.
-#define MP_BUILD 0xA76u
+#define MP_BUILD 0xA77u // dry-cell recovery changes shared pilot movement
 static u8 mp_locked(u8 k) { return (k == 1 && !emp_unlocked()) || (k == 3 && !verse_unlocked()); }
 
 // ---------- VERSUS (classic) ----------
@@ -136,7 +136,7 @@ static void mp_eye(void) {
   fa = (u8)(angle[local] >> 8);
   m7_build(m7t[0], fa, (s16)px[local], (s16)py[local]);
   eye_scene(fa, px[local], py[local], vi[local], 0, 0);
-  eye_compass(fa, (u8)(px[local] >> 8), (u8)(py[local] >> 8));
+  eye_compass(fa, (u8)(px[local] >> 8), (u8)(py[local] >> 8), (u8)(vi[local] < MAXA && ant[vi[local]].carry));
   emsgt = 0;
   eye_panel(vi[local], hp[local], 0, px[local], py[local], fa);
   ps(1, 16, local ? "P2 " : "P1 ", 13);
@@ -271,12 +271,13 @@ static void mp_eye(void) {
     eye_tab = m7t[cur];
     eye_scene(fa, px[local], py[local], vi[local], bite_cd[local] ? 4 : 0, bob);
     if (!(frc & 3)) {
-      eye_compass(fa, (u8)(px[local] >> 8), (u8)(py[local] >> 8));
+      eye_compass(fa, (u8)(px[local] >> 8), (u8)(py[local] >> 8), (u8)(vi[local] < MAXA && ant[vi[local]].carry));
       eye_panel(vi[local], hp[local], held_scent[local], px[local], py[local], fa);
       ps(1, 16, local ? "P2 " : "P1 ", 13);
-      if (vi[other] < MAXA) eye_mark(fa,
+      if (vi[other] < MAXA) eye_aux_mark(fa,
           (s16)ant[vi[other]].x - (s16)(px[local] >> 8),
-          (s16)ant[vi[other]].y - (s16)(py[local] >> 8), 'P', 9);
+          (s16)ant[vi[other]].y - (s16)(py[local] >> 8), 'P', 9,
+          vi[local] < MAXA && ant[vi[local]].carry ? '$' : '%');
     }
     bob = (u8)((frc >> 3) & 1);
     BG0HOFS = (u16)(fa * 5 + (fa >> 2));
