@@ -1,3 +1,32 @@
+## Playability pass: readable HUDs, reliable maps, complete campaign
+
+- **Readable during play:** the overhead HUD, ANT EYE status panel and
+  first-person compass have a solid dark backdrop. Text no longer competes
+  with moving soil and landscape texture. The existing reserved panel tile
+  is reused; no framebuffer, larger atlas or additional world array is needed.
+- **Clear resources and actions:** Classic labels FOOD and MOOD explicitly.
+  ANT EYE labels colony FOOD, AP and HELD food, keeps walk/turn and sidestep
+  controls visible, and gives a forage or return-home task. Water, cliffs,
+  world edges and enemies take priority over carrying or scent reminders.
+  Food compass hints use the renderer's existing nearby-food result; they
+  indicate a target bearing, not a guaranteed walkable route.
+- **Map Maker keeps your work:** opening an authored map loads its saved
+  cells directly. Reopening no longer reduces berries to 16 regrowth centers
+  or silently cuts paths through a disconnected shoreline. Route repair and
+  additional food scatter still happen when a match starts.
+- **Both final missions restored:** the campaign contained 52 authored entries
+  but declared only 50, so the compiler discarded EVERYTHING and GRAND FINALE.
+  The total now comes from the catalog, and menus use that total. All previous
+  mission indexes and the seven-byte completion bitmap remain compatible.
+
+Validation includes native logic/art checks, an ARM cartridge build, real
+two-console mGBA Classic co-op and DUAL VIEW sessions, and an actual-ROM
+Map Maker regression. The editor regression compares saved cells/checksums
+through repeated saves and an intentional one-berry erase in 32x32, 96x32,
+32x96 and 96x96 worlds. Campaign checks load an old 50-completion record,
+complete the restored missions, and guard adjacent SRAM bytes. Emulator
+results do not certify physical link-cable timing or hardware frame rates.
+
 ## Map Maker: painted berry tiles now appear in gameplay (November 2026)
 
 Hand-made maps (including saved MY MAP) previously treated each `f`
@@ -265,7 +294,7 @@ Civilization + Age of Empires + Tropico + SimCity, played on the normal map scre
 - Votes with speeches and rigging, coups, uprisings, superpower raids, events with two choices, exile and a comeback.
 
 ## ANTVERSE MISSIONS
-- 50 missions from the ANTVERSE menu. Some use a single mode (classic, ANT EYE, EMPIRE, ANT CITY, EL PRESIDANTE), the
+- 52 missions from the ANTVERSE menu. Some use a single mode (classic, ANT EYE, EMPIRE, ANT CITY, EL PRESIDANTE), the
   rest mix everything. Goals, maps, twists (debt, fires, rebels, angry groups, hostile superpowers) and time limits.
   The PALACE toggle is on the mission screen for missions that allow either way. Finished missions are saved.
 

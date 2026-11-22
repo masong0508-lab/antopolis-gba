@@ -246,6 +246,7 @@ static void mp_eye(void) {
     }
     if (quit) break;
     tick_slice(); bfs_tick(250);
+    if (emsgt) emsgt--;  // transient panel feedback expires just as in solo ANT EYE
     if (!qhp[1]) { over = 1; break; }
     if (!qhp[0]) { over = 2; break; }
     // Only the local camera and its picture differ: the shared world above
