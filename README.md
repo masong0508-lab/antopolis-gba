@@ -1,3 +1,27 @@
+## One-button Guided and Wild game starts (GBA)
+
+The NEW GAME menu now offers **L: GUIDE** and **R: WILD**.
+They are optional quick-start configurations and use the existing,
+fully tested game rules—not extra game modes or hidden cheats.
+
+- **L / GUIDED START:** EASY, procedural MEADOW, 48×48 world,
+  interactive LESSONS ON, SANDBOX OFF. A manageable world with explicit
+  lessons about moving, food, terrain ramps and the queen.
+- **R / WILD SURVIVAL:** HARD, procedural CANYON, 64×64 world,
+  LESSONS OFF, SANDBOX OFF. Larger terrain and tougher strategy for
+  returning players.
+
+Both immediately regenerate the right-hand map preview, visibly update
+all settings and select START GAME. You can still adjust any setting
+afterward, or use SELECT to change the procedural map seed. The NEW
+GAME screen also explains the controls and shows whether the current
+settings enable guided lessons, free practice or hard survival.
+
+These quick starts do **not** overwrite custom MY MAP data, records,
+options, achievements or saves. They add no new persistent buffers or
+gameplay-frame processing; a small pure preset helper is validated by
+host tests and the existing two-console ROM release workflows.
+
 ## Faster Map Maker menus on large authored maps
 
 Previously **every movement of the selection cursor in Map Maker's

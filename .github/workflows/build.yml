@@ -72,6 +72,7 @@ jobs:
       - name: Verify maps, campaign and first-person gameplay
         run: |
           CORE=build/link-smoke/linked-core.so
+          python3 -u tools/test_newgame_presets_rom.py build/empire-ants.gba "$CORE" --elf build/empire-ants.elf --out build/link-smoke/newgame-presets 2>build/link-smoke/newgame-presets-serial.log
           python3 -u tools/test_editor_roundtrip.py build/empire-ants.gba "$CORE" --out build/link-smoke/editor 2>build/link-smoke/editor-serial.log
           python3 -u tools/test_editor_roundtrip.py build/empire-ants.gba "$CORE" --tall --out build/link-smoke/editor-tall 2>build/link-smoke/editor-tall-serial.log
           python3 -u tools/test_editor_nest_resize.py build/empire-ants.gba "$CORE" --out build/link-smoke/editor-nests 2>build/link-smoke/editor-nests-serial.log

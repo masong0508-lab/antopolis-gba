@@ -13,6 +13,7 @@
 #include "food_patch.h"  // evenly sample authored Map Maker berries across large maps
 #include "editor_nest.h" // keep both queen starts distinct after Map Maker resizes
 #include "practice_queen.h" // protect the last queen heart at the actual hit site
+#include "newgame_presets.h" // quick guided/wild starts; existing game rules only
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 #include "font8.h"
@@ -1452,6 +1453,7 @@ static void ng_text(void) {                        // the settings on the left (
   static const u8 NGR[7] = {4, 7, 10, 11, 13, 14, 16};
   for (y = 3; y < 18; y++) for (x = 1; x < 17; x++) BGMAP1[y * 32 + x] = (u16)(1 | (3 << 12));
   ov_fill(1, 3, 16, 17);
+  ps(2, 3, "SEL: RESEED", 10);
   for (s = 0; s < 7; s++) if (tsel == s) BGMAP1[NGR[s] * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
   ps(3, 4, "LEVEL", tsel == 0 ? 9 : 3); if (wins[diff]) { pn(10, 4, wins[diff], 13); ps(13, 4, "WON", 10); }
   ps(3, 5, "<", 10); ps((u8)(9 - blen2(DNAME[diff]) / 2), 5, DNAME[diff], 9); ps(14, 5, ">", 10);
@@ -1462,13 +1464,14 @@ static void ng_text(void) {                        // the settings on the left (
   else { pc(8, 10, '<', 10); pn(10, 10, tw, 9); pc(13, 10, '>', 10); pc(8, 11, '<', 10); pn(10, 11, th, 9); pc(13, 11, '>', 10); }
   ps(3, 13, "SANDBOX", tsel == 4 ? 9 : 3); ps(11, 13, sandbox ? "ON" : "OFF", sandbox ? 13 : 10);
   ps(3, 14, "LESSONS", tsel == 5 ? 9 : 3); ps(11, 14, ng_learn ? "ON" : "OFF", ng_learn ? 13 : 10);
+  ps(3, 15, ng_learn ? "GUIDED LESSONS" : sandbox ? "FREE PRACTICE" : diff == 2 ? "HARD SURVIVAL" : "COLONY BATTLE", 10);
   ps((u8)(15 - (blen2(mdesc(mapt)) + 1) / 2), 17, mdesc(mapt), 10);
   ps(3, 16, mapt == MMY && !has_my ? "MAKE IT FIRST" : "START GAME!", tsel == 6 ? 9 : 13);
 }
 static void ng_draw(void) {
   ov_fill(1, 3, 0, 19); ui_full();
   big(0, "NEW GAME"); pm_rule(2); pm_rule(18);
-  ps(1, 19, "\1 GO  \2 BACK  \6 NEW MAP", 10);
+  ps(1, 19, "\1 GO \2 BACK L GUIDE R WILD", 10);
   ng_text(); ng_preview();
 }
 static u8 newgame_menu(void) {                     // 0 = back, 1 = play, 2 = open the editor (to make MY MAP first)
@@ -1480,6 +1483,12 @@ static u8 newgame_menu(void) {                     // 0 = back, 1 = play, 2 = op
     vsync(); fr++; k = joy(); p = k & ~prev; prev = k;
     if (!p) { if (dirty && ++dirty > 30) { dirty = 0; ng_preview(); } continue; }   // re-dig the picture once you stop pressing
     if (p & J_B) { sfx_food(); return 0; }
+    if (p & (J_L | J_R)) {
+      AntStartPreset q = ant_newgame_preset((u8)((p & J_R) != 0));
+      diff = q.difficulty; mapt = q.map; tw = q.width; th = q.height;
+      sandbox = q.sandbox; ng_learn = q.lessons; tsel = 6;
+      dirty = 0; sfx_mana(); ng_text(); ng_preview(); continue;
+    }
     if (p & J_SEL) { pool_mix(fr * 2654435761u ^ VCOUNT); rs ^= (u32)fr * 40503u + VCOUNT; if (!rs) rs = 1; snap_take(); sfx_mana(); ng_preview(); continue; }
     if (p & J_DOWN) { tsel = (u8)(tsel == 6 ? 0 : tsel + 1); if (hmap(mapt) && (tsel == 2 || tsel == 3)) tsel = 4; sfx_food(); ng_text(); }
     if (p & J_UP)   { tsel = (u8)(tsel == 0 ? 6 : tsel - 1); if (hmap(mapt) && (tsel == 2 || tsel == 3)) tsel = 1; sfx_food(); ng_text(); }
