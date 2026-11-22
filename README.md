@@ -1,3 +1,18 @@
+## Bonus campaign expeditions (GBA)
+
+The MISSIONS menu now offers **56 playable missions**. Four optional
+append-only expeditions bring more approachable objectives to existing
+modes: **SCOUTS FIRST** (deliver three food loads in ANT EYE),
+**NEST GUARD** (win Classic without black queen damage),
+**ROOT TOWN** (construct 12 Empire buildings in 20 minutes, no rivals)
+and **PARKS AND PATHS** (reach 750 city ants with smog below 20).
+
+Use **UP/DOWN** to choose, **L/R** to jump five missions, **A** to play
+and **B** to return. The original mission indexes 1-52 remain intact,
+including GRAND FINALE at #52; the new missions occupy four previously
+unused completion bits in the same seven-byte cartridge record.
+Existing games, achievements, and completed-mission flags are preserved.
+
 ## One-button Guided and Wild game starts (GBA)
 
 The NEW GAME menu now offers **L: GUIDE** and **R: WILD**.
@@ -457,7 +472,7 @@ Civilization + Age of Empires + Tropico + SimCity, played on the normal map scre
 - Votes with speeches and rigging, coups, uprisings, superpower raids, events with two choices, exile and a comeback.
 
 ## ANTVERSE MISSIONS
-- 52 missions from the ANTVERSE menu. Some use a single mode (classic, ANT EYE, EMPIRE, ANT CITY, EL PRESIDANTE), the
+- 56 missions from the ANTVERSE menu (52 original + 4 bonus expeditions). Some use a single mode (classic, ANT EYE, EMPIRE, ANT CITY, EL PRESIDANTE), the
   rest mix everything. Goals, maps, twists (debt, fires, rebels, angry groups, hostile superpowers) and time limits.
   The PALACE toggle is on the mission screen for missions that allow either way. Finished missions are saved.
 
