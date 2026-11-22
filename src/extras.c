@@ -27,7 +27,7 @@ static const char *const ACD[NACH] = {
   "PLAY ON A LINK CABLE", "PASS THE GBA TO A FRIEND", "CITY: 50 LEVEL 3 HOMES", "CITY: EARN 500 A MONTH",
   "EMPIRE: 80 BUILDINGS", "FIND ALL 3 SECRET CHEATS", "SAVE A 96 X 96 MAP", "GET 50 ACHIEVEMENTS",
   "CITY: WIN 3 VOTES IN A GAME", "WIN A VOTE WITH 80 PERCENT", "HIDE *10000 IN THE HONEY POT", "STOP A COUP OR AN UPRISING",
-  "REACH 90 RESPECT", "READ 50 LOADING FACTS", "FINISH 10 ANTVERSE MISSIONS", "FINISH ALL 50 MISSIONS"};
+  "REACH 90 RESPECT", "READ 50 LOADING FACTS", "FINISH 10 ANTVERSE MISSIONS", "FINISH EVERY MISSION"};
 static const char *const ACR[NACH] = {     // what each one unlocks ("" = just the trophy)
   "GOLD ANTS", "CHEAT: WEATHER", "CHEAT: STRONG ANTS", "CHEAT: INFINITE AP", "CHEAT: FOOD RAIN", "", "", "",
   "CHEAT: GOD QUEEN", "PINK ANTS", "CHEAT: TURBO", "", "", "CHEAT: RICH COLONY", "", "CHEAT: ALL TECHS  WHITE ANTS",
@@ -144,7 +144,7 @@ static void extras(void) {
       ps(2, 14, "EMPIRE MODE", 10); ps(14, 14, emp_unlocked() ? "OPEN" : "LOCKED", emp_unlocked() ? 13 : 15);
       ps(2, 15, "CITY GOALS", 10); pn(14, 15, scen_count(), 9); ps(17, 15, "OF 10 DONE", 10);
       ps(2, 16, "ANTVERSE", 10); ps(14, 16, verse_unlocked() ? "OPEN" : "LOCKED", verse_unlocked() ? 13 : 15);
-      ps(2, 17, "MISSIONS", 10); pn(14, 17, mis_count(), 9); ps(17, 17, "OF 50", 10); ps(22, 17, "FACTS", 10); { u16 f = fact_count(); pn(28, 17, (u8)(f > 99 ? 99 : f), 9); }
+      ps(2, 17, "MISSIONS", 10); pn(14, 17, mis_count(), 9); ps(17, 17, "OF", 10); pn(20, 17, mis_total(), 10); ps(22, 17, "FACTS", 10); { u16 f = fact_count(); pn(28, 17, (u8)(f > 99 ? 99 : f), 9); }
     }
     ps(1, 19, tab == 1 ? "\1 CHANGE \3\4 TABS \2 BACK" : "\3\4 TABS   \2 BACK", 10);
     DISPCNT = 0x1B40; BLDY = 0;

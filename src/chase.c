@@ -11,7 +11,7 @@
 #define CHASE_FOOD_TICK 127u        // top up every 128 linked frames (~2 seconds)
 // One 4bpp tile, outside the MAPT 832..975 generated-map atlas.
 // Pixel index 1 in palette 1 is black. No image asset/framebuffer needed.
-#define CHASE_PANEL_TILE 976
+#define CHASE_PANEL_TILE PANEL_TILE
 static u8 chase_last_food;   // the scout's completed deliveries for team scoring
 // Both peers generate identical supplies from map data, never RNG. Workers
 // still consume food normally, but cannot permanently starve the scout's

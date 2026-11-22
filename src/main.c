@@ -106,6 +106,7 @@ __attribute__((used)) static const char sram_tag[] = "SRAM_V113";   // tells emu
 #define BT 770          // old 2bpp terrain tiles 770..775 (title ground), AP bar 776 (full) 777 (empty)
 #define BAR_F (BT + 6)
 #define BAR_E (BT + 7)
+#define PANEL_TILE 976   // shared solid text backing; already reserved by the linked DUAL VIEW panel
 
 typedef struct { u8 x, y, team, alive, carry, sol, ox, oy, age, fl; } Ant;   // ox/oy/age: last cell + slices since the step (smooth walking), fl = faces left
 static u8 mw = 32, mh = 32;                                       // world size in cells (32..96 each)
@@ -129,7 +130,7 @@ static const char *const MDESC[NSTYLE] = {"GENTLE HILLS AND PONDS", "FIND THE FO
 static const char *mname(u8 i) { return i < NSTYLE ? MNAME[i] : i < MINF ? HMAPS[i - NSTYLE].name : i == MINF ? "INFINITE" : "MY MAP"; }
 static const char *mdesc(u8 i) { return i < NSTYLE ? MDESC[i] : i < MINF ? HMAPS[i - NSTYLE].desc : i == MINF ? "A NEW WORLD EVERY GAME" : has_my ? "MADE BY YOU" : "NOT MADE YET: \1 TO MAKE IT"; }
 static const HandMap *hmap(u8 i) { return i == MMY ? (has_my ? &myhm : 0) : (i >= NSTYLE && i < MINF) ? &HMAPS[i - NSTYLE] : 0; }
-static u8 tw = 48, th = 48, newgame_gen_only;                                       // chosen world size (the hand-made maps are always 32x32)
+static u8 tw = 48, th = 48;                         // chosen world size (the hand-made maps are always 32x32)
 static Ant ant[MAXA];
 static u8 nestx[2], nesty[2], stock[2], qhp[2], ncnt[2], hatched[2];
 static u8 cx, cy, mana, over, camx, camy, sandbox, cheat, spd = 4, sf, appr, diff, slice;
@@ -380,10 +381,10 @@ static void ui_full(void) {                        // a dug-out chamber: soil wi
     BGMAP3[y * 32 + x] = t;
   }
 }
-static void ui_game(void) {                        // the map above, the dirt (HUD) below with grass hanging into it
+static void ui_game(void) {                        // a calm, opaque backing keeps the live map out of the HUD
   u8 x, y;
   for (y = 0; y < 20; y++) for (x = 0; x < 32; x++)
-    BGMAP3[y * 32 + x] = y < 17 ? 0 : y == 17 ? (u16)(UIB + 12 + ((x * 5) & 1)) : uisoil(x, y);
+    BGMAP3[y * 32 + x] = y < 17 ? 0 : (u16)(PANEL_TILE | (1 << 12));
 }
 static u8 tun_at(u8 x, u8 y) {                     // the title's ant farm: which cells are tunnels
   if (y >= 18) return 1;                           // the long tunnel along the bottom (the ants walk here)
@@ -432,7 +433,7 @@ static void spd_toggle(void) { spd = spd == 4 ? (cht[7] ? 7 : 6) : 4; say(spd >=
 
 // ---------- HUD (BG1 rows 17-19) ----------
 // row 17: YOU hearts  ant-count   speed   RED hearts  ant-count
-// row 18: AP + bar   food   popularity   time
+// row 18: AP + bar   FOOD   MOOD (popularity)   time
 // row 19: a message, or what is under the cursor and what A / B would do there
 // text palette banks: 1 white, 2 gold, 8 red, 13 green, 14 cyan, 15 dim grey (all on black)
 static u8 psx(u8 x, u8 y, const char *s, u8 p) { while (*s && x < 30) pc(x++, y, *s++, p); return x; }
@@ -458,14 +459,14 @@ static void hud(void) {
   if (spd != 4) ps(14, 17, SPTAG[spd], 2);
   ps(17, 17, "RED", 8); for (i = 0; i < qbase; i++) pc((u8)(21 + i), 17, '#', i < qhp[1] ? 8 : 15);
   pc(27, 17, '@', 8); pn(28, 17, ncnt[1], 8);
-  // Label every strategic resource, not just cryptic symbols. The shorter
-  // seven-pip AP bar costs fewer BG writes and preserves the 30-column HUD.
+  // Full resource labels fit beside a three-pip AP gauge. Keep columns
+  // 28-29 free for the co-op player tag, without overwriting the clock.
   ps(0, 18, "AP", 14); pn(2, 18, mana, 14);
-  for (i = 0; i < 7; i++) BGMAP1[18 * 32 + 5 + i] = (u16)((mana > 3 * i ? BAR_F : BAR_E) | (14 << 12));
-  ps(13, 18, "F", 13); pn(14, 18, stock[0], 13);
-  ps(17, 18, "POP", 2); pn(20, 18, appr, 2);
-  ps(23, 18, "T", 1); pn(24, 18, (u8)(s / 60 > 99 ? 99 : s / 60), 1);
-  pc(26, 18, ':', 1); pz(27, 18, (u8)(s % 60), 1);
+  for (i = 0; i < 3; i++) BGMAP1[18 * 32 + 5 + i] = (u16)((mana > MANA_MAX * i / 3 ? BAR_F : BAR_E) | (14 << 12));
+  ps(9, 18, "FOOD", 13); pn(13, 18, stock[0], 13);
+  ps(16, 18, "MOOD", 2); pn(20, 18, appr, 2);
+  pn(23, 18, (u8)(s / 60 > 99 ? 99 : s / 60), 1);
+  pc(25, 18, ':', 1); pz(26, 18, (u8)(s % 60), 1);
   if (msgt) { psx(0, 19, msg, 2); msgt--; return; }
   cur_info();
 }
@@ -1073,6 +1074,9 @@ static void hand_map(const HandMap *m) {           // a hand-made map from maps.
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) {
     c = m->cells[y * W + x];
     hgt[y][x] = c == 'w' ? 0 : c == 's' ? 1 : c == 'h' ? 3 : 2;
+    // Painted berries are exact initial food positions, not merely
+    // scatter centers. Even >16 marked tiles remain visible in play.
+    food[y][x] = food_patch_authored_tile(c, hgt[y][x]);
     if (c == 'Y') { nestx[0] = x; nesty[0] = y; }
     if (c == 'R') { nestx[1] = x; nesty[1] = y; }
   }
@@ -1495,7 +1499,7 @@ static u8 hsel, opts_go;
 static u8 card_x(u8 c) { return (u8)(1 + (c % 3) * 10); }
 static u8 card_y(u8 c) { return (u8)(c < 3 ? 4 : 11); }
 static u8 verse_unlocked(void);
-static u8 scen_count(void); static u8 mis_count(void); static u16 fact_count(void);
+static u8 scen_count(void); static u8 mis_count(void); static u8 mis_total(void); static u16 fact_count(void);
 static u8 card_lock(u8 c) { return (c == 1 && !emp_unlocked()) || (c == 5 && !verse_unlocked()); }
 static void card_draw(u8 c) {                      // bark frame + dark tunnel inside; the chosen card uses the gold palette bank 6
   u8 x0 = card_x(c), y0 = card_y(c), x, y, pal = c == hsel ? 6 : 0; u16 t; const char *n = card_lock(c) ? "LOCKED" : CARDN[c];
@@ -1752,7 +1756,10 @@ static void pano_init(void) {                          // skyline on BG0: tiles 
   u16 i; volatile u16 *m = (volatile u16 *)0x0600D800;
   for (i = 0; i < PANO_N * 8; i++) TILE32[64 * 8 + i] = PANO[i];
   for (i = 0; i < 1024; i++) m[i] = i < 256 && PANOM[i] != 0xFFFF ? (u16)((64 + PANOM[i]) | (5 << 12)) : 0;
-  for (i = 16 * 32; i < 20 * 32; i++) m[i] = i < 17 * 32 ? (u16)(UIB + 12 + ((i * 5) & 1)) : uisoil((u8)(i & 31), (u8)(i >> 5));   // dirt under the view
+  // BG1 font pixels are transparent. Put the backing on BG0 so every
+  // letter has the same contrast, including while the panorama turns.
+  for (i = 0; i < 32; i++) m[i] = (u16)(PANEL_TILE | (1 << 12));
+  for (i = 16 * 32; i < 20 * 32; i++) m[i] = (u16)(PANEL_TILE | (1 << 12));
   for (i = 0; i < 16; i++) {                            // the skyline, tinted for sunset / night
     u16 v = PAL_PANO[i]; u8 r = v & 31, g = (v >> 5) & 31, b = (v >> 10) & 31;
     if (O(O_SKY) == 1) { r = (u8)(r + 6 > 31 ? 31 : r + 6); b = (u8)(b * 2 / 3); }
@@ -1947,36 +1954,64 @@ static u8 eye_walk(s32 *px, s32 *py, s32 dx, s32 dy) {
   }
   return moved;
 }
-// Real-world navigation cues rather than an unrelated first-person maze.
-static const char *eye_ahead(s32 px, s32 py, u8 fa) {
+// One local perception check; no extra world scan or simulation state.
+enum { EA_CLEAR, EA_EDGE, EA_WATER, EA_CLIFF, EA_HOME, EA_QUEEN, EA_ENEMY, EA_FOOD };
+static u8 eye_ahead(s32 px, s32 py, u8 fa) {
   s32 nx = px + SINT[(fa + 64) & 255], ny = py + SINT[fa];
   s16 x = (s16)(nx >> 8), y = (s16)(ny >> 8);
   u8 i;
-  if (x < 0 || y < 0 || x >= W || y >= H) return "AHEAD: EDGE OF THE WORLD";
-  if (!hgt[y][x]) return "AHEAD: WATER - TURN";
-  if (!eye_space(nx, ny, (u8)(px >> 8), (u8)(py >> 8))) return "AHEAD: CLIFF - TURN";
-  if (x == nestx[0] && y == nesty[0]) return "AHEAD: HOME NEST";
-  if (x == nestx[1] && y == nesty[1]) return "AHEAD: RED QUEEN - BITE";
+  if (x < 0 || y < 0 || x >= W || y >= H) return EA_EDGE;
+  if (!hgt[y][x]) return EA_WATER;
+  if (!eye_space(nx, ny, (u8)(px >> 8), (u8)(py >> 8))) return EA_CLIFF;
   for (i = 0; i < MAXA; i++) if (ant[i].alive && ant[i].team && ant[i].x == x && ant[i].y == y)
-    return "AHEAD: ENEMY ANT - BITE";
-  if (food[y][x]) return "AHEAD: FOOD - WALK ON IT";
-  return "AHEAD: PATH CLEAR";
+    return EA_ENEMY;
+  if (x == nestx[0] && y == nesty[0]) return EA_HOME;
+  if (x == nestx[1] && y == nesty[1]) return EA_QUEEN;
+  if (food[y][x]) return EA_FOOD;
+  return EA_CLEAR;
 }
 static const char *emsg; static u8 emsgt, emsgc;   // ANT EYE message (the counters e_del.. are declared near newgame)
 static void esay(const char *m, u8 c) { emsg = m; emsgt = 90; emsgc = c; }
 static void eye_panel(u8 vi, u8 php, u8 scent, s32 px, s32 py, u8 fa) {
-  u8 i;
+  static const char *const WARN[8] = {
+    0, "WORLD EDGE - TURN BACK", "WATER AHEAD - TURN", "CLIFF AHEAD - TURN", 0,
+    "RED QUEEN AHEAD - \1 BITE", "ENEMY AHEAD - \1 BITE", 0
+  };
+  u8 i, ahead = EA_CLEAR, active = (u8)(vi < MAXA && ant[vi].alive);
+  u8 carry = (u8)(active && ant[vi].carry);
+  const char *hint; u8 ink;
   ov_fill(1, 1, 16, 19);
-  if (vi < MAXA) { ps(1, 16, "YOU", 2); for (i = 0; i < 3; i++) pc((u8)(5 + i), 16, '#', i < php ? 8 : 15); }
-  else ps(1, 16, "THE QUEEN", 2);
-  pc(10, 16, '%', 13); pn(11, 16, stock[0], 13);
-  pc(15, 16, '&', 14); pn(16, 16, mana, 14);
-  pc(20, 16, '@', 1); pn(21, 16, ncnt[0], 1); pc(25, 16, '@', 8); pn(26, 16, ncnt[1], 8);
-  if (emsgt) psx(1, 17, emsg, emsgc);
-  else if (scent) ps(1, 17, "LAYING SCENT: WORKERS FOLLOW", 13);
-  else if (vi < MAXA) ps(1, 17, ant[vi].carry ? "TAKE THE FOOD HOME: $" : eye_ahead(px, py, fa), ant[vi].carry ? 2 : 3);
-  ps(1, 18, "\1 BITE  \2 SCENT  \3\4 SIDESTEP", 10);
-  ps(1, 19, "\6 NEXT ANT       \5 MAP", 10);
+  ps(1, 16, "YOU", 2);  // linked co-op replaces these three cells with P1/P2
+  for (i = 0; i < 3; i++) pc((u8)(5 + i), 16, vi < MAXA ? '#' : '-', active && i < php ? 8 : 15);
+  ps(9, 16, "FOOD", 13); pn(13, 16, stock[0], 13);
+  ps(16, 16, "AP", 14); pn(18, 16, mana, 14);
+  ps(22, 16, "HELD", 2); pc(27, 16, carry ? '1' : '0', carry ? 2 : 15);
+  if (active) ahead = eye_ahead(px, py, fa);
+  // A load of food or an active scent trail must not hide a blocking
+  // shoreline/cliff or an enemy. Events follow hazards, then the task.
+  if (vi >= MAXA) { hint = "NO WORKER AVAILABLE"; ink = 2; }
+  else if (!ant[vi].alive) { hint = "ANT LOST - \5 BACK TO MAP"; ink = 8; }
+  else if (WARN[ahead]) { hint = WARN[ahead]; ink = 8; }
+  else if (emsgt) { hint = emsg; ink = emsgc; }
+  else if (carry) { hint = "FOOD HELD - FOLLOW $ HOME"; ink = 2; }
+  else if (ahead == EA_FOOD) { hint = "BERRIES AHEAD - WALK ON THEM"; ink = 13; }
+  else if (scent) { hint = "SCENT ON: WORKERS FOLLOW"; ink = 13; }
+  else if (ahead == EA_HOME) { hint = "HOME NEST - FIND BERRIES"; ink = 2; }
+  else { hint = ehas_f ? "FIND FOOD: FOLLOW % COMPASS" : "EXPLORE TO FIND BERRIES"; ink = 3; }
+  psx(1, 17, hint, ink);
+  if (active) {
+    ps(1, 18, "D PAD WALK/TURN  \3\4 SIDESTEP", 10);
+    ps(1, 19, "\1 BITE  \2 SCENT  \6 ANT  \5 MAP", 10);
+  } else if (vi < MAXA) {
+    ps(1, 18, "RETURNING TO THE COLONY...", 10);
+    ps(1, 19, "\5 BACK TO MAP", 10);
+  } else if (mp_on == 2) {
+    ps(1, 18, "WAIT FOR A NEW WORKER", 10);
+    ps(1, 19, "\5 BACK TO MAP", 10);
+  } else {
+    ps(1, 18, "LEFT RIGHT: LOOK AROUND", 10);
+    ps(1, 19, "\6 FIND AN ANT    \5 MAP", 10);
+  }
 }
 static void eye(void) {                              // play as one of your ants (the world goes on around you)
   u8 i, vi = MAXA, best = 255, d, cur = 0, jaw = 0, bite_cd = 0, hurt = 0, php = 3, bob = 0, scent = 0, dead = 0, prevcell = 0;
@@ -1998,7 +2033,7 @@ static void eye(void) {                              // play as one of your ants
   fa = (u8)(a16 >> 8);
   m7_build(m7t[0], fa, (s16)px, (s16)py);
   eye_scene(fa, px, py, vi, 0, 0); eye_compass(fa, (u8)(px >> 8), (u8)(py >> 8)); emsgt = 0;
-  esay(vi < MAXA ? "YOU ARE AN ANT! WALK AROUND" : "NO WORKERS LEFT: JUST LOOK", 2); eye_panel(vi, php, 0, px, py, fa);
+  esay(vi < MAXA ? "FIND FOOD % - RETURN HOME $" : "NO WORKERS LEFT: JUST LOOK", 2); eye_panel(vi, php, 0, px, py, fa);
   while (joy()) vsync();
   vsync(); eye_arm(m7t[0]); oam_flush(); eye_tab = m7t[0]; eye_irq_on(1);
   BG2CNT = 0x8000 | (22 << 8) | (2 << 2) | 3 | 0x80;
@@ -2172,7 +2207,7 @@ static const char *const TBODY[TN] = {
   "WITH 8 ANTS THEY MARCH ON\n"
   "THE RED NEST\n"
   "ANTS FOLLOW *TRAILS*!",
-  "*SMILE* IS POPULARITY: FOOD\n"
+  "*MOOD* IS POPULARITY: FOOD\n"
   "AND NEW ANTS RAISE IT: DEAD\n"
   "ANTS AND HUNGER CUT IT\n"
   "\n"
@@ -3126,6 +3161,7 @@ static void gfx_init(void) {                          // palettes, tiles, maps, 
   BGPAL[67] = RGB(14,8,2);
   // tiles: 0 blank, 1 solid colour 1, 2 solid colour 3, 3 star, 4.. font, 44.. terrain + mana bar
   fill_tile(TILE32, 0); fill_tile(TILE32 + 8, 0); fill_tile(TILE32 + 16, 0x33333333u);   // tile 1 = "blank" (see-through now)
+  fill_tile(TILE32 + PANEL_TILE * 8, 0x11111111u);
   fill_tile(TILE32 + 24, 0);
   for (k = 0; k < 32 * 8; k++) TILE32[UIB * 8 + k] = UIT[k];                          // termite UI tiles
   for (i = 0; i < NGLYPH; i++) mk_glyph(TILE32 + (FT + i) * 8, FONT8[i]);
@@ -3261,7 +3297,7 @@ static void em_draw(u8 sel, u8 conf) {
   pm_rule(3);
   ps(2, 4, "SIZE", 9); pn(11, 4, mw, 3); ps(14, 4, "X", 10); pn(16, 4, mh, 3);
   ps(2, 5, "BERRIES", 9); if (n > 99u) ps(11, 5, "99+", 3); else pn(11, 5, (u8)n, 3);
-  if (n > FOOD_PATCH_LIMIT) ps(14, 5, "16 PATCHES LIVE", 10);
+  if (n > FOOD_PATCH_LIMIT) ps(14, 5, "16 REGROW SITES", 10);
   ps(2, 6, "PATH", 9); ps(11, 6, ok ? "ANTS CAN WALK" : "NONE: GAME CUTS ONE", ok ? 13 : 8);
   ps(11, 7, "NEST TO NEST", 10);
   pm_rule(9);
@@ -3301,14 +3337,21 @@ static u8 ed_menu(void) {                           // 0 keep editing, 1 save + 
   return r;
 }
 static u8 editor(void) {                            // returns 1 = play MY MAP now
+  const HandMap *hm = hmap(mapt);
   u16 k, p, prev = 0, last = 0; u8 dirs, rep = 0, fire, mx, my, i, res = 255, r;
   DISPCNT = 0x80;
   if (mapt == MMY && !has_my) {                     // a fresh map: grass, with the two nests
     mw = tw; mh = th;
     for (my = 0; my < H; my++) for (mx = 0; mx < W; mx++) { hgt[my][mx] = 2; food[my][mx] = 0; ph[my][mx] = 0; }
     nestx[0] = 4; nesty[0] = (u8)(H - 6); nestx[1] = (u8)(W - 5); nesty[1] = 5; npatch = 0;
-  } else {                                          // start from the map chosen on the title (or MY MAP itself)
-    newgame_gen_only = 1; gen_world(); newgame_gen_only = 0;
+  } else if (hm) {                                  // reopen the authored map, not a generated gameplay copy
+    mw = hm->w; mh = hm->h; hand_map(hm);
+    // Keep every painted berry and disconnected shore exactly as saved.
+    // Random scatter and nest-to-nest path repair belong to starting play.
+    for (my = 0; my < H; my++) for (mx = 0; mx < W; mx++) ph[my][mx] = 0;
+    pdirty = 1;
+  } else {                                          // start a new design from a procedural map
+    gen_world();
     for (my = 0; my < H; my++) for (mx = 0; mx < W; mx++) { food[my][mx] = 0; ph[my][mx] = 0; }
     for (i = 0; i < npatch; i++) if (pfx[i] < W && pfy[i] < H && hgt[pfy[i]][pfx[i]]) food[pfy[i]][pfx[i]] = 1;
   }

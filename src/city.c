@@ -1201,7 +1201,7 @@ static void city_main(u8 verse) {
       if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
       ps(3, y, it[i], i == sel ? 9 : 3);
       if (!verse && i == 0) { pn(17, y, scen_count(), 9); ps(20, y, "OF 10", 10); }
-      if (verse && i == 0) { pn(17, y, mis_count(), 9); ps(20, y, "OF 50", 10); } }
+      if (verse && i == 0) { pn(17, y, mis_count(), 9); ps(20, y, "OF", 10); pn(23, y, mis_total(), 10); } }
     if (!verse) ps(1, 16, verse_unlocked() ? "ANTVERSE IS OPEN!" : "WIN ALL 10 TO OPEN ANTVERSE", verse_unlocked() ? 13 : 10);
     ps(1, 19, "\1 OK   \2 BACK", 10);
     DISPCNT = 0x1B40; BLDY = 0;

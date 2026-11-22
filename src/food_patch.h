@@ -50,6 +50,13 @@ static uint8_t food_patch_pick(const char *cells, uint8_t width,
     }
   return n;
 }
+/* An authored 'f' is an actual starting berry, not just a random
+   scatter hint. The 16 selected centers still control future regrowth,
+   but even the 17th+ painted berry appears exactly where it was placed.
+   This is evaluated in the existing world-import tile loop only. */
+static uint8_t food_patch_authored_tile(char symbol, uint8_t height) {
+  return (uint8_t)(symbol == 'f' && height != 0u);
+}
 /* Choose usable starting forage on the ring two tiles from a nest.
    Procedural generation flattens this 5x5 area to traversable land.
    Unlike retrying random coordinates, an exhausted random budget cannot
