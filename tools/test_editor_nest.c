@@ -1,6 +1,6 @@
 /* Compile the actual GBA Map Maker resize helper on the host.
    Cover all 81 supported dimensions, adversarial cropped queens,
-   and 40,500 deterministic position combinations. */
+   and 33,696 deterministic position combinations. */
 #include <assert.h>
 #include <stdint.h>
 #include <stdio.h>
