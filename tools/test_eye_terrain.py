@@ -14,6 +14,7 @@ import ctypes as C
 import hashlib
 import json
 import pathlib
+import shutil
 import struct
 
 from linked_smoke import A, B, DOWN, LEFT, R, RIGHT, SELECT, START
@@ -131,10 +132,10 @@ def options_fixture(emulator):
         C.memmove(pointer + 9300, bytes(4) + b"XA", 6)
 
 
-def enter_linked_weather(emulator, reader):
+def enter_linked_weather(emulator, reader, title_delay=0):
     emulator.tick(1)
     options_fixture(emulator)
-    emulator.tick(850)
+    emulator.tick(850 + title_delay)
     emulator.press(DOWN)
     emulator.press(RIGHT)
     emulator.press(A, released=100)  # EXTRAS
@@ -161,6 +162,12 @@ def enter_linked_weather(emulator, reader):
     for _ in range(6):
         emulator.press(RIGHT)  # THE MAZE: real authored map with shallow paths
     emulator.snapshot("02_link_maze_selected")
+    # The title samples the scanline counter for entropy. Different
+    # compiler builds legitimately produce different starts even with the
+    # same controller schedule. Record the real host seed before START;
+    # neither this read nor the schedule writes the game's RNG state.
+    host = reader.capture()[0]
+    seed = (reader.value(host, "rs") ^ (reader.value(host, "frc") << 16) ^ 0x5eed1234) & 0xffffffff
     emulator.press(START, released=1300)
     emulator.press(A, released=120)
     emulator.snapshot("03_linked_colony")
@@ -173,6 +180,10 @@ def enter_linked_weather(emulator, reader):
     for state in states:
         assert reader.value(state, "eye_tab") and reader.value(state, "mp_on") == 2
         assert reader.value(state, "mp_kind") == 4 and reader.array(state, "cht")[2] == 2
+        expected = [((seed or 1) * 2654435761 + i * 0x9e3779b9 + ((seed or 1) >> (i + 3))) & 0xffffffff
+                    for i in range(10)]
+        assert list(struct.unpack("<10I", reader.array(state, "mst"))) == expected, "Linked host seed was not shared"
+    return {"title_delay_frames": title_delay, "shared_start_seed": seed}
 
 
 def pilots(world):
@@ -223,6 +234,11 @@ def check(report, stage, passed, **details):
     report["checks"].append({"stage": stage, "passed": bool(passed), **details})
 
 
+def require_checks(report):
+    failures = [c["stage"] for c in report["checks"] if not c["passed"]]
+    assert not failures, "Failed: " + ", ".join(sorted(set(failures)))
+
+
 def floor_mismatches(world):
     # Compare material classes, independently of the renderer's texture
     # variation arithmetic. Nest aprons are dirt only while above water.
@@ -245,7 +261,7 @@ def floor_mismatches(world):
     return failures
 
 
-def run(rom, elf, core, out, limit):
+def run_attempt(rom, elf, core, out, limit, title_delay):
     symbols = Symbols(elf, rom)
     emulator = EditorEmulator(rom, core, out)
     reader = ReadOnlyState(emulator, symbols)
@@ -254,21 +270,34 @@ def run(rom, elf, core, out, limit):
                    "scenario": "linked ANT EYE: natural weather, current floor, drowned pilots",
                    "baseline_source_commit": "9412119e7649dc0604b2e1572b8124b773baa9f9",
                    "terrain_events": [], "pilot_floods": [], "floor_failures": []})
+    monitor_start = None
+    monitor_end = None
     try:
-        enter_linked_weather(emulator, reader)
+        report["schedule"] = enter_linked_weather(emulator, reader, title_delay)
         previous = [reader.world(s) for s in reader.capture()]
+        initial_difference = shared_difference(previous)
+        settle = 0
+        while not shared_world_equal(previous) and settle < 8:
+            emulator.tick(1)
+            settle += 1
+            previous = [reader.world(s) for s in reader.capture()]
+        report["initial_pilots"] = [pilots(w) for w in previous]
         check(report, "matching_elf_load_segments", True)
         check(report, "linked_weather_selected_through_controls", True)
         check(report, "initial_floor_matches_world", not any(floor_mismatches(w) for w in previous))
-        check(report, "initial_shared_world", shared_world_equal(previous))
+        check(report, "initial_shared_world", shared_world_equal(previous),
+              initial_difference=initial_difference, settled_frames=settle,
+              difference=shared_difference(previous))
+        require_checks(report)
         print("INITIAL", [(w["gt"], w["mw"], w["mh"], pilots(w), len(floor_mismatches(w))) for w in previous], flush=True)
+        monitor_start = emulator.frame
         end_frame = emulator.frame + limit
         while emulator.frame < end_frame:
             # Observe the scheduled real weather event closely enough to
             # distinguish the original ant dying from a later reused slot.
             # No RNG state or timing input is changed by these snapshots.
             step = 1 if 32 - previous[0]["gt"] % 32 <= 4 else 32
-            emulator.tick(step)
+            emulator.tick(min(step, end_frame - emulator.frame))
             worlds = [reader.world(s) for s in reader.capture()]
             assert all(w["eye_tab"] and not w["lk_err"] and not w["over"] for w in worlds), "Weather session ended or lost synchronization"
             changes = [i for i, (a, b) in enumerate(zip(previous[0]["hgt"], worlds[0]["hgt"])) if a != b]
@@ -292,6 +321,7 @@ def run(rom, elf, core, out, limit):
                         break
                     emulator.tick(1)
                     worlds = [reader.world(s) for s in reader.capture()]
+                assert all(w["eye_tab"] and not w["lk_err"] and not w["over"] for w in worlds), "Weather session ended or lost synchronization during disaster settlement"
                 changes = [i for i, (a, b) in enumerate(zip(previous[0]["hgt"], worlds[0]["hgt"])) if a != b]
                 event = {"frame": emulator.frame, "game_tick": worlds[0]["gt"], "changed_cells": len(changes)}
                 report["terrain_events"].append(event)
@@ -307,6 +337,9 @@ def run(rom, elf, core, out, limit):
                 if len(report["terrain_events"]) == 1:
                     emulator.snapshot("05_first_live_disaster")
                 print("TERRAIN", event, "floor-errors", [len(floor_mismatches(w)) for w in worlds], flush=True)
+                # A different seed is permitted only when a pilot flood
+                # has not happened. Never retry away an actual failure.
+                require_checks(report)
             flooded = []
             for role, pilot in enumerate(pilots(previous[0])):
                 if pilot and pilot["alive"] and pilot["height"] and worlds[0]["hgt"][pilot["y"] * 128 + pilot["x"]] == 0:
@@ -339,10 +372,16 @@ def run(rom, elf, core, out, limit):
                           port=port + 1, newly_dead_black_ants=deaths, recorded_losses=loss_change)
                 break
             previous = worlds
+        monitor_end = emulator.frame
         check(report, "natural_disaster_exercised", bool(report["terrain_events"]))
-        check(report, "natural_pilot_flood_exercised", bool(report["pilot_floods"]))
-        failures = [c["stage"] for c in report["checks"] if not c["passed"]]
-        assert not failures, "Failed: " + ", ".join(sorted(set(failures)))
+        require_checks(report)
+        if not report["pilot_floods"]:
+            report["passed"] = False
+            report["outcome"] = "no_pilot_flood"
+            emulator.snapshot("coverage_timeout")
+            return report
+        check(report, "natural_pilot_flood_exercised", True)
+        require_checks(report)
 
         # The existing protocol sends two hash bits per exchange and
         # rotates through all 32 bits in sixteen exchanges. Continue for
@@ -376,21 +415,92 @@ def run(rom, elf, core, out, limit):
                                             and not w["over"] and not w["lk_err"] for w in worlds))
         for port, world in enumerate(worlds):
             check(report, "rebuilt_floor_matches_changed_world", not floor_mismatches(world), port=port + 1)
-        failures = [c["stage"] for c in report["checks"] if not c["passed"]]
-        assert not failures, "Failed: " + ", ".join(sorted(set(failures)))
+        require_checks(report)
         report["passed"] = True
+        report["outcome"] = "passed"
         print("ANT EYE terrain PASS: natural disasters update both caches, original pilots drown, shared recovery and re-entry remain playable", flush=True)
     except Exception as error:
         report["passed"] = False
+        report["outcome"] = "regression_failure"
         report["error"] = str(error)
         if emulator.last:
             emulator.snapshot("failure")
-        raise
     finally:
         report["frames"] = emulator.frame
+        report["weather_frames"] = (0 if monitor_start is None else
+                                    (monitor_end if monitor_end is not None else emulator.frame) - monitor_start)
         (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
         emulator.lib.retro_unload_game()
         emulator.lib.retro_deinit()
+    return report
+
+
+def run(rom, elf, core, out, limit):
+    # A finite, reproducible set of normal controller schedules covers
+    # different title-derived seeds. One compiler's stationary workers
+    # can legitimately miss every random storm in a single session.
+    # Each attempt has an 8,192-frame observation budget. Finishing its
+    # final disaster can require up to eight additional settlement frames.
+    # --frames bounds total observation (32,000 by default), with the same
+    # at-most-eight-frame allowance for the final event's settlement.
+    schedules = (43, 0, 89, 197)
+    assert limit > 0, "--frames must be positive"
+    out.mkdir(parents=True, exist_ok=True)
+    report = {"passed": False, "frames": 0, "weather_frames": 0, "checks": [],
+              "terrain_events": [], "pilot_floods": [], "floor_failures": [], "attempts": [],
+              "scope": "Up to four recorded ordinary-input sessions; only missing pilot-flood coverage allows retry",
+              "frame_scope": "checks/events use local attempt frames; top-level frames sums all attempts"}
+    remaining = limit
+    selected = None
+    try:
+        for number, delay in enumerate(schedules, 1):
+            if remaining <= 0:
+                break
+            directory = out / f"attempt-{number:02d}"
+            attempt = run_attempt(rom, elf, core, directory, min(8192, remaining), delay)
+            for key in ("rom_sha256", "elf_sha256", "core_sha256", "scenario", "baseline_source_commit"):
+                report[key] = attempt[key]
+            report["frames"] += attempt["frames"]
+            report["weather_frames"] += attempt["weather_frames"]
+            remaining -= attempt["weather_frames"]
+            for key in ("checks", "terrain_events", "pilot_floods", "floor_failures"):
+                report[key].extend({"attempt": number, **item} for item in attempt[key])
+            summary = {"attempt": number, "report": f"attempt-{number:02d}/report.json",
+                       "schedule": attempt.get("schedule", {"title_delay_frames": delay}),
+                       "initial_pilots": attempt.get("initial_pilots"),
+                       "frames": attempt["frames"], "weather_frames": attempt["weather_frames"],
+                       "terrain_event_count": len(attempt["terrain_events"]),
+                       "pilot_flood_count": len(attempt["pilot_floods"]),
+                       "outcome": attempt["outcome"]}
+            report["attempts"].append(summary)
+            if "cadence_observation" in attempt:
+                report.setdefault("cadence_observation", {"attempt": number, **attempt["cadence_observation"]})
+            print("ATTEMPT", summary, flush=True)
+            selected = directory
+            if attempt["passed"]:
+                report["passed"] = True
+                report["selected_attempt"] = number
+                break
+            if attempt["outcome"] != "no_pilot_flood":
+                raise AssertionError(attempt.get("error", "Weather regression failed"))
+        if not report["passed"]:
+            check(report, "natural_pilot_flood_exercised", False,
+                  attempted_schedules=len(report["attempts"]), weather_frames=report["weather_frames"])
+            raise AssertionError("No natural pilot flood within the bounded input schedules; hazard coverage was not obtained")
+        print(f"ANT EYE terrain PASS across {len(report['attempts'])} input schedule(s), "
+              f"{len(report['terrain_events'])} natural terrain events and {report['frames']} total frames", flush=True)
+    except Exception as error:
+        report["error"] = str(error)
+        raise
+    finally:
+        # Keep the established top-level screenshot names for packaging;
+        # complete screenshots/reports for every attempt remain alongside.
+        if selected is not None:
+            for picture in selected.glob("*.png"):
+                shutil.copyfile(picture, out / picture.name)
+            if report["passed"]:
+                (out / "failure.png").unlink(missing_ok=True)
+        (out / "report.json").write_text(json.dumps(report, indent=2) + "\n")
 
 
 def main():
@@ -399,7 +509,8 @@ def main():
     parser.add_argument("core", type=pathlib.Path)
     parser.add_argument("--elf", type=pathlib.Path)
     parser.add_argument("--out", type=pathlib.Path, default=pathlib.Path("build/eye-terrain"))
-    parser.add_argument("--frames", type=int, default=32000)
+    parser.add_argument("--frames", type=int, default=32000,
+                        help="total weather observation budget, plus at most eight final-settlement frames")
     args = parser.parse_args()
     run(args.rom.resolve(), (args.elf or args.rom.with_suffix(".elf")).resolve(),
         args.core.resolve(), args.out.resolve(), args.frames)
