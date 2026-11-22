@@ -2,7 +2,7 @@
 PREFIX ?= arm-none-eabi-
 CFLAGS = -mcpu=arm7tdmi -marm -mthumb-interwork -O2 -Wall -ffreestanding -fno-builtin -nostdlib -fno-tree-loop-distribute-patterns -Isrc
 all: build/empire-ants.gba
-build/empire-ants.gba: src/mp.c src/chase.c src/chase_logic.h src/city.c src/extras.c src/empire.c src/battle.c src/main.c src/logo.c src/logo.h src/mission_catalog.h src/ambient_water.h src/world_variation.h src/eye_floor_detail.h src/eye_scene_motion.h src/terrain_food.h src/food_patch.h src/editor_nest.h src/practice_queen.h src/art.h src/art2.h src/font8.h src/maps.h src/crt0.s gba.ld
+build/empire-ants.gba: src/mp.c src/chase.c src/chase_logic.h src/city.c src/extras.c src/empire.c src/battle.c src/main.c src/logo.c src/logo.h src/mission_catalog.h src/ambient_water.h src/world_variation.h src/eye_floor_detail.h src/eye_scene_motion.h src/terrain_food.h src/food_patch.h src/editor_nest.h src/practice_queen.h src/newgame_presets.h src/art.h src/art2.h src/font8.h src/maps.h src/crt0.s gba.ld
 	mkdir -p build
 	$(PREFIX)gcc $(CFLAGS) -T gba.ld -Wl,--gc-sections src/crt0.s src/main.c src/logo.c -lgcc -o build/empire-ants.elf
 	$(PREFIX)objcopy -O binary build/empire-ants.elf $@
@@ -25,6 +25,9 @@ test:
 	python3 tools/test_editor_menu_cache.py
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_practice_queen.c -o build/test_practice_queen
 	./build/test_practice_queen
+	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_newgame_presets.c -o build/test_newgame_presets
+	./build/test_newgame_presets
+	python3 tools/test_newgame_preset_wiring.py
 	python3 tools/test_practice_queen_integration.py
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_mission_catalog.c -o build/test_mission_catalog
 	./build/test_mission_catalog
