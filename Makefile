@@ -22,6 +22,7 @@ test:
 	./build/test_food_patch
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_editor_nest.c -o build/test_editor_nest
 	./build/test_editor_nest
+	python3 tools/test_editor_menu_cache.py
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_practice_queen.c -o build/test_practice_queen
 	./build/test_practice_queen
 	python3 tools/test_practice_queen_integration.py
