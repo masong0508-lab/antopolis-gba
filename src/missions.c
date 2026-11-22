@@ -1,5 +1,5 @@
 // ============================================================================================================================
-//  ANTVERSE MISSIONS (included from city.c): 52 missions picked from the ANTVERSE menu. Some use one mode only (classic,
+//  ANTVERSE MISSIONS (included from city.c): 56 missions picked from the ANTVERSE menu. Some use one mode only (classic,
 //  ANT EYE, EMPIRE, ANT CITY, EL PRESIDANTE), the rest mix everything. Each has a goal, a map and (mostly) a time limit.
 //  Finished missions are marked on the cartridge (SRAM 9350: 'M' 'I' + 7 bytes of bits).
 // ============================================================================================================================
