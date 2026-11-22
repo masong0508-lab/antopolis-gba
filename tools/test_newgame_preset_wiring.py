@@ -17,5 +17,5 @@ assert '(p & J_SEL)' in settings, "Existing randomized seed should remain availa
 assert 'if (tsel == 0) diff =' in settings, "Manual difficulty adjustment must remain"
 assert 'if (p & J_DOWN)' in settings and 'if (p & J_UP)' in settings
 assert '"GUIDED LESSONS"' in text and '"HARD SURVIVAL"' in text
-assert 'L GUIDE R WILD' in draw and 'SEL: NEW MAP SEED' in draw
+assert 'L GUIDE R WILD' in draw and 'SEL: RESEED' in text
 print("PASS: New Game has L guided/R wild, visible instructions and manual controls")
