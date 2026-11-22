@@ -763,6 +763,7 @@ static u8 sstate(u8 h, s8 x, s8 y) {              // how one side of a cell at l
   if (n >= h) return 0;
   return (h - n >= 2) ? 2 : 1;
 }
+static void floor_changed(u8 x, u8 y);           // update a changed cell only when the first-person floor is active
 static void draw_cell(u8 x, u8 y) {
   u8 h = hgt[y][x]; u16 c;
   if (!inwin(x, y)) return;
@@ -775,6 +776,7 @@ static void draw_cell(u8 x, u8 y) {
 }
 static void draw_around(u8 x, u8 y) {             // a height changed: the cell and its 4 neighbours change their edges
   u8 k; s8 a, b;
+  floor_changed(x, y);
   draw_cell(x, y);
   for (k = 0; k < 4; k++) { a = (s8)x + DX[k]; b = (s8)y + DY[k]; if (a >= 0 && b >= 0 && a < W && b < H) draw_cell((u8)a, (u8)b); }
   pdirty = 1;
@@ -865,6 +867,11 @@ static u8 mp_vs(void) { return mp_on && mp_kind == 0; }
 static u8 eye_ctl = 255, eye_ctl2 = 255;          // two human pilots in linked co-op; AI leaves both ants alone
 static void apr(s8 d) { s16 v = (s16)appr + d; appr = v < 0 ? 0 : v > 99 ? 99 : (u8)v; }
 static void die(Ant *a, u8 drown) { a->alive = 0; if (a->team) st_kill++; else st_lost++; if (a->team == 0) apr(-2); if (drown && a->team == 1 && ++rdrown >= 20) ach_get(3); fx_add(a->x, a->y, drown ? FX_SPLASH : FX_PUFF); }
+static u8 ant_drown(u8 i) {                      // pilots obey the same water rule as AI; count each loss only once
+  if (i >= MAXA || !ant[i].alive || hgt[ant[i].y][ant[i].x]) return 0;
+  die(&ant[i], 1);
+  return 1;
+}
 static void set_rules(void) {
   fcost = 8; hc0 = 3; hc1 = RCOST[diff]; tm = TRK[diff]; dm = 31; qbase = (u8)(3 + O(O_HEARTS)); qmax0 = qbase;
   if (O(O_REFILL) == 0) tm = (u8)((tm << 1) | 1); else if (O(O_REFILL) == 2) tm >>= 1;
@@ -890,11 +897,13 @@ static void pick(u8 i) {
   sfx_mana(); say("PERK TAKEN!");
 }
 static void hit(u8 px, u8 py, u8 q) {            // 3x3 patch: every tile sinks one level; q = earthquake (each tile up or down)
-  s8 x, y;
+  s8 x, y; u8 before;
   for (y = (s8)py - 1; y <= (s8)py + 1; y++) for (x = (s8)px - 1; x <= (s8)px + 1; x++)
     if (x >= 0 && y >= 0 && x < W && y < H && !is_nest(x, y)) {
+      before = hgt[y][x];
       if (q && (rnd() & 1)) { if (hgt[y][x] < 3) hgt[y][x]++; } else if (hgt[y][x]) hgt[y][x]--;
       food[y][x] = (u8)TERRAIN_FOOD_AFTER(hgt[y][x], food[y][x]);
+      if (before != hgt[y][x]) floor_changed((u8)x, (u8)y);
     }
   for (y = (s8)py - 2; y <= (s8)py + 2; y++) for (x = (s8)px - 2; x <= (s8)px + 2; x++)
     if (x >= 0 && y >= 0 && x < W && y < H) draw_cell(x, y);
@@ -976,8 +985,8 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
   for (i = 0; i < MAXA; i++) if (ant[i].age < 8) ant[i].age++;
   for (i = slice; i < MAXA; i += 8) {
     if (!ant[i].alive) continue;
+    if (ant_drown(i)) continue;
     if (i == eye_ctl || i == eye_ctl2) continue;
-    if (hgt[ant[i].y][ant[i].x] == 0) { die(&ant[i], 1); continue; }
     step_ant(&ant[i]);
   }
   for (i = slice; i < MAXA; i += 8)
@@ -1317,6 +1326,7 @@ static void flood(void) {
       hgt[y][x]--;
       if (TERRAIN_FOOD_DROWNED(hgt[y][x], food[y][x])) drowned = 1;
       food[y][x] = (u8)TERRAIN_FOOD_AFTER(hgt[y][x], food[y][x]);
+      floor_changed((u8)x, (u8)y);
     }
   for (y = (s8)cy - r - 1; y <= (s8)cy + r + 1; y++) for (x = (s8)cx - r - 1; x <= (s8)cx + r + 1; x++)
     if (x >= 0 && y >= 0 && x < W && y < H) draw_cell(x, y); }
@@ -1709,6 +1719,7 @@ static void eye_arm(const M7 *t) {                    // call right after vsync(
 // floor: 8bpp 8x8 tiles 177..190 (free space after the decor tiles of charblock 2, before screenblock 22), colours 96..119.
 // 0-1 water, 2-4 sand, 5-8 grass (8 has flowers), 9-11 hill, 12-13 nest dirt (13 = the hole).
 #define FT8 177
+#define EYE_FLOOR_MAP ((volatile u16 *)0x0600B000)
 static void floor_tiles(void) {
   volatile u16 *d = (volatile u16 *)(TILE32 + 0x2000) + FT8 * 32;
   u8 t, x, y;
@@ -1728,20 +1739,31 @@ static void floor_pal(void) {
     RGB(11,10,9), RGB(8,7,6)};                                                                                    // outside
   u8 i; for (i = 0; i < 24; i++) BGPAL[96 + i] = FP[i];
 }
+static u8 floor_cell(u8 wx, u8 wy) {
+  u8 h, v = (u8)((wx * 7 + wy * 13 + ((wx * wy) >> 2)) & 3);
+  if (wx >= W || wy >= H) return (u8)(FT8 + 5 + (v % 3));       // past the edge: more meadow (you cannot walk there)
+  h = hgt[wy][wx];
+  // Only the queen's own cell is protected. Flooded apron cells must
+  // show water instead of a dry dirt ring that the ant cannot walk on.
+  if (near_nest(wx, wy) && (h || is_nest(wx, wy))) return (u8)(is_nest(wx, wy) ? FT8 + 13 : FT8 + 12);
+  return (u8)(h == 0 ? FT8 + (v & 1) : h == 1 ? FT8 + 2 + (v % 3) : h == 2 ? FT8 + 5 + (v % 3) + ((wx * 5 + wy * 3) % 11 == 0 ? 3 - (v % 3) : 0) : FT8 + 9 + (v % 3));
+}
 static void floor_map(volatile u16 *m) {              // 64x64 one-byte entries, read as halfwords
-  u8 x, y, k, h, wx, wy, c, v; u16 e;
+  u8 x, y;
   for (y = 0; y < 64; y++) for (x = 0; x < 64; x += 2) {
-    e = 0;
-    for (k = 0; k < 2; k++) {
-      wx = (u8)(x + k + fox); wy = (u8)(y + foy);
-      v = (u8)((wx * 7 + wy * 13 + ((wx * wy) >> 2)) & 3);
-      if (wx >= W || wy >= H) c = (u8)(FT8 + 5 + (v % 3));        // past the edge: more meadow (you cannot walk there)
-      else if ((dist(wx, nestx[0]) <= 1 && dist(wy, nesty[0]) <= 1) || (dist(wx, nestx[1]) <= 1 && dist(wy, nesty[1]) <= 1)) c = (u8)(is_nest(wx, wy) ? FT8 + 13 : FT8 + 12);
-      else { h = hgt[wy][wx]; c = (u8)(h == 0 ? FT8 + (v & 1) : h == 1 ? FT8 + 2 + (v % 3) : h == 2 ? FT8 + 5 + (v % 3) + ((wx * 5 + wy * 3) % 11 == 0 ? 3 - (v % 3) : 0) : FT8 + 9 + (v % 3)); }
-      e |= (u16)c << (k * 8);
-    }
-    m[y * 32 + x / 2] = e;
+    u8 wx = (u8)(x + fox), wy = (u8)(y + foy);
+    m[y * 32 + x / 2] = (u16)(floor_cell(wx, wy) | ((u16)floor_cell((u8)(wx + 1), wy) << 8));
   }
+}
+static void floor_changed(u8 wx, u8 wy) {
+  s16 x = (s16)wx - fox, y = (s16)wy - foy; u16 offset, bits, shift;
+  // Cache coordinates are local presentation state: each linked camera
+  // patches its own visible cell without changing simulation or RNG.
+  if (!eye_tab || x < 0 || x >= 64 || y < 0 || y >= 64) return;
+  offset = (u16)(y * 32 + x / 2); shift = (u16)((x & 1) * 8);
+  bits = (u16)floor_cell(wx, wy) << shift;
+  // GBA VRAM requires a halfword store. Keep the neighboring cell's byte.
+  EYE_FLOOR_MAP[offset] = (u16)((EYE_FLOOR_MAP[offset] & (shift ? 0x00FF : 0xFF00)) | bits);
 }
 static void sky_init(void) {                           // DAY / SUNSET / NIGHT
   static const u8 TOP[3][3] = {{7, 13, 27}, {10, 6, 16}, {1, 1, 5}}, HOR[3][3] = {{23, 25, 31}, {31, 18, 10}, {5, 7, 14}};
@@ -1894,7 +1916,7 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
   { int open = 30 - jaw * 4;
     oam[0] = (u16)((96 + bob) & 0xFF); oam[1] = (u16)(((88 - open) & 0x1FF) | (2 << 14)); oam[2] = (u16)((EY2T + 120) | (0 << 10)); 
     oam[4] = (u16)((96 + bob) & 0xFF); oam[5] = (u16)(((120 + open) & 0x1FF) | 0x1000 | (2 << 14)); oam[6] = (u16)((EY2T + 120) | (0 << 10));
-    if (vi < MAXA && ant[vi].carry) { oam[8] = (u16)((86 + bob) & 0xFF); oam[9] = (u16)((104 & 0x1FF) | (2 << 14)); oam[10] = (u16)((BIGT + 48) | (6 << 12)); }
+    if (vi < MAXA && ant[vi].alive && ant[vi].carry) { oam[8] = (u16)((86 + bob) & 0xFF); oam[9] = (u16)((104 & 0x1FF) | (2 << 14)); oam[10] = (u16)((BIGT + 48) | (6 << 12)); }
     eslot = 3; }
   for (j = 0; j < eon; j++) {
     EObj *o = &eo[eord[j]]; s32 d = o->d, sc = 251658 / d, xx = 120 + 192 * (s32)o->sd / d, yg = 64 + 8064 / d; u8 m; u16 tile; u8 pal = 6;
@@ -2065,6 +2087,7 @@ static void eye(void) {                              // play as one of your ants
       if (vi < MAXA) { px = (s32)ant[vi].x * 256 + 128; py = (s32)ant[vi].y * 256 + 128; eye_ctl = vi; php = 3; } else { eye_ctl = 255; px = (s32)nestx[0] * 256 + 128; py = (s32)nesty[0] * 256 + 128; }
       sfx_food(); esay("ANOTHER ANT", 2);
     }
+    if (!dead && ant_drown(vi)) { esay("SPLASH! YOU DROWNED", 8); dead = 60; eye_ctl = 255; }
     if (vi < MAXA && !vok(vi) && !dead) { esay("THIS ANT IS GONE...", 8); dead = 60; eye_ctl = 255; }
     // turn (gets faster while held) and walk
     if (k & (J_LEFT | J_RIGHT)) { if (tv < 520) tv = (s16)(tv + 40); } else tv = 0;
@@ -2082,7 +2105,6 @@ static void eye(void) {                              // play as one of your ants
       if (mvx || mvy) { moving = eye_walk(&px, &py, mvx, mvy); if (!moving && !(frc & 15)) sfx_deny(); }
       cxv = (u8)(px >> 8); cyv = (u8)(py >> 8);
       { Ant *a = &ant[vi]; if (a->x != cxv || a->y != cyv) { a->ox = a->x; a->oy = a->y; a->x = cxv; a->y = cyv; if (cxv != a->ox) a->fl = cxv < a->ox; } a->age = 8; }
-      if (!hgt[cyv][cxv]) { die(&ant[vi], 1); esay("SPLASH! YOU DROWNED", 8); dead = 60; eye_ctl = 255; }
       // food: walk over it to pick it up, bring it home
       if (!ant[vi].carry && food[cyv][cxv] && hgt[cyv][cxv]) { food[cyv][cxv] = 0; ant[vi].carry = 1; draw_dec(cxv, cyv); sfx_mana(); esay("GOT FOOD! TAKE IT HOME", 13); }
       if (ant[vi].carry && dist(cxv, nestx[0]) <= 1 && dist(cyv, nesty[0]) <= 1) {

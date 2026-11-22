@@ -15,7 +15,11 @@ jobs:
       - run: make PREFIX=/opt/devkitpro/devkitARM/bin/arm-none-eabi-
         env: { PATH: "/opt/devkitpro/tools/bin:/usr/local/bin:/usr/bin:/bin" }
       - uses: actions/upload-artifact@v4
-        with: { name: empire-ants-gba, path: build/empire-ants.gba }
+        with:
+          name: empire-ants-gba
+          path: |
+            build/empire-ants.gba
+            build/empire-ants.elf
 
   chase-logic:
     name: DUAL VIEW host logic regression
@@ -56,6 +60,7 @@ jobs:
           # replay of a failed cable test without recompiling either one.
           cp "$CORE" build/link-smoke/linked-core.so
           cp build/empire-ants.gba build/link-smoke/empire-ants.gba
+          cp build/empire-ants.elf build/link-smoke/empire-ants.elf
           python3 -u tools/linked_smoke.py build/empire-ants.gba "$CORE" --out build/link-smoke/classic --scenario co-op 2>build/link-smoke/classic-serial.log
           python3 -u tools/linked_smoke.py build/empire-ants.gba "$CORE" --out build/link-smoke/chase --scenario chase 2>build/link-smoke/chase-serial.log
           # Verify REAL 240x160 first-person pictures from both link roles.
@@ -64,7 +69,7 @@ jobs:
             build/link-smoke/chase/06_cat_map_vs_mouse_eye.png \
             build/link-smoke/chase/11_roles_swapped.png \
             build/link-smoke/chase/eye_visual_audit.json
-      - name: Verify authored saves, campaign access, live HUD and first-person objectives
+      - name: Verify maps, campaign and first-person gameplay
         run: |
           CORE=build/link-smoke/linked-core.so
           python3 -u tools/test_editor_roundtrip.py build/empire-ants.gba "$CORE" --out build/link-smoke/editor 2>build/link-smoke/editor-serial.log
@@ -72,6 +77,7 @@ jobs:
           python3 -u tools/test_campaign_menu.py build/empire-ants.gba "$CORE" --out build/link-smoke/campaign 2>build/link-smoke/campaign-serial.log
           python3 -u tools/test_colony_hud.py build/empire-ants.gba "$CORE" --out build/link-smoke/colony-hud 2>build/link-smoke/colony-hud-serial.log
           python3 -u tools/test_eye_missions.py build/empire-ants.gba "$CORE" --out build/link-smoke/eye-missions 2>build/link-smoke/eye-missions-serial.log
+          python3 -u tools/test_eye_terrain.py build/empire-ants.gba "$CORE" --elf build/empire-ants.elf --out build/link-smoke/eye-terrain 2>build/link-smoke/eye-terrain-serial.log
       - uses: actions/upload-artifact@v4
         if: always()
         with:
