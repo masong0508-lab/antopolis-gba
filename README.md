@@ -1,3 +1,26 @@
+## Faster Map Maker menus on large authored maps
+
+Previously **every movement of the selection cursor in Map Maker's
+pause menu** rescanned all food in a 32×32 to 96×96 map and performed a
+complete nest-to-nest breadth-first path search. A 96×96 map has 9,216
+cells, so merely navigating to WIDTH or SAVE could repeatedly do work
+whose results had not changed.
+
+The editor now caches just **the berry count and reachability result**.
+On opening the menu after painting/moving nests, it recomputes both
+once. Moving the menu highlight or confirming a quit no longer scans
+the world. Changing WIDTH/HEIGHT or using CLEAR TO GRASS invalidates
+the summary, which is recomputed before the next screen draw. Every
+legal tile, food marker and queen placement is still taken from the
+current map, and the existing editor-save/emulator tests remain gates.
+
+This adds only a 16-bit count and two single-byte cache flags (four
+bytes total), not another world map, heap buffer, ray cast or simulation
+cost. The save format and Map Maker's displayed messages are unchanged.
+The CI integration check ensures both full-map operations remain under
+the dirty guard, and the original 96×96-to-32×32 queen-resize test
+continues to exercise cache invalidation through the real ROM.
+
 ## Tutorial/sandbox queens: no false knockouts
 
 The overhead simulation and ANT EYE previously applied the last point

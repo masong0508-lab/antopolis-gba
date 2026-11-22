@@ -3359,6 +3359,11 @@ static void ed_store(void) {                        // the world -> MY MAP lette
   }
   myhm.w = mw; myhm.h = mh; my_save(); ach_get(6); if (mw == 96 && mh == 96) ach_get(54);
 }
+// Cache only the Map Maker menu's expensive summary. All edits occur
+// outside the menu except resize/clear, which invalidate it explicitly.
+// This adds four small bytes, not a map buffer or per-frame computation.
+static u8 em_dirty = 1, em_ok;
+static u16 em_berries;
 static void ed_resize(u8 nw, u8 nh) {
   u8 x, y, i;
   for (y = 0; y < nh; y++) for (x = 0; x < nw; x++) if (x >= mw || y >= mh) { hgt[y][x] = 2; food[y][x] = 0; ph[y][x] = 0; }
@@ -3374,21 +3379,27 @@ static void ed_resize(u8 nw, u8 nh) {
     ph[nesty[i]][nestx[i]] = 0;
   }
   if (cx >= W) cx = (u8)(W - 1); if (cy >= H) cy = (u8)(H - 1);
+  em_dirty = 1; // actual terrain and nest changes require a new summary
 }
 #define EM_N 7
 static const char *const EITEM[EM_N] = {"KEEP EDITING", "SAVE AND PLAY", "SAVE AND QUIT", "WIDTH", "HEIGHT", "CLEAR TO GRASS", "QUIT WITHOUT SAVING"};
 static void em_draw(u8 sel, u8 conf) {
-  u8 i, y, x, ok;
-  u16 n = 0;
-  for (y = 0; y < H; y++) for (x = 0; x < W; x++) if (food[y][x] && hgt[y][x]) ++n;
-  bfs(0); ok = dnp[0][nesty[1]][nestx[1]] != NOPATH;
+  u8 i, y, x;
+  if (em_dirty) {
+    em_berries = 0;
+    for (y = 0; y < H; y++) for (x = 0; x < W; x++)
+      if (food[y][x] && hgt[y][x]) ++em_berries;
+    bfs(0);
+    em_ok = dnp[0][nesty[1]][nestx[1]] != NOPATH;
+    em_dirty = 0;
+  }
   ov_fill(1, 3, 0, 19); ui_full();
   big(1, "MAP EDITOR");
   pm_rule(3);
   ps(2, 4, "SIZE", 9); pn(11, 4, mw, 3); ps(14, 4, "X", 10); pn(16, 4, mh, 3);
-  ps(2, 5, "BERRIES", 9); if (n > 99u) ps(11, 5, "99+", 3); else pn(11, 5, (u8)n, 3);
-  if (n > FOOD_PATCH_LIMIT) ps(14, 5, "16 REGROW SITES", 10);
-  ps(2, 6, "PATH", 9); ps(11, 6, ok ? "ANTS CAN WALK" : "NONE: GAME CUTS ONE", ok ? 13 : 8);
+  ps(2, 5, "BERRIES", 9); if (em_berries > 99u) ps(11, 5, "99+", 3); else pn(11, 5, (u8)em_berries, 3);
+  if (em_berries > FOOD_PATCH_LIMIT) ps(14, 5, "16 REGROW SITES", 10);
+  ps(2, 6, "PATH", 9); ps(11, 6, em_ok ? "ANTS CAN WALK" : "NONE: GAME CUTS ONE", em_ok ? 13 : 8);
   ps(11, 7, "NEST TO NEST", 10);
   pm_rule(9);
   for (i = 0; i < EM_N; i++) {
@@ -3404,6 +3415,7 @@ static u8 ed_menu(void) {                           // 0 keep editing, 1 save + 
   u8 sel = 0, conf = 0, r = 255; u16 k, p, prev;
   hide_all(); vsync(); oam_flush();
   while (joy()) vsync();
+  em_dirty = 1; // opening after any painting/nest movement must recount
   em_draw(sel, conf); prev = 0;
   while (r == 255) {
     vsync(); k = joy(); p = k & ~prev; prev = k;
@@ -3418,7 +3430,7 @@ static u8 ed_menu(void) {                           // 0 keep editing, 1 save + 
     }
     if (p & J_A) {
       if (sel == 0) r = 0; else if (sel == 1) r = 1; else if (sel == 2) r = 2;
-      else if (sel == 5) { u8 x, y; for (y = 0; y < H; y++) for (x = 0; x < W; x++) { hgt[y][x] = 2; food[y][x] = 0; } sfx_flood(); }
+      else if (sel == 5) { u8 x, y; for (y = 0; y < H; y++) for (x = 0; x < W; x++) { hgt[y][x] = 2; food[y][x] = 0; } em_dirty = 1; sfx_flood(); }
       else if (sel == 6) { conf = 1; sfx_deny(); }
     }
     em_draw(sel, conf);
