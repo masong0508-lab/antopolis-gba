@@ -1,3 +1,29 @@
+## ANT EYE terrain and worker safety
+
+Floods and earthquakes now update the first-person floor where terrain
+changes, without waiting for the player to move far enough to rebuild
+the camera's map. The update changes only the affected packed tile byte
+and preserves its neighbor. It reuses the existing 64x64 floor cache;
+there is no additional world array or full-map rebuild on ordinary frames.
+Flooded ground beside a nest also renders as water, while the nest itself
+and its dry surrounding dirt retain their appearance.
+
+Solo and linked pilots use the same drowning check as the colony
+simulation. A submerged ant cannot walk away, collect or deliver food,
+lay scent, or bite after its death. Linked worker selection skips flooded
+ants and uses the existing replacement-worker or spectator behavior.
+Death statistics are counted once, and both linked consoles process the
+same world events without new random draws or protocol messages.
+
+The native regression checks all 81 supported world sizes and packed
+cache boundaries, compares incremental updates with complete rebuilds,
+and verifies unchanged dry terrain art. The real-ROM weather regression
+selects THE MAZE and WEATHER CHAOS through ordinary controls, then reads
+emulator snapshots to compare each console's terrain and floor cache and
+check the flooded pilot's death and replacement. It never loads a
+snapshot or patches live game memory. The matching ELF is checked against
+the cartridge bytes before its symbols are used; CI retains both files.
+
 ## ANT EYE objectives and match endings
 
 Classic and ANT EYE now share the same outcome checks. Finishing a

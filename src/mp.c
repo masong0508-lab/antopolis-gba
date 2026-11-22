@@ -66,7 +66,7 @@ static void vs_jump(u8 p) {                         // SELECT: home, your front 
 // Enter from CO-OP CLASSIC with SELECT+START on either linked GBA.
 static u8 mp_pilot_near(u8 x, u8 y, u8 exclude) {
   u8 i, best = MAXA; u16 bd = 0xFFFF, d;
-  for (i = 0; i < MAXA; i++) if (vok(i) && i != exclude) {
+  for (i = 0; i < MAXA; i++) if (vok(i) && i != exclude && hgt[ant[i].y][ant[i].x]) {
     d = (u16)dist(ant[i].x, x) + dist(ant[i].y, y);
     if (d < bd) { bd = d; best = i; }
   }
@@ -76,7 +76,7 @@ static u8 mp_pilot_next(u8 old, u8 exclude) {
   u8 i, idx, base = (u8)(old == MAXA ? MAXA - 1 : old);
   for (i = 0; i < MAXA; i++) {
     idx = (u8)((base + i + 1) % MAXA);
-    if (vok(idx) && idx != exclude) return idx;
+    if (vok(idx) && idx != exclude && hgt[ant[idx].y][ant[idx].x]) return idx;
   }
   return MAXA;
 }
@@ -179,6 +179,14 @@ static void mp_eye(void) {
           py[i] = (s32)ant[n].y * 256 + 128;
           hp[i] = 3;
         } else continue; // spectator when no unclaimed worker survives
+      }
+      // Resolve flooded ground before movement, pickup, delivery or biting.
+      // Both peers do this in P1/P2 order; only the local message differs.
+      if (ant_drown(vi[i])) {
+        vi[i] = MAXA; hp[i] = held_scent[i] = 0;
+        if (i == 0) eye_ctl = MAXA; else eye_ctl2 = MAXA;
+        if (i == local) esay("SPLASH! FINDING ANOTHER ANT", 8);
+        continue;
       }
       if (k & J_RIGHT) angle[i] += 410;
       if (k & J_LEFT) angle[i] -= 410;
