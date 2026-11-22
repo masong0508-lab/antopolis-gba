@@ -10,7 +10,8 @@
 #include "eye_floor_detail.h"
 #include "eye_scene_motion.h"
 #include "terrain_food.h"
-#include "food_patch.h"  // evenly sample authored Map Maker berries across large maps  // common flooded-berry rule, no extra world-state bytes
+#include "food_patch.h"  // evenly sample authored Map Maker berries across large maps
+#include "editor_nest.h" // keep both queen starts distinct after Map Maker resizes
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 #include "font8.h"
@@ -3351,7 +3352,16 @@ static void ed_resize(u8 nw, u8 nh) {
   u8 x, y, i;
   for (y = 0; y < nh; y++) for (x = 0; x < nw; x++) if (x >= mw || y >= mh) { hgt[y][x] = 2; food[y][x] = 0; ph[y][x] = 0; }
   mw = nw; mh = nh;
-  for (i = 0; i < 2; i++) { if (nestx[i] >= W) nestx[i] = (u8)(W - 5); if (nesty[i] >= H) nesty[i] = (u8)(H - 5); if (!hgt[nesty[i]][nestx[i]]) hgt[nesty[i]][nestx[i]] = 2; }
+  // If BOTH queens were in the cropped-off region, clamping them to
+  // W-5/H-5 could overlap their nests and make PATH falsely say walkable.
+  // Keep valid placements untouched; relocate only the second overlap.
+  editor_nests_fit(W, H, nestx, nesty);
+  for (i = 0; i < 2; i++) {
+    if (!hgt[nesty[i]][nestx[i]]) hgt[nesty[i]][nestx[i]] = 2;
+    // New queen sites must never retain a hidden berry/scent underneath.
+    food[nesty[i]][nestx[i]] = 0;
+    ph[nesty[i]][nestx[i]] = 0;
+  }
   if (cx >= W) cx = (u8)(W - 1); if (cy >= H) cy = (u8)(H - 1);
 }
 #define EM_N 7
