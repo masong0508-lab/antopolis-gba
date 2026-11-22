@@ -74,6 +74,7 @@ jobs:
           CORE=build/link-smoke/linked-core.so
           python3 -u tools/test_editor_roundtrip.py build/empire-ants.gba "$CORE" --out build/link-smoke/editor 2>build/link-smoke/editor-serial.log
           python3 -u tools/test_editor_roundtrip.py build/empire-ants.gba "$CORE" --tall --out build/link-smoke/editor-tall 2>build/link-smoke/editor-tall-serial.log
+          python3 -u tools/test_editor_nest_resize.py build/empire-ants.gba "$CORE" --out build/link-smoke/editor-nests 2>build/link-smoke/editor-nests-serial.log
           python3 -u tools/test_campaign_menu.py build/empire-ants.gba "$CORE" --out build/link-smoke/campaign 2>build/link-smoke/campaign-serial.log
           python3 -u tools/test_colony_hud.py build/empire-ants.gba "$CORE" --out build/link-smoke/colony-hud 2>build/link-smoke/colony-hud-serial.log
           python3 -u tools/test_eye_missions.py build/empire-ants.gba "$CORE" --out build/link-smoke/eye-missions 2>build/link-smoke/eye-missions-serial.log
