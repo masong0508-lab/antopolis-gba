@@ -1,3 +1,27 @@
+## Map Maker queen protection after changing world size
+
+Shrinking a custom map previously clipped each queen's x/y coordinates
+independently to the same last usable location. If both original nests
+fell outside the smaller width and height, the editor could place
+**both colonies on one square**, report an invalid path as connected,
+and silently discard one queen when saving MY MAP (the red marker
+overwrote the black marker).
+
+The resize operation now preserves every still-valid nest, clamps
+cropped coordinates as before, and, if the two would coincide, shifts
+only the second queen **four cells sideways** to a valid distinct tile.
+The new nest locations are always dry and cannot hide berries or
+pheromone underneath. This runs only when the player edits the map
+dimensions: no persistent arrays, heap memory, random draws, or
+per-frame simulation work. Existing SRAM map records are unchanged.
+
+The native C99 suite checks **33,696** layouts across all 81 standard
+world sizes, including repeated resizes and out-of-range coordinates.
+The ROM-emulator suite starts with 96×96 authored saves containing two
+offscreen nests, uses the editor's own menu to shrink to 32×32, and
+checks that **both queen markers survive independently** in valid SRAM
+with correct checksum and intact unrelated berries.
+
 ## ANT EYE movement recovery and reliable compass goals
 
 A worker whose center is still on dry ground can now recover when a
