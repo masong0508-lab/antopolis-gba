@@ -1,3 +1,25 @@
+## Tutorial/sandbox queens: no false knockouts
+
+The overhead simulation and ANT EYE previously applied the last point
+of damage to a protected practice queen, then relied on a later
+match-result check to restore her health. This could momentarily play
+the queen-death sound, show a false defeat message, mark a queen loss,
+or award the RED QUEEN defeat achievement during a practice game.
+
+The actual soldier attack and first-person A-button bite now share one
+small damage-permission rule. In tutorials and sandbox, queens retain
+their last heart even under repeated attacks; normal matches and
+linked versus still allow queen defeat. A last-heart practice bite
+responds **PRACTICE QUEEN SAFE** rather than announcing a false win.
+
+The change preserves the attack RNG sequence, existing saves,
+achievement IDs, all initial queen health, and the original
+simulation-frame budget. It adds no world buffers, heap memory,
+rendering passes or permanent RAM. Native tests cover 128 combinations
+of hearts/modes with repeated attacks; CI additionally checks that
+both real production damage sites use the tested guard, and builds/
+runs the full linked-emulator release suite before merge.
+
 ## Map Maker queen protection after changing world size
 
 Shrinking a custom map previously clipped each queen's x/y coordinates
