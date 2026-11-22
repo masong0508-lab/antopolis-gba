@@ -93,10 +93,10 @@ def run(rom, core, out):
         emulator.press(START, released=160)
         emulator.snapshot("05_completed_mission_menu")
         expect_text(emulator, 6, 2, " 1", "menu_completed_count")
-        expect_text(emulator, 12, 2, "52", "menu_mission_total")
+        expect_text(emulator, 12, 2, "56", "menu_mission_total")
         expect_progress(emulator, SCENT_MASTER_DONE, "menu_preserves_completion")
         emulator.report["passed"] = True
-        print("ANT EYE mission ROM PASS: scent objective ends automatically, saves mission 9, returns to menu with 1 of 52 completed")
+        print("ANT EYE mission ROM PASS: scent objective ends automatically, saves mission 9, returns to menu with 1 of 56 completed")
     except Exception as error:
         emulator.report["passed"] = False
         emulator.report["error"] = str(error)
