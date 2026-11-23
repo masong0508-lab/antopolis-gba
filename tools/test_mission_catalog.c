@@ -81,6 +81,29 @@ int main(void) {
   assert(!memcmp(record, all_fifty_six, sizeof all_fifty_six));
   assert(storage[0] == 0xa5 && storage[1] == 0xa5);
   assert(storage[sizeof(storage)-1] == 0xa5 && storage[sizeof(storage)-2] == 0xa5);
-  puts("GBA mission catalog PASS: 56 missions, existing IDs and SRAM intact");
+  /* A new campaign always has a next entry; wrap and skip completed bits.
+     No mission reordering or SRAM mutation is permitted by navigation. */
+  memcpy(record, old_fifty, sizeof old_fifty);
+  assert(mission_progress_next_open(record, 0) == 50);
+  assert(mission_progress_next_open(record, 50) == 51);
+  assert(mission_progress_next_open(record, 55) == 50);
+  assert(mission_progress_next_open(record, 49) == 50);
+  assert(!memcmp(record, old_fifty, sizeof old_fifty));
+  memcpy(record, old_fifty_two, sizeof old_fifty_two);
+  assert(mission_progress_next_open(record, 0) == 52);
+  assert(mission_progress_next_open(record, 55) == 52);
+  memset(record, 0, sizeof old_fifty);
+  assert(mission_progress_next_open(record, 0) == 1);
+  /* Once the last unfinished bit is cleared, stay on the same mission. */
+  memcpy(record, all_fifty_six, sizeof all_fifty_six);
+  assert(mission_progress_next_open(record, 0) == 0);
+  assert(mission_progress_next_open(record, 55) == 55);
+  record[8] &= (uint8_t)~(1u << 4); /* only mission index 52 incomplete */
+  assert(mission_progress_next_open(record, 52) == 52);
+  assert(mission_progress_next_open(record, 55) == 52);
+  assert(mission_progress_next_open(record, 51) == 52);
+  assert(storage[0] == 0xa5 && storage[1] == 0xa5);
+  assert(storage[sizeof(storage)-1] == 0xa5 && storage[sizeof(storage)-2] == 0xa5);
+  puts("GBA mission catalog PASS: 56 missions, next-open navigation and SRAM intact");
   return 0;
 }
