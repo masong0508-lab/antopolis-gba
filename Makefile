@@ -32,6 +32,7 @@ test:
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_mission_catalog.c -o build/test_mission_catalog
 	./build/test_mission_catalog
 	python3 tools/test_mission_progress_source.py
+	python3 tools/test_empire_worker_spawn.py
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_chase_logic.c -o build/test_chase_logic
 	./build/test_chase_logic
 	python3 tools/test_world_art.py
