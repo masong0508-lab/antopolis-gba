@@ -1,3 +1,16 @@
+## Clear completion status on every GBA mission
+
+In the **MISSIONS** screen, the selected challenge now shows a large
+**COMPLETED** or **NOT COMPLETED** label below its objective. The old
+symbol beside previously won entries remains. The **SELECT: NEXT OPEN**
+shortcut still jumps to the next unfinished mission, and **LEFT/RIGHT**
+still changes PALACE availability for applicable missions.
+
+The new label reads the existing seven-byte mission completion record
+directly and adds no persistent data, gameplay-frame work, allocations,
+or changes to the 56 mission identities. The real linked-GBA video
+regression now checks both status labels.
+
 ## Mission menu: find the next unfinished challenge
 
 The GBA **MISSIONS** screen now supports **SELECT: NEXT OPEN**. One
