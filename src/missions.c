@@ -206,6 +206,9 @@ static void mis_result(u8 win) {
 }
 static void mission_run(u8 i) {
   const Mis *m = &MIS[i]; u8 sm = mapt, sw = tw, sh = th, sdiff = diff, win = 0, quit = 0, k;
+  // Campaign play must not silently change the player's NEW GAME options.
+  // Classic/ANT EYE missions disable sandbox/lessons for their own run only.
+  u8 saved_sandbox = sandbox, saved_tutor = tutor;
   const char *L[6] = {m->s[0], m->s[1], m->s[2], 0, 0, 0};
   mis_on = 1; mis_i = i; mis_sav_pzw = pzw;
   story_card(m->name, L, "\1 BEGIN");
@@ -244,6 +247,7 @@ static void mission_run(u8 i) {
   if (!quit) mis_result(win); else fade(0, 16);
   mis_on = 0; ecity = 0; emode = 0; PZ_.on = 0; pzw = mis_sav_pzw;
   mapt = sm; tw = sw; th = sh; diff = sdiff; eend = 0; over = 0;
+  sandbox = saved_sandbox; tutor = saved_tutor;
 }
 static void missions_menu(void) {
   static u8 s = 0; u8 top = 0, i; u16 fr = 0;
