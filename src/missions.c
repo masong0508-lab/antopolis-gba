@@ -147,6 +147,7 @@ static void missions_menu(void) {
     ps(17, 17, "PALACE:", 10); ps(25, 17, m->pzm == 0 ? "OFF" : m->pzm == 1 ? "ON" : PW[pzw], m->pzm == 0 ? 15 : 13);
     if (m->pzm == 2) ps(1, 18, "< > PALACE ON OR OFF", 10);
     ps(1, 19, "\1 PLAY   \2 BACK", 10);
+    ps(17, 19, "SEL NEXT OPEN", 10);
     DISPCNT = 0x1B40; BLDY = 0;
     while (!ekey()) fr++;
     if (emp_ & J_B) break;
@@ -154,6 +155,12 @@ static void missions_menu(void) {
     if (emp_ & J_DOWN) s = (u8)(s + 1 >= NMIS ? 0 : s + 1);
     if (emp_ & J_L) s = (u8)(s >= 5 ? s - 5 : 0);
     if (emp_ & J_R) s = (u8)(s + 5 < NMIS ? s + 5 : NMIS - 1);
+    /* Go to the next unbeaten goal using existing SRAM completion bits.
+       SELECT never edits records or blocks manual UP/DOWN browsing. */
+    if (emp_ & J_SEL) {
+      u8 next = mission_progress_next_open(SRAM + MSO, s);
+      if (next != s) { s = next; sfx_food(); }
+    }
     if ((emp_ & (J_LEFT | J_RIGHT)) && m->pzm == 2) { pzw = (u8)((pzw + ((emp_ & J_RIGHT) ? 1 : 2)) % 3); sfx_food(); }
     if (emp_ & J_A) { ewait_clear(); mission_run(s); ecity = 2; ewait_clear(); }
   }

@@ -1,3 +1,19 @@
+## Mission menu: find the next unfinished challenge
+
+The GBA **MISSIONS** screen now supports **SELECT: NEXT OPEN**. One
+press skips missions already marked complete in the existing battery
+record and selects the next unfinished challenge (wrapping around at
+mission #56). Repeated SELECT presses advance through the remaining
+objectives; if everything is finished, the selection stays put.
+**UP/DOWN** still browse all missions and **L/R** still jump five.
+
+The shortcut reads the existing seven mission-progress bytes *only
+when pressed*. It does not change your save, move missions, create
+buffers, or add work to the live simulation. Host tests cover blank,
+50/52 complete, 52/56 complete, 56/56 complete, wrap-around, and
+one remaining mission; linked GBA ROM CI tests the visible button and
+navigation.
+
 ## Bonus campaign expeditions (GBA)
 
 The MISSIONS menu now offers **56 playable missions**. Four optional
