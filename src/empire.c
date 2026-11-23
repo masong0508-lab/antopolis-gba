@@ -339,7 +339,10 @@ static void worker_spawn(void) {
 static void worker_step(EW *w) {
   u8 ox = w->x, oy = w->y;
   if (w->ph == 0) {                                // going home, remembering the way
-    if (dnp[0][w->y][w->x] == 0 || w->pl >= 100) { w->ph = 1; w->pi = w->pl; if (!w->pl) w->alive = 0; fx_add(w->x, w->y, FX_PLUS); return; }
+    if (dnp[0][w->y][w->x] == 0) { w->ph = 1; w->pi = w->pl; if (!w->pl) w->alive = 0; fx_add(w->x, w->y, FX_PLUS); return; }
+    // If the map changes mid-trip, never mistake a full path buffer for
+    // actually arriving at the nest. The trip can no longer be completed.
+    if (w->pl >= 100) { w->alive = 0; return; }
     if (!step_down(&w->x, &w->y, dnp[0])) { w->alive = 0; return; }
     wpth[w - ew][w->pl++] = (u16)((oy << 7) | ox);
   } else {                                         // back to work along the same path
