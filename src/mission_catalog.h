@@ -101,4 +101,18 @@ static inline void mission_progress_mark(volatile uint8_t *record, uint8_t i) {
   }
   record[2 + i / 8] |= (uint8_t)(1u << (i & 7));
 }
+/* Find the next unfinished mission without changing the completion bitmap.
+ * At most 56 bit tests, only on an explicit SELECT in the missions menu.
+ * If all are complete, leave the selected index unchanged. */
+static inline uint8_t mission_progress_next_open(const volatile uint8_t *record,
+                                                 uint8_t current) {
+  uint8_t step;
+  if (current >= NMIS) current = 0;
+  for (step = 1; step <= NMIS; step++) {
+    uint8_t i = (uint8_t)(current + step);
+    if (i >= NMIS) i = (uint8_t)(i - NMIS);
+    if (!mission_progress_done(record, i)) return i;
+  }
+  return current;
+}
 #endif
