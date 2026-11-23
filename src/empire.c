@@ -315,23 +315,38 @@ static void zoom_battle(EA *me, u16 *ew_, u16 *es_, u16 *em_, u8 rv, u8 x, u8 y)
 
 // ---------- workers (AoE villagers walking goods home) ----------
 static void worker_spawn(void) {
-  u8 i, j, tries;
+  u8 i, j, tries, chosen = 255, best_used = 255, best_staff = 1;
   if (!nbl) return;
   for (i = 0; i < EWN; i++) if (!ew[i].alive) {
-    // One randomized starting point, then a full circular scan. With 80
-    // buildings and only one staffed farm, eight random tries could miss
-    // that farm most cycles. This guarantees a real available worker trip
-    // without eight RNG calls or new persistent scheduling state.
+    // Begin at one random building, then compare the fraction of each
+    // eligible workplace's staff already represented by walking sprites.
+    // This avoids 12 workers appearing at one farm while other staffed
+    // buildings remain invisible. Existing EW slots double as history:
+    // no extra state, arrays, path searches or random draws.
     j = (u8)(rnd() % nbl);
     for (tries = 0; tries < nbl; tries++) {
       u16 distance = dnp[0][ebl[j].y][ebl[j].x];
-      // Each worker stores at most 100 return tiles. Longer paths cannot
-      // reach home and must not play a false nest-delivery animation.
       if (ebl[j].staff && ebl[j].t != B_NEST &&
           distance != NOPATH && distance <= 100u) {
-        EW *w = &ew[i]; w->x = w->ox = ebl[j].x; w->y = w->oy = ebl[j].y; w->age = 8; w->alive = 1; w->b = j; w->ph = 0; w->pl = 0; return;
+        u8 k, used = 0;
+        for (k = 0; k < EWN; k++)
+          if (ew[k].alive && ew[k].b == j) used++;
+        // Compare used/staff without division. With <=12 workers these
+        // products fit in u16; random scan order breaks exact ties.
+        if (chosen == 255 || (u16)used * best_staff <
+                             (u16)best_used * ebl[j].staff) {
+          chosen = j; best_used = used; best_staff = ebl[j].staff;
+        }
+        // Zero is the best possible coverage; no need to scan further.
+        if (!used) break;
       }
       if (++j >= nbl) j = 0;
+    }
+    if (chosen != 255) {
+      EW *w = &ew[i];
+      w->x = w->ox = ebl[chosen].x; w->y = w->oy = ebl[chosen].y;
+      w->age = 8; w->alive = 1; w->b = chosen;
+      w->ph = 0; w->pl = 0;
     }
     return;
   }
