@@ -120,15 +120,17 @@ int main(void) {
   searches = 0;
   chase_compass(0, 32, 32, 1, 1, 24, 32);
   expect(0, '$', 2); assert(glyph_count('$') == 1 && searches == 0);
+  assert(glyph_count('%') == 0); // carrying: no distracting food marker
   assert(chase_scout_message(1, 1, 0) == 2);
-  // No expedition candidate: retain the renderer's one nearby target.
-  expedition_found = 0; efx = 40; efy = 32;
+  // No reachable expedition candidate: discard any visible but stale /
+  // out-of-supply food marker from the ANT EYE scene on every refresh.
+  expedition_found = 0; efx = 40; efy = 32; ehas_f = 1;
   chase_compass(0, 32, 32, 0, 0, 0, 0);
-  assert(glyph_count('%') == 1); expect(15, '%', 13);
-  ehas_f = 0;
+  assert(searches == 1 && ehas_f == 0 && glyph_count('%') == 0);
+  ehas_f = 1; // a later scene redraw must not reintroduce the ghost
   chase_compass(0, 32, 32, 0, 0, 0, 0);
-  assert(glyph_count('%') == 0); // do not invent a food bearing
-  printf("GBA compass PASS: %u heading/goal collisions, exact bearings, teammate visibility, one expedition food target and matching guide/home priority\n", cases);
+  assert(ehas_f == 0 && glyph_count('%') == 0);
+  printf("GBA compass PASS: %u heading/goal collisions, no stale food, one expedition target and matching guide/home priority\n", cases);
   return 0;
 }
 """
@@ -143,7 +145,9 @@ def main():
     assert sine, "production sine table missing"
     bodies = [function(source, name) for name in
               ("gi", "bearing", "eye_mark_column", "eye_mark", "eye_aux_mark", "eye_compass")]
-    bodies += [function(logic, "chase_scout_message"), function(chase, "chase_compass")]
+    bodies += [function(logic, "chase_scout_message"),
+               function(logic, "chase_food_compass_active"),
+               function(chase, "chase_compass")]
     with tempfile.TemporaryDirectory(prefix="antopolis-compass-") as directory:
         test = Path(directory) / "compass.c"
         executable = Path(directory) / "compass"
