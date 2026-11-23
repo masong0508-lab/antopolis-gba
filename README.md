@@ -1,3 +1,22 @@
+## Live progress for all 56 campaign goals (GBA)
+
+The campaign's **GOAL** option now opens a read-only **MISSION REPORT**
+rather than only repeating the pre-game briefing. It shows actual
+colony counters beside their requirements (food deliveries, scent,
+troops, buildings, city population, smog, crime, faction support,
+elections, allies and more). Timed goals show months or minutes
+remaining against their deadline; survival objectives explicitly say
+they are checked **at the deadline**.
+
+In **Classic** and **ANT EYE** missions, pause with **START** and press
+**R** for the same report; press **A**, **B**, or **START** to return.
+In **Empire**, **City**, **Palace**, and **Antverse** campaign missions,
+choose **START > GOAL**. Free-play, existing story chapters and ordinary
+map controls are unchanged. All reports are drawn only on request,
+adding no simulation-frame work, framebuffer, heap allocation, or SRAM
+changes. The linked-emulator regression checks an active ANT EYE
+mission's goal and confirms progress remains untouched.
+
 ## Clear completion status on every GBA mission
 
 In the **MISSIONS** screen, the selected challenge now shows a large
