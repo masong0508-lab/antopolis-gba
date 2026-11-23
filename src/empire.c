@@ -13,6 +13,7 @@ static u16 city_tile(u8 x, u8 y); static const char *city_can(u8 t, u8 x, u8 y);
 static void vram_reload(void);
 #include "battle.c"
 #include "pz.h"
+#include "empire_zone_scan.h"   // bounded zone expansion; no RNG sampling or extra maps
 static void mis_tick(void);                        // ANTVERSE missions (missions.c)
 
 // ---------- techs ----------
@@ -159,6 +160,7 @@ static s8 food_net;
 static u8 nb_of[B_N];
 static u8 rpeace[3], efarm_t, ezbuilt, ebeat, evpend = 255;   // peace cycles per rival, rain(+)/drought(-) timer, zone builds, enemy armies beaten, event to show
 static s8 efarm_mod;
+static u8 ezscan_x, ezscan_y;  // two-byte economy-cycle cursor (not a save field)
 
 static u8 has_t(u8 t) { return (u8)((etech >> t) & 1); }
 static u8 era_now(void) { u8 n = 0, i; for (i = 0; i < T_N; i++) n += has_t(i); return has_t(T_GREAT) ? 3 : has_t(T_AMBER) ? 2 : n >= 5 ? 1 : 0; }
@@ -446,16 +448,35 @@ static void ecycle(void) {
   if (protest && !(ecyc & 3)) say("PROTESTS! WORK IS SLOW");
   if (fac_avg() < 15 && edict != 2 && !PZ_.on) { if (++lowhap >= 5) end_game(0, 1); else say("REVOLUTION IS NEAR!"); } else lowhap = 0;
   if (!--elect_t) { elect_t = 45; if (!PZ_.on) eelection(); }
-  // SimCity zones: the colony builds what it needs on painted land, at half price
+  // SimCity zones: scan a bounded, moving window of painted land instead
+  // of 300 random misses (600 RNG/modulo calls) in a sparse 96x96 colony.
+  // Every authored tile gets its turn within ceil(W*H/300) cycles, while
+  // the existing per-cycle build limit and resource requirements remain.
   if (!ecity) {
-    u8 want[4] = {0, (u8)(pop + 1 >= popcap), (u8)(food_net < 3), (u8)(unemp == 0 && pop + 2 < popcap)}, built = 0; u16 tries;
-    for (tries = 0; tries < 300 && built < ZONEV[cht[9]]; tries++) {
-      x = (u8)(rnd() % W); y = (u8)(rnd() % H);
-      if (!EZN(y, x) || ebi[y][x] || ETER(y, x) != 1 || !want[EZN(y, x)]) continue;
-      { u8 z = EZN(y, x), t = z == 1 ? B_HOUSE : z == 2 ? ((hgt[y][x] == 2 && has_t(T_GENES) && (rnd() & 1)) ? B_APHID : B_FARM) : ((hgt[y][x] == 3 && has_t(T_AMBER) && (rnd() & 1)) ? B_MINE : B_PIT);
-        if (!has_t(BD[t].tech) || !((BD[t].ter >> hgt[y][x]) & 1) || rf < BD[t].f / 2 || rd < BD[t].d / 2) continue;
-        if (!cht[9]) { rf -= BD[t].f / 2; rd -= BD[t].d / 2; } add_b(x, y, t); terr_calc(); eredraw(x, y, 1); fx_add(x, y, FX_PLUS); built++; ezbuilt++; }
+    u8 want[4] = {0, (u8)(pop + 1 >= popcap), (u8)(food_net < 3), (u8)(unemp == 0 && pop + 2 < popcap)}, built = 0;
+    u16 tries;
+    for (tries = 0; tries < 300 && built < ZONEV[cht[9]] && nbl < EBN; tries++) {
+      u8 z, t;
+      x = ezscan_x; y = ezscan_y;
+      empire_zone_next(&ezscan_x, &ezscan_y, W, H);
+      z = EZN(y, x);
+      if (!z || ebi[y][x] || ETER(y, x) != 1 || !want[z]) continue;
+      t = z == 1 ? B_HOUSE : z == 2 ?
+          ((hgt[y][x] == 2 && has_t(T_GENES) && (rnd() & 1)) ? B_APHID : B_FARM) :
+          ((hgt[y][x] == 3 && has_t(T_AMBER) && (rnd() & 1)) ? B_MINE : B_PIT);
+      if (!has_t(BD[t].tech) || !((BD[t].ter >> hgt[y][x]) & 1) ||
+          rf < BD[t].f / 2 || rd < BD[t].d / 2) continue;
+      // Never spend supplies or report a new building when the 160-building
+      // cap blocks placement. The building count is checked before add_b.
+      if (!add_b(x, y, t)) break;
+      if (!cht[9]) { rf -= BD[t].f / 2; rd -= BD[t].d / 2; }
+      fx_add(x, y, FX_PLUS); built++; ezbuilt++;
     }
+    // Terrain ownership and viewport repaint are expensive on large maps.
+    // Recalculate ONCE per construction batch, never once per building.
+    // All building positions/tiles and effects still render, without extra
+    // buffers or hidden graphics. Newly acquired borders build next cycle.
+    if (built) terr_calc();
   }
   // healers bring wounded back
   for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team && a_size(&ea[i]) < ea[i].peak) {
@@ -1040,6 +1061,7 @@ static void emp_setup_common(void) {
   for (y = 0; y < H; y++) for (x = 0; x < W; x++) { ebi[y][x] = 0; ezt[y][x] = 0; food[y][x] = 0; ph[y][x] = 0; }
   for (i = 0; i < 4; i++) fac[i] = 55;
   elect_t = 45; gt = 0; ecyc = 0; eslice = 0; spd = 4; sf = 0; msgt = 0; alt = 0; shk = 0; shx = 0;
+  ezscan_x = nestx[0]; ezscan_y = nesty[0]; // grow outward from the current nest
   for (i = 0; i < 16; i++) { OBJPAL[7 * 16 + i] = PAL_ANT1[i]; OBJPAL[8 * 16 + i] = PAL_ANT1[i]; }
   OBJPAL[7 * 16 + 1] = RGB(10, 7, 0); OBJPAL[7 * 16 + 2] = RGB(27, 22, 3); OBJPAL[7 * 16 + 3] = RGB(31, 30, 14);   // gold rivals
   OBJPAL[8 * 16 + 1] = RGB(7, 1, 9); OBJPAL[8 * 16 + 2] = RGB(19, 7, 26); OBJPAL[8 * 16 + 3] = RGB(28, 18, 31);   // violet rivals
