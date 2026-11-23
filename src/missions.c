@@ -7,7 +7,7 @@
 static const char *const MKN[6] = {"CLASSIC", "ANT EYE", "EMPIRE", "CITY", "PALACE", "VERSE"};
 static const u8 MKC[6] = {13, 14, 9, 2, 8, 1};
 #define MSO 9350
-static u8 mis_on, mis_i, mis_sav_pzw;
+static u8 mis_i, mis_sav_pzw;  // mis_on is forward-declared for pause menus
 static u8 mis_total(void) { return (u8)NMIS; }
 static u8 mis_done(u8 i) { return mission_progress_done(SRAM + MSO, i); }
 static u8 mis_count(void) { return mission_progress_count(SRAM + MSO); }
@@ -55,6 +55,125 @@ static u8 mis_ok(void) {                           // is the goal met right now?
   case MG_FINAL: for (i = 0; i < enriv; i++) if (ralive[i]) return 0; return nb_of[B_ARCO] != 0;
   default: return cmile >= 5;
   }
+}
+/* A live, read-only report for all campaign modes. This is called ONLY
+   from a paused GOAL command, never on a simulation frame. Uses the normal
+   menu's tile map; adds no save fields, framebuffer, heap, or link state. */
+static void mis_track(u8 row, const char *label, u32 got, u32 target) {
+  ps(2, row, label, 10);
+  pnum(17, row, got, 9); pc(23, row, '/', 10); pnum(24, row, target, 3);
+}
+static void mis_progress_screen(void) {
+  const Mis *m;
+  u8 i, count8 = 0;
+  u32 clock = 0;
+  if (!mis_on) return;
+  m = &MIS[mis_i];
+  hide_all(); vsync(); oam_flush();
+  DISPCNT = 0x80; ov_fill(1, 3, 0, 19); ui_full();
+  big(0, "MISSION REPORT");
+  ps(2, 3, m->name, 9); pm_rule(4);
+  ps(2, 5, "LIVE OBJECTIVES", 10);
+  switch (m->goal) {
+  case MG_CWIN: mis_track(7, "RED QUEEN HP", qhp[1], 0); break;
+  case MG_CFLAW:
+    mis_track(7, "QUEEN DAMAGE", qlost, 0);
+    mis_track(9, "RED QUEEN HP", qhp[1], 0); break;
+  case MG_CFLOOD:
+    mis_track(7, "RED ANTS DROWNED", rdrown, m->v1);
+    mis_track(9, "RED QUEEN HP", qhp[1], 0); break;
+  case MG_EFOOD: mis_track(7, "FOOD DELIVERED", e_del, m->v1); break;
+  case MG_EBITE: mis_track(7, "ENEMY ANTS BITTEN", e_bit, m->v1); break;
+  case MG_EQUEEN: mis_track(7, "RED QUEEN BEATEN", e_qk, 1); break;
+  case MG_ESCENT: mis_track(7, "SCENT MARKS", e_sc, m->v1); break;
+  case MG_EPOP: mis_track(7, "EMPIRE ANTS", pop, m->v1); break;
+  case MG_EBLD: mis_track(7, "BUILDINGS", nbl, m->v1); break;
+  case MG_TROOPS: mis_track(7, "YOUR TROOPS", my_troops(), m->v1); break;
+  case MG_CONQ: case MG_FINAL:
+    for (i = 0; i < enriv; i++) if (ralive[i]) count8++;
+    mis_track(7, "RIVALS REMAIN", count8, 0);
+    if (m->goal == MG_FINAL) mis_track(9, "SKY MOUND", nb_of[B_ARCO] != 0, 1);
+    break;
+  case MG_WONDER: mis_track(7, "MOUND PROGRESS", wprog, 40); break;
+  case MG_ERA: mis_track(7, "AGE", era_now(), m->v2); break;
+  case MG_AMBER: mis_track(7, "AMBER", ra, m->v1); break;
+  case MG_TECHS:
+    for (i = 0; i < 12; i++) if (etech & (1u << i)) count8++;
+    mis_track(7, "TECHS LEARNED", count8, 12); break;
+  case MG_HAPPY4:
+    count8 = fac[0]; for (i = 1; i < 4; i++) if (fac[i] < count8) count8 = fac[i];
+    mis_track(7, "LOWEST HAPPINESS", count8, m->v1); break;
+  case MG_CPOP: mis_track(7, "CITY ANTS", cpop, m->v1); break;
+  case MG_CASH:
+    ps(2, 7, "BANK BALANCE", 10); pcash(17, 7, cash, 9);
+    ps(2, 9, "NEEDED BALANCE", 10); pcash(17, 9, (s32)m->v1 * 10, 3); break;
+  case MG_CSMOG: case MG_CCRIME:
+    mis_track(7, "CITY ANTS", cpop, m->v1);
+    mis_track(9, m->goal == MG_CSMOG ? "SMOG MAX" : "CRIME MAX",
+              m->goal == MG_CSMOG ? csmog : ccrime, m->v2 ? m->v2 - 1u : 0u);
+    break;
+  case MG_ARCO:
+    mis_track(7, "CITY ANTS", cpop, m->v1);
+    mis_track(9, "SKY MOUND", nb_of[B_ARCO] != 0, 1); break;
+  case MG_HOMES3: mis_track(7, "LEVEL 3 HOMES", czn[1][3], m->v1); break;
+  case MG_FOODST:
+    mis_track(7, "FOOD STOCK", rf, m->v1);
+    mis_track(9, "CITY ANTS", cpop, (u32)m->v2 * 10); break;
+  case MG_SURVIVE: ps(2, 8, "KEEP YOUR COLONY ALIVE", 13); break;
+  case MG_VOTES:
+    mis_track(7, "CITY ANTS", cpop, m->v1);
+    mis_track(9, "ELECTIONS WON", PZ_.wins, m->v2); break;
+  case MG_RESP:
+    mis_track(7, "CITY ANTS", cpop, m->v1);
+    mis_track(9, "RESPECT", PZ_.resp, m->v2); break;
+  case MG_STASH: mis_track(7, "HONEY STASH", PZ_.stash, (u32)m->v1 * 10); break;
+  case MG_ALLSUP:
+    count8 = PZ_.sup[0]; for (i = 1; i < NFAC; i++) if (PZ_.sup[i] < count8) count8 = PZ_.sup[i];
+    mis_track(7, "CITY ANTS", cpop, m->v1);
+    mis_track(9, "LOWEST SUPPORT", count8, m->v2); break;
+  case MG_LIB:
+    mis_track(7, "CITY ANTS", cpop, m->v1);
+    mis_track(9, "FREEDOM", PZ_.lib, m->v2); break;
+  case MG_REL:
+    mis_track(7, "LOWEST RELATION", PZ_.rel[0] < PZ_.rel[1] ? PZ_.rel[0] : PZ_.rel[1], m->v2);
+    break;
+  case MG_ALLY:
+    mis_track(7, "CITY ANTS", cpop, m->v1);
+    mis_track(9, "ALLIANCE", PZ_.ally[0] || PZ_.ally[1], 1); break;
+  case MG_NOREB: mis_track(7, "REBELS MAX", PZ_.reb, m->v2 ? m->v2 - 1u : 0u); break;
+  case MG_MART:
+    mis_track(7, "CITY ANTS", cpop, m->v1);
+    mis_track(9, "MARTIAL LAW", pz_mart(), 1); break;
+  case MG_QUEEN:
+    mis_track(7, "CITY ANTS", cpop, m->v1);
+    mis_track(9, "QUEEN CHARTER", PZ_.con[5] == 1, 1); break;
+  case MG_VPOP:
+    mis_track(7, "CITY ANTS", cpop, m->v1);
+    mis_track(9, "YOUR TROOPS", my_troops(), (u32)m->v2 * 10); break;
+  case MG_ALL:
+    mis_track(7, "CITY ANTS", cpop, m->v1);
+    mis_track(9, "YOUR TROOPS", my_troops(), (u32)m->v2 * 10);
+    mis_track(11, "ELECTIONS WON", PZ_.wins, 1);
+    ps(2, 12, nb_of[B_ARCO] ? "SKY MOUND BUILT" : "ALSO BUILD THE SKY MOUND", 13); break;
+  default: mis_track(7, "CITY MILESTONES", cmile, 5); break;
+  }
+  pm_rule(13);
+  if (m->lim) {
+    clock = m->kind >= MK_CITY ? cmon :
+            m->kind == MK_EMPIRE ? (u32)ecyc * 4u / 60u :
+            ((u32)gt * 2u / 15u) / 60u;
+    mis_track(14, m->kind >= MK_CITY ? "MONTHS USED" : "MINUTES USED",
+              clock, m->lim);
+  } else ps(2, 14, "NO TIME LIMIT", 13);
+  if (mis_end_goal(m->goal))
+    ps(2, 17, "CHECKED AT THE DEADLINE", 10);
+  else if (mis_ok()) ps(2, 17, "OBJECTIVE MET!", 13);
+  else ps(2, 17, "KEEP WORKING TOWARD THE GOAL", 3);
+  ps(2, 19, "A B OR START: BACK", 9);
+  DISPCNT = 0x1B40; BLDY = 0;
+  ewait_clear();
+  while (!ekey() || !(emp_ & (J_A | J_B | J_START))) {}
+  ewait_clear();
 }
 static void mis_tick(void) {                       // once a month (city) or cycle (empire): win, lose, or go on
   const Mis *m; u8 to;
