@@ -944,7 +944,7 @@ static u8 city_menu(void) {                        // 0 resume, 1 quit
     case 5: city_advice(); break;
     case 6: city_graphs(); break;
     case 7: city_disasters(); ewait_clear(); ov_clear(); cm_sel = sel; return 0;
-    case 8: city_goal_card(); break;
+    case 8: if (mis_on) mis_progress_screen(); else city_goal_card(); break;
     case 9: spd_next(1); break;
     case 10: if (cscen == 255) { city_save(); ewait_clear(); ov_clear(); cm_sel = sel; return 1; } sfx_deny(); break;
     case 11: { static const char *const Y[2] = {"YES, QUIT", "NO"}; static const char *const YH[2] = {"LEAVE WITHOUT SAVING", "KEEP PLAYING"}; u8 s2 = 1;

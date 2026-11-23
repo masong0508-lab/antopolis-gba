@@ -908,7 +908,8 @@ static u8 emp_menu(void) {                         // START: 0 resume, 1 quit. A
       case 6: groups_screen(); break;
       case 7: advisor_screen(); break;
       case 8:
-        if (echap != 255) { char t1[12] = "CHAPTER "; t1[8] = (char)('1' + echap); t1[9] = 0; story_card(t1, CH[echap].s1, CH[echap].name); }
+        if (mis_on) mis_progress_screen();
+        else if (echap != 255) { char t1[12] = "CHAPTER "; t1[8] = (char)('1' + echap); t1[9] = 0; story_card(t1, CH[echap].s1, CH[echap].name); }
         else { static const char *const FL[6] = {"FREE PLAY HAS NO GOAL.", "BUILD A BIG CITY,", "MAKE FRIENDS OR WAR,", "AND RULE HOW YOU LIKE!", 0, 0}; story_card("FREE PLAY", FL, "\1 OK"); }
         hide_all(); vsync(); oam_flush(); ewait_clear(); break;
       case 9: spd_next(1); break;

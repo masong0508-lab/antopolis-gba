@@ -68,6 +68,20 @@ def run(rom, core, out):
         emulator.press(A, released=1500)  # world generation and loading fact
         emulator.press(A, released=100)  # first-match goal card
         emulator.press(A, released=100)  # live map
+        # Live objectives must be readable without leaving the mission.
+        # This is actual button-driven ROM code on both linked cores.
+        emulator.press(START, released=100)    # Classic pause menu
+        expect_text(emulator, 1, 0, "R: MISSION REPORT", "pause_report_shortcut")
+        emulator.press(R, released=100)
+        emulator.snapshot("02_live_mission_report")
+        expect_text(emulator, 2, 3, "SCENT MASTER", "active_mission_name")
+        expect_text(emulator, 2, 7, "SCENT MARKS", "live_scent_metric")
+        expect_text(emulator, 17, 7, "0", "fresh_scent_progress")
+        expect_text(emulator, 24, 7, "60", "scent_goal")
+        expect_text(emulator, 2, 14, "NO TIME LIMIT", "scent_deadline")
+        expect_progress(emulator, EMPTY_PROGRESS, "report_cannot_modify_save")
+        emulator.press(B, released=100)       # report -> pause
+        emulator.press(START, released=100)   # pause -> live game
         emulator.press(SELECT, START, released=150)  # enter ANT EYE
         emulator.snapshot("02_ant_eye_entered")
         expect_text(emulator, 22, 16, "HELD", "first_person_entered")
