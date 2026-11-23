@@ -247,6 +247,7 @@ static void mission_run(u8 i) {
   if (!quit) mis_result(win); else fade(0, 16);
   mis_on = 0; ecity = 0; emode = 0; PZ_.on = 0; pzw = mis_sav_pzw;
   mapt = sm; tw = sw; th = sh; diff = sdiff; eend = 0; over = 0;
+  sandbox = saved_sandbox; tutor = saved_tutor;
 }
 static void missions_menu(void) {
   static u8 s = 0; u8 top = 0, i; u16 fr = 0;
