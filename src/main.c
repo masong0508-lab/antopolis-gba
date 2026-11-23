@@ -2820,6 +2820,12 @@ static void options_screen(void) {
     if ((k & (J_UP | J_DOWN)) != last) { rep = 0; last = k & (J_UP | J_DOWN); }
     if (last && ++rep > 14 && !(rep & 3)) p |= last;   // hold UP / DOWN to scroll
     if (!p) continue;
+    if ((p & J_R) && mis_on) {
+      mis_progress_screen();
+      pm_draw(); pm_menu(sel, conf);
+      prev = joy();
+      continue;
+    }
     if (p & (J_START | J_B)) break;
     if (p & J_UP)   { sel = sel ? sel - 1 : NOPT - 1; sfx_food(); }
     if (p & J_DOWN) { sel = sel == NOPT - 1 ? 0 : sel + 1; sfx_food(); }
@@ -2839,6 +2845,10 @@ static void options_screen(void) {
   ov_clear();
 }
 
+/* Campaign objective screen is defined after the included Empire/City modes,
+   but may be opened from the earlier Classic pause menu. */
+static u8 mis_on;
+static void mis_progress_screen(void);
 // ---------- PAUSE MENU (START): live colony status + a menu (UP DOWN, A; START or B resumes) ----------
 #define PM_N 9
 #define PM_MUS 6
@@ -2855,7 +2865,7 @@ static void pm_time(u8 x, u8 y, u32 sec) { pn(x, y, (u8)(sec / 60), 3); pc(x + 2
 static void pm_draw(void) {                            // everything except the menu rows
   u8 i, n, x, c = 0, g;
   ov_fill(1, 3, 0, 19); ui_full();
-  ps(1, 0, "THE COLONY WAITS", 10); ps(sandbox ? 22 : 24, 0, sandbox ? "SANDBOX" : DNAME[diff], 10);
+  ps(1, 0, mis_on ? "R: MISSION REPORT" : "THE COLONY WAITS", 10); ps(sandbox ? 22 : 24, 0, sandbox ? "SANDBOX" : DNAME[diff], 10);
   for (n = 0; n < 6; n++) {
     g = gi("PAUSED"[n]); x = (u8)(12 + n);
     BGMAP1[32 + x] = (u16)((BIGF + g * 2) | (9 << 12)); BGMAP1[64 + x] = (u16)((BIGF + g * 2 + 1) | (9 << 12));
@@ -2944,7 +2954,7 @@ static void tut_enter(void) {                        // show lessons until one n
 }
 
 // ---------- play ----------
-static u8 mis_on; static u8 mis_ok(void); static const u16 *mis_lim_p(void);   // ANTVERSE missions (missions.c): a goal checked while playing
+static u8 mis_ok(void); static const u16 *mis_lim_p(void);   // ANTVERSE missions (missions.c): a goal checked while playing
 static void classic_outcome_tick(void) {
   if (over) return;                             // keep a decided result (including an explicit quit)
   // A camera change must not remove the tutorial / sandbox protections.
