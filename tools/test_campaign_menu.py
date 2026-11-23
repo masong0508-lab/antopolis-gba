@@ -16,7 +16,7 @@ import json
 import pathlib
 import re
 
-from linked_smoke import A, DOWN, LEFT, UP
+from linked_smoke import A, DOWN, LEFT, UP, SELECT
 from test_editor_roundtrip import EditorEmulator
 
 MSO = 9350
@@ -75,28 +75,33 @@ def run(rom, core, out):
         emulator.snapshot("02_missions_first_page")
         expect_text(emulator, 6, 2, "50", "old_progress_loaded")
         expect_text(emulator, 12, 2, "56", "mission_total")
-        # Wrap to #56 and move up to the unchanged two original finales.
-        for _ in range(6):
-            emulator.press(UP, released=80)
-        emulator.snapshot("03_original_finales_and_bonus")
-        expect_text(emulator, 2, 3, "51", "penultimate_number")
-        expect_text(emulator, 5, 3, "EVERYTHING", "penultimate_title")
-        expect_text(emulator, 2, 5, "52", "final_number")
-        expect_text(emulator, 5, 5, "GRAND FINALE", "final_title")
-        expect_text(emulator, 2, 7, "53", "bonus_number")
-        expect_text(emulator, 5, 7, "SCOUTS FIRST", "bonus_title")
-        emulator.press(DOWN, released=80)  # select GRAND FINALE #52
+        # SELECT skips the first 50 saved successes and highlights #51.
+        # A second page is not required: this is one deliberate button press.
+        emulator.press(SELECT, released=80)
+        emulator.snapshot("03_next_unfinished")
+        expect_text(emulator, 2, 11, "51", "next_open_number")
+        expect_text(emulator, 5, 11, "EVERYTHING", "next_open_title")
+        expect_text(emulator, 17, 19, "SEL NEXT OPEN", "next_open_help")
+        emulator.press(DOWN, released=80)
+        emulator.snapshot("04_original_finale")
+        expect_text(emulator, 2, 11, "52", "final_number")
+        expect_text(emulator, 5, 11, "GRAND FINALE", "final_title")
+        emulator.press(DOWN, released=80)
+        emulator.snapshot("05_bonus_expediton")
+        expect_text(emulator, 2, 11, "53", "bonus_number")
+        expect_text(emulator, 5, 11, "SCOUTS FIRST", "bonus_title")
+        emulator.press(UP, released=80)  # select unchanged GRAND FINALE #52
         emulator.press(A, released=100)
-        emulator.snapshot("04_grand_finale_briefing")
+        emulator.snapshot("06_grand_finale_briefing")
         expect_text(emulator, 2, 5, "THREE WILD RIVALS, HOSTILE".replace(",", " "), "final_briefing")
         # Begin the restored final mission and allow its large world to build.
         emulator.press(A, released=1800)
-        emulator.snapshot("05_finale_launch")
+        emulator.snapshot("07_finale_launch")
         # Loading facts stop at an acknowledgement, then the ANTVERSE goal card.
         emulator.press(A, released=240)
-        emulator.snapshot("06_finale_goal")
+        emulator.snapshot("08_finale_goal")
         emulator.press(A, released=180)
-        emulator.snapshot("07_finale_playing")
+        emulator.snapshot("09_finale_playing")
         expect_text(emulator, 18, 18, "AP", "final_gameplay_resources")
         expect_text(emulator, 2, 19, "BUILD", "final_gameplay_controls")
         for port in range(2):
