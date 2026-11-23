@@ -37,4 +37,16 @@ assert 'if (mis_on) mis_progress_screen();' in empire
 assert 'if (mis_on) mis_progress_screen(); else city_goal_card();' in city
 assert "static u8 mis_on;" in main
 assert "static u8 mis_on, mis_i" not in missions, "No duplicate mission state"
-print("PASS: all 38 GBA goal kinds display on-demand live reports with intact SRAM and controls")
+# Mission launches temporarily disable sandbox and lessons. On return, even
+# after an explicit quit, NEW GAME must retain the player's prior choices.
+run = missions.split("static void mission_run(u8 i) {", 1)[1].split(
+    "static void missions_menu(void) {", 1
+)[0]
+assert "u8 saved_sandbox = sandbox, saved_tutor = tutor;" in run
+assert run.index("saved_sandbox = sandbox") < run.index("mis_on = 1;")
+assert "sandbox = 0; tutor = 0;" in run, "Campaigns still need normal rules"
+assert "sandbox = saved_sandbox; tutor = saved_tutor;" in run
+assert run.index("sandbox = saved_sandbox;") > run.index("if (!quit) mis_result(win);")
+assert run.index("sandbox = saved_sandbox;") > run.index("mis_on = 0;")
+print("PASS: GBA mission reports and sandbox/tutorial option restoration")
+
