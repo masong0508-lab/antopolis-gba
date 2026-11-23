@@ -20,7 +20,7 @@ assert set(goals) - {"MG_MEGA"} <= covered, set(goals) - covered
 assert "default: mis_track(7," in body, "Unspecified goal needs a visible fallback"
 # The first progress value begins at column 17. Labels start at column
 # 2 and must end strictly before the value (GBA card is 30 tiles wide).
-for label in findall(r'mis_track\\([^,]+,\\s*"([^"]+)"', body):
+for label in findall(r'mis_track\([^,]+,\s*"([^"]+)"', body):
     assert len(label) <= 14, ("Mission metric collides with its value", label)
 
 assert "if (!mis_on) return;" in body
