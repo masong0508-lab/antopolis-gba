@@ -101,6 +101,45 @@ int main(void) {
   assert(ew[0].alive && ew[1].alive && ew[1].b == 0);
   assert(random_calls == 1);
 
+  /* A busy farm must not monopolize the visible worker population
+     when another staffed and reachable workplace has no live trip. */
+  clear_state(); nbl = 2;
+  ebl[0].x = 3; ebl[0].y = 2; ebl[0].staff = 2; ebl[0].t = 2;
+  ebl[1].x = 4; ebl[1].y = 2; ebl[1].staff = 1; ebl[1].t = 2;
+  dnp[0][2][3] = dnp[0][2][4] = 1;
+  ew[0].alive = ew[1].alive = 1;
+  ew[0].b = ew[1].b = 0;
+  worker_spawn();
+  assert(ew[2].alive && ew[2].b == 1 && random_calls == 1);
+
+  /* Staff counts matter: two of four working from a factory represent
+     less coverage than one of one serving a small farm. */
+  clear_state(); nbl = 2;
+  ebl[0].x = 3; ebl[0].y = 2; ebl[0].staff = 1; ebl[0].t = 2;
+  ebl[1].x = 4; ebl[1].y = 2; ebl[1].staff = 4; ebl[1].t = 2;
+  dnp[0][2][3] = dnp[0][2][4] = 1;
+  for (i = 0; i < 3; i++) ew[i].alive = 1;
+  ew[0].b = 0; ew[1].b = ew[2].b = 1;
+  worker_spawn();
+  assert(ew[3].alive && ew[3].b == 1 && random_calls == 1);
+
+  /* New workers spread over three equally staffed sites instead of
+     stacking at the first eligible site; no new counter/RNG stream. */
+  clear_state(); nbl = 3;
+  for (i = 0; i < 3; i++) {
+    ebl[i].x = (u8)(3 + i); ebl[i].y = 2;
+    ebl[i].t = 2; ebl[i].staff = 1; dnp[0][2][3 + i] = 1;
+  }
+  for (i = 0; i < 6; i++) worker_spawn();
+  assert(random_calls == 6);
+  { unsigned counts[3] = {0, 0, 0};
+    for (i = 0; i < 6; i++) {
+      assert(ew[i].alive && ew[i].b < 3);
+      counts[ew[i].b]++;
+    }
+    assert(counts[0] == 2 && counts[1] == 2 && counts[2] == 2);
+  }
+
   /* When map terraforming makes a running trip longer than 100 steps,
      give up safely rather than awarding a fake nest-arrival effect. */
   clear_state();
@@ -134,7 +173,7 @@ int main(void) {
   assert(ew[0].x == 5 && ew[0].pi == 0);
   worker_step(&ew[0]);
   assert(!ew[0].alive && arrivals == 1);
-  puts("GBA Empire worker spawn: 80-building scan, one RNG draw, 100-step bound and honest round trips PASS");
+  puts("GBA Empire worker spawn: 80-building scan, balanced staff coverage, 100-step bound and honest round trips PASS");
   return 0;
 }
 """
