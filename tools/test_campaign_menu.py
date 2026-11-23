@@ -75,6 +75,7 @@ def run(rom, core, out):
         emulator.snapshot("02_missions_first_page")
         expect_text(emulator, 6, 2, "50", "old_progress_loaded")
         expect_text(emulator, 12, 2, "56", "mission_total")
+        expect_text(emulator, 1, 18, "COMPLETED", "initial_complete_label")
         # SELECT skips the first 50 saved successes and highlights #51.
         # A second page is not required: this is one deliberate button press.
         emulator.press(SELECT, released=80)
@@ -82,6 +83,7 @@ def run(rom, core, out):
         expect_text(emulator, 2, 11, "51", "next_open_number")
         expect_text(emulator, 5, 11, "EVERYTHING", "next_open_title")
         expect_text(emulator, 17, 19, "SEL NEXT OPEN", "next_open_help")
+        expect_text(emulator, 1, 18, "NOT COMPLETED", "next_open_state_label")
         emulator.press(DOWN, released=80)
         emulator.snapshot("04_original_finale")
         expect_text(emulator, 2, 11, "52", "final_number")

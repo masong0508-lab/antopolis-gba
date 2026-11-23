@@ -145,7 +145,8 @@ static void missions_menu(void) {
     if (m->lim) { ps(1, 17, "LIMIT", 10); pnum(7, 17, m->kind >= MK_CITY ? (u32)(m->lim / 12) : m->lim, 9); ps(10, 17, m->kind >= MK_CITY ? "YEARS" : "MIN", 10); }
     else ps(1, 17, "NO LIMIT", 10);
     ps(17, 17, "PALACE:", 10); ps(25, 17, m->pzm == 0 ? "OFF" : m->pzm == 1 ? "ON" : PW[pzw], m->pzm == 0 ? 15 : 13);
-    if (m->pzm == 2) ps(1, 18, "< > PALACE ON OR OFF", 10);
+    ps(1, 18, mis_done(s) ? "COMPLETED" : "NOT COMPLETED", mis_done(s) ? 13 : 9);
+    if (m->pzm == 2) ps(17, 18, "< > PALACE", 10);
     ps(1, 19, "\1 PLAY   \2 BACK", 10);
     ps(17, 19, "SEL NEXT OPEN", 10);
     DISPCNT = 0x1B40; BLDY = 0;
