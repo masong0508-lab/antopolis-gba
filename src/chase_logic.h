@@ -38,6 +38,13 @@ static u8 chase_both_released(u16 p1, u16 p2, u16 mask) {
 static u8 chase_scout_message(u8 carry, u8 marked, u8 boost_notice) {
   return boost_notice ? 3u : carry ? 2u : marked ? 1u : 0u;
 }
+// Only the expedition's current reachable food target belongs on the
+// scout compass. ANT EYE's visible scenery may include berries beyond
+// the expedition supply area, or a berry collected since the last ray.
+// Carrying workers need the home marker rather than a distracting %.
+static u8 chase_food_compass_active(u8 carrying, u8 target_found) {
+  return (u8)(!carrying && !!target_found);
+}
 // Presentation-only cache. The old DUAL VIEW HUD cleared and repainted
 // 3-4 text rows every eight frames even when every label stayed the same.
 // No world state or linked checksum depends on this cache.

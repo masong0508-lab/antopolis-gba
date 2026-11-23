@@ -220,13 +220,13 @@ static void chase_hud_eye(u8 scout, u8 delivered, u8 energy, u8 secs,
 // otherwise follow a guide marker, otherwise seek one food target.
 static void chase_compass(u8 fa, u8 rx, u8 ry, u8 carry,
                           u8 marked, u8 mx, u8 my) {
-  u8 gx, gy;
-  // Choose the existing bounded expedition target BEFORE drawing. These
-  // are camera-only fields, not linked world/checksum state. A second %
-  // drawn afterwards could leave two contradictory food directions.
-  if (!carry && chase_goal(rx, ry, &gx, &gy)) {
-    efx = gx; efy = gy; ehas_f = 1;
-  }
+  u8 gx = 0, gy = 0, target_found = 0;
+  // Never inherit ehas_f from the last visible ANT EYE scene: its old
+  // berry may have been picked up, be outside the co-op supply ring or
+  // be unreachable. The active compass must reflect THIS scan only.
+  if (!carry) target_found = chase_goal(rx, ry, &gx, &gy);
+  ehas_f = chase_food_compass_active(carry, target_found);
+  if (ehas_f) { efx = gx; efy = gy; }
   eye_compass(fa, rx, ry, carry);
   if (marked)
     eye_aux_mark(fa, (s16)mx - rx, (s16)my - ry, '?', 14,
