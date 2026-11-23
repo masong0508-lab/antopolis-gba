@@ -157,7 +157,7 @@ static void missions_menu(void) {
     if (emp_ & J_R) s = (u8)(s + 5 < NMIS ? s + 5 : NMIS - 1);
     /* Go to the next unbeaten goal using existing SRAM completion bits.
        SELECT never edits records or blocks manual UP/DOWN browsing. */
-    if (emp_ & J_SELECT) {
+    if (emp_ & J_SEL) {
       u8 next = mission_progress_next_open(SRAM + MSO, s);
       if (next != s) { s = next; sfx_food(); }
     }
