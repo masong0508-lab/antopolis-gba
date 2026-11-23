@@ -80,11 +80,11 @@ static void mis_progress_screen(void) {
     mis_track(7, "QUEEN DAMAGE", qlost, 0);
     mis_track(9, "RED QUEEN HP", qhp[1], 0); break;
   case MG_CFLOOD:
-    mis_track(7, "RED ANTS DROWNED", rdrown, m->v1);
+    mis_track(7, "RED DROWNED", rdrown, m->v1);
     mis_track(9, "RED QUEEN HP", qhp[1], 0); break;
   case MG_EFOOD: mis_track(7, "FOOD DELIVERED", e_del, m->v1); break;
-  case MG_EBITE: mis_track(7, "ENEMY ANTS BITTEN", e_bit, m->v1); break;
-  case MG_EQUEEN: mis_track(7, "RED QUEEN BEATEN", e_qk, 1); break;
+  case MG_EBITE: mis_track(7, "ENEMY BITES", e_bit, m->v1); break;
+  case MG_EQUEEN: mis_track(7, "RED QUEEN DOWN", e_qk, 1); break;
   case MG_ESCENT: mis_track(7, "SCENT MARKS", e_sc, m->v1); break;
   case MG_EPOP: mis_track(7, "EMPIRE ANTS", pop, m->v1); break;
   case MG_EBLD: mis_track(7, "BUILDINGS", nbl, m->v1); break;
@@ -102,7 +102,7 @@ static void mis_progress_screen(void) {
     mis_track(7, "TECHS LEARNED", count8, 12); break;
   case MG_HAPPY4:
     count8 = fac[0]; for (i = 1; i < 4; i++) if (fac[i] < count8) count8 = fac[i];
-    mis_track(7, "LOWEST HAPPINESS", count8, m->v1); break;
+    mis_track(7, "LOWEST MOOD", count8, m->v1); break;
   case MG_CPOP: mis_track(7, "CITY ANTS", cpop, m->v1); break;
   case MG_CASH:
     ps(2, 7, "BANK BALANCE", 10); pcash(17, 7, cash, 9);
@@ -135,7 +135,7 @@ static void mis_progress_screen(void) {
     mis_track(7, "CITY ANTS", cpop, m->v1);
     mis_track(9, "FREEDOM", PZ_.lib, m->v2); break;
   case MG_REL:
-    mis_track(7, "LOWEST RELATION", PZ_.rel[0] < PZ_.rel[1] ? PZ_.rel[0] : PZ_.rel[1], m->v2);
+    mis_track(7, "LOWEST REL", PZ_.rel[0] < PZ_.rel[1] ? PZ_.rel[0] : PZ_.rel[1], m->v2);
     break;
   case MG_ALLY:
     mis_track(7, "CITY ANTS", cpop, m->v1);
@@ -155,7 +155,7 @@ static void mis_progress_screen(void) {
     mis_track(9, "YOUR TROOPS", my_troops(), (u32)m->v2 * 10);
     mis_track(11, "ELECTIONS WON", PZ_.wins, 1);
     ps(2, 12, nb_of[B_ARCO] ? "SKY MOUND BUILT" : "ALSO BUILD THE SKY MOUND", 13); break;
-  default: mis_track(7, "CITY MILESTONES", cmile, 5); break;
+  default: mis_track(7, "CITY STAGES", cmile, 5); break;
   }
   pm_rule(13);
   if (m->lim) {
