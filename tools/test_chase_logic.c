@@ -43,6 +43,12 @@ int main(void) {
   assert(chase_scout_message(1, 1, 0) == 2);
   assert(chase_scout_message(0, 0, 60) == 3);
   assert(chase_scout_message(1, 1, 1) == 3);
+  // Visible scene berries are not proof of an active reachable expedition
+  // goal. A collected/out-of-range berry must not leave a ghost % marker.
+  assert(chase_food_compass_active(0, 0) == 0);
+  assert(chase_food_compass_active(0, 1) == 1);
+  assert(chase_food_compass_active(1, 0) == 0);
+  assert(chase_food_compass_active(1, 1) == 0);
   // Real HUD repaint cache must notice that a transient reward both
   // appeared and expired even if seconds, food and stamina stay constant.
   {
