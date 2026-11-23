@@ -316,12 +316,22 @@ static void zoom_battle(EA *me, u16 *ew_, u16 *es_, u16 *em_, u8 rv, u8 x, u8 y)
 // ---------- workers (AoE villagers walking goods home) ----------
 static void worker_spawn(void) {
   u8 i, j, tries;
+  if (!nbl) return;
   for (i = 0; i < EWN; i++) if (!ew[i].alive) {
-    for (tries = 0; tries < 8; tries++) {
-      j = (u8)(rnd() % (nbl ? nbl : 1)); if (!nbl) return;
-      if (ebl[j].staff && ebl[j].t != B_NEST && dnp[0][ebl[j].y][ebl[j].x] != NOPATH) {
+    // One randomized starting point, then a full circular scan. With 80
+    // buildings and only one staffed farm, eight random tries could miss
+    // that farm most cycles. This guarantees a real available worker trip
+    // without eight RNG calls or new persistent scheduling state.
+    j = (u8)(rnd() % nbl);
+    for (tries = 0; tries < nbl; tries++) {
+      u16 distance = dnp[0][ebl[j].y][ebl[j].x];
+      // Each worker stores at most 100 return tiles. Longer paths cannot
+      // reach home and must not play a false nest-delivery animation.
+      if (ebl[j].staff && ebl[j].t != B_NEST &&
+          distance != NOPATH && distance <= 100u) {
         EW *w = &ew[i]; w->x = w->ox = ebl[j].x; w->y = w->oy = ebl[j].y; w->age = 8; w->alive = 1; w->b = j; w->ph = 0; w->pl = 0; return;
       }
+      if (++j >= nbl) j = 0;
     }
     return;
   }
