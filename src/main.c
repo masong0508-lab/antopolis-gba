@@ -2820,12 +2820,6 @@ static void options_screen(void) {
     if ((k & (J_UP | J_DOWN)) != last) { rep = 0; last = k & (J_UP | J_DOWN); }
     if (last && ++rep > 14 && !(rep & 3)) p |= last;   // hold UP / DOWN to scroll
     if (!p) continue;
-    if ((p & J_R) && mis_on) {
-      mis_progress_screen();
-      pm_draw(); pm_menu(sel, conf);
-      prev = joy();
-      continue;
-    }
     if (p & (J_START | J_B)) break;
     if (p & J_UP)   { sel = sel ? sel - 1 : NOPT - 1; sfx_food(); }
     if (p & J_DOWN) { sel = sel == NOPT - 1 ? 0 : sel + 1; sfx_food(); }
@@ -2915,6 +2909,12 @@ static void pause_menu(void) {
     if (conf) {                                        // quit confirmation: A = yes, anything else cancels
       if (p & J_A) { over = 3; tut = 0; break; }
       conf = 0; pm_menu(sel, conf); continue;
+    }
+    if ((p & J_R) && mis_on) {
+      mis_progress_screen();
+      pm_draw(); pm_menu(sel, conf);
+      prev = joy();
+      continue;
     }
     if (p & (J_START | J_B)) break;
     if (p & J_UP)    { sel = (u8)((sel + 6) % 9); sfx_food(); }
