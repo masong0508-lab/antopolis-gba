@@ -29,6 +29,19 @@ IWRAM static void vplot(volatile u16 *pg, int x, int y, u8 c) {   // one 8bpp pi
   p = pg + ((y * 240 + x) >> 1); v = *p;
   *p = (x & 1) ? (u16)((v & 0x00FF) | (c << 8)) : (u16)((v & 0xFF00) | c);
 }
+// Most ant silhouettes are two horizontally adjacent 8bpp pixels.
+// On an EVEN x, both pixels share one 16-bit VRAM halfword. Write it
+// once, rather than performing two expensive read-modify-write cycles.
+// Odd x and clipped edges retain the original pixel-by-pixel semantics.
+IWRAM static void vplot_pair(volatile u16 *pg, int x, int y,
+                              u8 left, u8 right) {
+  if ((unsigned)x < 239u && (unsigned)y < 160u && !(x & 1)) {
+    pg[(y * 240 + x) >> 1] = (u16)(left | ((u16)right << 8));
+  } else {
+    vplot(pg, x, y, left);
+    vplot(pg, x + 1, y, right);
+  }
+}
 static void bbtext(u8 *buf, int x, int y, const char *s, u8 c) {   // font8 text into the picture, with a shadow
   u8 gx, gy, g;
   for (; *s; s++, x += 8) {
@@ -102,8 +115,15 @@ IWRAM static void bdraw(volatile u16 *pg) {
     a = &ba[i]; if (!a->hp) continue;
     x = a->x >> 4; y = a->y >> 4;
     c0 = a->side ? BC_EN : BC_ME; c1 = (u8)(c0 + 1);
-    if (a->type == BT_M) { vplot(pg, x, y, c0); vplot(pg, x + 1, y, c0); vplot(pg, x, y + 1, c0); vplot(pg, x + 1, y + 1, c0); vplot(pg, x + (a->side ? -1 : 2), y, c1); }
-    else { vplot(pg, x, y, c0); vplot(pg, x + (a->side ? -1 : 1), y, a->type == BT_S ? BC_ACID : c1); }
+    if (a->type == BT_M) {
+      vplot_pair(pg, x, y, c0, c0);
+      vplot_pair(pg, x, y + 1, c0, c0);
+      vplot(pg, x + (a->side ? -1 : 2), y, c1);
+    } else if (a->side) {
+      vplot_pair(pg, x - 1, y, a->type == BT_S ? BC_ACID : c1, c0);
+    } else {
+      vplot_pair(pg, x, y, c0, a->type == BT_S ? BC_ACID : c1);
+    }
   }
   for (i = 0; i < bshn; i++) {                     // acid shots fly
     BShot *q = &bsh[i];
