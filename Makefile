@@ -34,6 +34,7 @@ test:
 	python3 tools/test_mission_progress_source.py
 	python3 tools/test_empire_worker_spawn.py
 	python3 tools/test_battle_pixels.py
+	python3 tools/test_empire_worker_delete.py
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_empire_zone_scan.c -o build/test_empire_zone_scan
 	./build/test_empire_zone_scan
 	python3 tools/test_empire_zone_source.py
