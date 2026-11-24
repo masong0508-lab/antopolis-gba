@@ -96,9 +96,14 @@ int main(void) {
   del_b(0);
   verify_world(160,0);
   for(i=0;i<EWN;i++) assert(ew[i].alive && ew[i].b==147u+i);
+  set_world(159);
+  for(i=0;i<EWN;i++) { ew[i].alive=1; ew[i].b=(u8)(147u+i); }
   del_b(158);
   verify_world(159,158);
-  for(i=0;i<EWN;i++) if(i==11u) assert(!ew[i].alive);
+  for(i=0;i<EWN;i++) {
+    if(i==11u) assert(!ew[i].alive);
+    else assert(ew[i].alive && ew[i].b==147u+i);
+  }
   // When nothing survives after deleting the sole workplace, the next
   // spawn cannot attribute traffic to a ghost building.
   set_world(1); ew[0].alive=1; ew[0].b=0;
