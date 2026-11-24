@@ -233,6 +233,14 @@ static void del_b(u8 i) {                          // remove building i (keeps t
   if (ebl[i].t == B_BRIDGE) { hgt[y][x] = 0; draw_around(x, y); }
   if (ebl[i].t == B_WONDER) wprog = 0;
   ebi[y][x] = 0;
+  // Animated worker trips store building indices in ew[].b. Compaction
+  // must retire workers from a demolished site and remap all later
+  // references, or the next fair-spawn scan charges them to the WRONG
+  // building and shows ants returning to a nonexistent workplace.
+  for (j = 0; j < EWN; j++) if (ew[j].alive) {
+    if (ew[j].b == i) ew[j].alive = 0;
+    else if (ew[j].b > i) ew[j].b--;
+  }
   for (j = i; j + 1 < nbl; j++) { ebl[j] = ebl[j + 1]; ebi[ebl[j].y][ebl[j].x] = (u8)(j + 1); }
   nbl--; count_b();
   fx_add(x, y, FX_PUFF);
