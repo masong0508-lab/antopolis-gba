@@ -171,7 +171,10 @@ static u8 battle(u16 *aw, u16 *as, u16 *am, u16 *ew, u16 *es, u16 *em, u8 terr, 
     while (bn[0] && bn[1] && fr < 3600) {
       pg = (volatile u16 *)(0x06000000 + ((fr & 1) ? 0 : 0xA000));   // draw the hidden page
       bstep(par); par ^= 1;
-      if (bcount > 600) { } else bstep(par), par ^= 1;
+      // Budget by the remaining compacted combatants, not the original
+      // army size. As casualties reduce the work, resume a full update
+      // per redraw. Preserve alternating half-steps for heavy battles.
+      if (bn[0] + bn[1] <= 600u) { bstep(par); par ^= 1; }
       if (towers && !(fr % 30) && bn[1]) {         // your towers pick off attackers
         u16 t = bal[1][rnd() % bn[1]];
         if (bshn < 24) { BShot *q = &bsh[bshn++]; q->x = 10 << 4; q->y = (s16)((34 + (rnd() % 4) * 30) << 4); q->tx = ba[t].x; q->ty = ba[t].y; q->t = 8; }
