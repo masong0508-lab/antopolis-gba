@@ -974,16 +974,21 @@ static void step_ant(Ant *a) {
     if (!can_go(a->x, a->y, DX[d], DY[d])) continue;
     tx = a->x + DX[d]; ty = a->y + DY[d];
     // Each role needs only one of the two EWRAM distance fields.
+    // Prefer ANY reachable nest route over a NOPATH candidate. The
+    // 29000 penalty is below the worst clamped valid score (-28000)
+    // and still fits s16 at the largest 96x96 map (190 tiles apart).
+    // If every neighbor is NOPATH, retain the old relative fallback
+    // scores and random draws while the distance fields rebuild.
     if (a->carry) {
       dh = dnp[t][ty][tx];
-      sc = dh != NOPATH ? -12 * (s16)(dh > 2000 ? 2000 : dh) + (rnd() & 7) : -10 * (s16)(dist(tx, nestx[t]) + dist(ty, nesty[t])) + (rnd() & 15);
+      sc = dh != NOPATH ? -12 * (s16)(dh > 2000 ? 2000 : dh) + (rnd() & 7) : -29000 - 10 * (s16)(dist(tx, nestx[t]) + dist(ty, nesty[t])) + (rnd() & 15);
     } else if (guard < MAXA) {
       // Chase a nearby intruder using legal neighbors; no new path buffer.
       Ant *intruder = &ant[guard];
       sc = -14 * (s16)(dist(tx, intruder->x) + dist(ty, intruder->y)) + (rnd() & 7);
     } else if (soldier) {
       de = dnp[e][ty][tx];
-      sc = de != NOPATH ? -14 * (s16)(de > 2000 ? 2000 : de) + (rnd() & 7) : -14 * (s16)(dist(tx, nestx[e]) + dist(ty, nesty[e])) + (rnd() & 31);
+      sc = de != NOPATH ? -14 * (s16)(de > 2000 ? 2000 : de) + (rnd() & 7) : -29000 - 14 * (s16)(dist(tx, nestx[e]) + dist(ty, nesty[e])) + (rnd() & 31);
     } else {
       dh = dnp[t][ty][tx];
       sc = colony_forager_score(ph[ty][tx], food[ty][tx], (u8)(rnd() & 31), dh,

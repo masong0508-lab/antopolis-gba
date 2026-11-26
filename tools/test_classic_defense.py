@@ -97,10 +97,37 @@ static void check(u8 t) {
   setup(t); qhp[t]=0; step_ant(&ant[0]); assert(ant[0].x==9 && rng_calls==4);
   setup(t); ant[2]=ant[1]; refresh_defense(); assert(defend_i[t]==1);
 }
+static void route_test(u8 t) {
+  // The only reachable neighbor is east, even though west looks
+  // geometrically closer. Test the maximum clamped route score too.
+  for (unsigned k=0;k<2;++k) {
+    setup(t);
+    ant[0].x=20; ant[0].carry=1;
+    maps[t][10][21]=(u16)(k ? 5000 : 250);
+    maps[t][10][19]=maps[t][9][20]=maps[t][11][20]=NOPATH;
+    step_ant(&ant[0]); assert(ant[0].x==21 && rng_calls==4);
+    setup(t);
+    ant[0].x=20; ncnt[t]=12;
+    maps[t^1][10][21]=(u16)(k ? 5000 : 250);
+    maps[t^1][10][19]=maps[t^1][9][20]=maps[t^1][11][20]=NOPATH;
+    step_ant(&ant[0]); assert(ant[0].x==21 && rng_calls==4);
+  }
+  // A completely stale/disconnected field still permits legal fallback.
+  setup(t); ant[0].x=20; ant[0].carry=1;
+  maps[t][10][21]=maps[t][10][19]=maps[t][9][20]=maps[t][11][20]=NOPATH;
+  step_ant(&ant[0]); assert(ant[0].x==19 && rng_calls==4);
+  setup(t); ant[0].x=20; ncnt[t]=12;
+  maps[t^1][10][21]=maps[t^1][10][19]=maps[t^1][9][20]=maps[t^1][11][20]=NOPATH;
+  step_ant(&ant[0]); assert(ant[0].x==19 && rng_calls==4);
+  // No overflow or best-score rejection at maximum map extent.
+  assert(-29000-14*190 > -32000);
+  assert(-29000+31 < -28000);
+}
 int main(void) {
   check(0); check(1);
+  route_test(0); route_test(1);
   setup(1); cht[8]=1; step_ant(&ant[0]); assert(ant[0].x==9 && rng_calls==4);
-  puts("GBA Classic defense: both colonies, stale/unreachable targets, carriers, peaceful reds, offensive march PASS");
+  puts("GBA Classic defense: both colonies, stale/unreachable targets, carriers, peaceful reds, offensive march, long reachable routes and stale-map fallback PASS");
   return 0;
 }
 """
