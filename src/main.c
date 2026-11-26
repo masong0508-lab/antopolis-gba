@@ -137,6 +137,7 @@ static const HandMap *hmap(u8 i) { return i == MMY ? (has_my ? &myhm : 0) : (i >
 static u8 tw = 48, th = 48;                         // chosen world size (the hand-made maps are always 32x32)
 static Ant ant[MAXA];
 static u8 nestx[2], nesty[2], stock[2], qhp[2], ncnt[2], hatched[2];
+static u8 defend_i[2] = {MAXA, MAXA}; // cached local intruder per nest
 static u8 cx, cy, mana, over, camx, camy, sandbox, cheat, spd = 4, sf, appr, diff, slice;
 static u16 gt, etk;                      // gt = game ticks (7.5 per second), etk = ticks since the last election
 static s16 scx, scy;
@@ -838,10 +839,16 @@ static void alert(u8 x, u8 y, const char *m) {   // something bad happened to yo
   alt = 240; alx = x; aly = y;
 }
 static u8 spawn(u8 team) {
-  u8 i, n = 0;
-  for (i = 0; i < MAXA; i++) if (ant[i].alive && ant[i].team == team) n++;
-  if (n >= MAXA / 2) return 0;
-  for (i = 0; i < MAXA; i++) if (!ant[i].alive) {
+  u8 i, n = 0, slot = MAXA;
+  // Count the colony and remember its first free slot in one pass.
+  // Stop immediately when the team's existing population cap is met.
+  for (i = 0; i < MAXA; i++) {
+    if (ant[i].alive) {
+      if (ant[i].team == team && ++n >= MAXA / 2) return 0;
+    } else if (slot == MAXA) slot = i;
+  }
+  if (slot < MAXA) {
+    i = slot;
     Ant *a = &ant[i];
     a->x = a->ox = nestx[team]; a->y = a->oy = nesty[team]; a->team = team; a->alive = 1; a->carry = 0; a->age = 8; a->fl = team;
     a->sol = ((hatched[team]++ & 3) == 0);
@@ -931,11 +938,36 @@ static void election(void) {
   else { stock[0] >>= 1; mana = 0; appr = 40; sfx_qdead(); say("COUP! FOOD AND AP LOST"); }
   if (ok && !tut && !sandbox && !O(O_PERKS)) offer();
 }
+// Refresh local defense targets once per colony cycle, not once per ant.
+// Use the existing nest distance maps, excluding water and unreachable
+// intruders. Stable slot order keeps linked simulations deterministic.
+static void refresh_defense(void) {
+  u8 i, t;
+  u16 best[2] = {6, 6};
+  defend_i[0] = defend_i[1] = MAXA;
+  for (i = 0; i < MAXA; i++) if (ant[i].alive) {
+    Ant *a = &ant[i];
+    u16 d;
+    t = a->team ^ 1;
+    if (!hgt[a->y][a->x]) continue;
+    d = dnp[t][a->y][a->x];
+    if (d < best[t]) { best[t] = d; defend_i[t] = i; }
+  }
+}
 static void step_ant(Ant *a) {
   u8 d, t = a->team, e = t ^ 1, found = 0, bd = 0, tx, ty, px = a->ox, py = a->oy; u16 dh, de;
   s16 sc, best_sc = -32000;
   static const u8 RTH[3] = {12, 8, 5}, MTH[3] = {5, 8, 12};
   u8 soldier = !a->carry && qhp[e] && ncnt[t] >= (t ? RTH[O(O_REDATK)] : MTH[O(O_MYATK)]) && a->sol && !(t && cht[8]);
+  u8 guard = MAXA;
+  // Small colonies can defend their queen before qualifying for attacks.
+  // Preserve the peaceful-red cheat and loaded workers' return priority.
+  if (!a->carry && a->sol && qhp[t] && !(t && cht[8]) &&
+      defend_i[t] < MAXA && dnp[t][a->y][a->x] <= 8u) {
+    Ant *intruder = &ant[defend_i[t]];
+    if (intruder->alive && intruder->team == e && hgt[intruder->y][intruder->x] &&
+        dnp[t][intruder->y][intruder->x] <= 5u) guard = defend_i[t];
+  }
   if (!a->carry && food[a->y][a->x]) { food[a->y][a->x] = 0; a->carry = 1; draw_dec(a->x, a->y); }
   if (a->carry) { u8 p = ph[a->y][a->x]; ph[a->y][a->x] = p > 215 ? 255 : p + 40; }
   for (d = 0; d < 4; d++) {
@@ -945,6 +977,10 @@ static void step_ant(Ant *a) {
     if (a->carry) {
       dh = dnp[t][ty][tx];
       sc = dh != NOPATH ? -12 * (s16)(dh > 2000 ? 2000 : dh) + (rnd() & 7) : -10 * (s16)(dist(tx, nestx[t]) + dist(ty, nesty[t])) + (rnd() & 15);
+    } else if (guard < MAXA) {
+      // Chase a nearby intruder using legal neighbors; no new path buffer.
+      Ant *intruder = &ant[guard];
+      sc = -14 * (s16)(dist(tx, intruder->x) + dist(ty, intruder->y)) + (rnd() & 7);
     } else if (soldier) {
       de = dnp[e][ty][tx];
       sc = de != NOPATH ? -14 * (s16)(de > 2000 ? 2000 : de) + (rnd() & 7) : -14 * (s16)(dist(tx, nestx[e]) + dist(ty, nesty[e])) + (rnd() & 31);
@@ -1010,7 +1046,7 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
   if ((gt & 3) == 0) for (y = slice; y < H; y += 8) for (x = 0; x < W; x++) if (ph[y][x]) ph[y][x]--;
   if (++slice < 8) return;
   slice = 0; gt++;
-  count(ncnt); if (ncnt[0] > st_peak) st_peak = ncnt[0]; if ((gt & hmask) == 0) hist_add();
+  count(ncnt); refresh_defense(); if (ncnt[0] > st_peak) st_peak = ncnt[0]; if ((gt & hmask) == 0) hist_add();
   for (i = 0; i < 2; i++) {
     if (!qhp[i]) continue;
     cst = i ? hc1 : hc0;
@@ -1279,7 +1315,7 @@ static void newgame(void) {
   for (i = 0; i < 8; i++) fx[i].t = 0;
   set_rules(); stock[0] = stock[1] = 0; qhp[0] = qhp[1] = qbase; hatched[0] = hatched[1] = 0; qfl[0] = qfl[1] = 0;
   for (k = 0; k < (O(O_ANTS) == 0 ? 3 : O(O_ANTS) == 1 ? 5 : O(O_ANTS) == 2 ? 8 : 12); k++) { spawn(0); spawn(1); }
-  count(ncnt);
+  count(ncnt); defend_i[0] = defend_i[1] = MAXA;
   perk = 0; pend = 0; set_rules(); spd = (u8)(3 + O(O_GSPD)); sf = 0; appr = 50; etk = 0; slice = 0; cheat = 0; cx = nestx[0] + 2; cy = nesty[0] - 2; mana = (u8)(5 + 5 * O(O_AP)); gt = 0; over = 0; msgt = 0; timeup = 0;
   shk = 0; shx = 0; alt = 0; jmp = 0; qlost = 0; rdrown = 0; ewins = 0; e_del = e_bit = e_sc = 0; e_qk = 0;
   st_food = st_kill = st_lost = st_flood = 0; st_peak = ncnt[0]; nhist = 0; hmask = 15; hist_add();

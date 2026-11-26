@@ -18,6 +18,8 @@ test:
 	mkdir -p build
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_terrain_food.c -o build/test_terrain_food
 	./build/test_terrain_food
+	python3 tools/test_colony_hatching.py
+	python3 tools/test_classic_defense.py
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_colony_foraging.c -o build/test_colony_foraging
 	./build/test_colony_foraging
 	python3 tools/test_colony_foraging_source.py
