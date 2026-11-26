@@ -307,7 +307,14 @@ static u8 step_down(u8 *x, u8 *y, u16 (*f)[MAXW]) { // one step to a neighbour w
   *x = (u8)(*x + DX[bk]); *y = (u8)(*y + DY[bk]); return (u8)(bk + 1);
 }
 static void loss(u16 *w, u16 *s, u16 *m, u16 n) {  // n casualties, warriors first
-  while (n) { if (*w) (*w)--; else if (*s) (*s)--; else if (*m) (*m)--; else break; n--; }
+  // Resolve whole caste losses at once. This is the same ordered,
+  // saturating subtraction as the old one-casualty loop, independent
+  // of army size or damage. No RNG, casualties, or order changes.
+  u16 taken = n < *w ? n : *w;
+  *w -= taken; n -= taken;
+  taken = n < *s ? n : *s;
+  *s -= taken; n -= taken;
+  *m -= n < *m ? n : *m;
 }
 static u8 towers_near(u8 x, u8 y, u8 r) { u8 i, n = 0; for (i = 0; i < nbl; i++) if ((ebl[i].t == B_TOWER || ebl[i].t == B_SPIT) && dist(ebl[i].x, x) + dist(ebl[i].y, y) <= r) n++; return n; }
 #ifdef BATTLETEST
