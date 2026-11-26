@@ -2,7 +2,7 @@
 PREFIX ?= arm-none-eabi-
 CFLAGS = -mcpu=arm7tdmi -marm -mthumb-interwork -O2 -Wall -ffreestanding -fno-builtin -nostdlib -fno-tree-loop-distribute-patterns -Isrc
 all: build/empire-ants.gba
-build/empire-ants.gba: src/mp.c src/chase.c src/chase_logic.h src/city.c src/extras.c src/empire.c src/empire_zone_scan.h src/battle.c src/main.c src/logo.c src/logo.h src/mission_catalog.h src/ambient_water.h src/world_variation.h src/eye_floor_detail.h src/eye_scene_motion.h src/terrain_food.h src/food_patch.h src/editor_nest.h src/practice_queen.h src/newgame_presets.h src/art.h src/art2.h src/font8.h src/maps.h src/crt0.s gba.ld
+build/empire-ants.gba: src/mp.c src/chase.c src/chase_logic.h src/city.c src/extras.c src/empire.c src/empire_zone_scan.h src/battle.c src/main.c src/logo.c src/logo.h src/mission_catalog.h src/ambient_water.h src/world_variation.h src/eye_floor_detail.h src/eye_scene_motion.h src/terrain_food.h src/food_patch.h src/editor_nest.h src/practice_queen.h src/newgame_presets.h src/colony_foraging.h src/art.h src/art2.h src/font8.h src/maps.h src/crt0.s gba.ld
 	mkdir -p build
 	$(PREFIX)gcc $(CFLAGS) -T gba.ld -Wl,--gc-sections src/crt0.s src/main.c src/logo.c -lgcc -o build/empire-ants.elf
 	$(PREFIX)objcopy -O binary build/empire-ants.elf $@
@@ -18,6 +18,9 @@ test:
 	mkdir -p build
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_terrain_food.c -o build/test_terrain_food
 	./build/test_terrain_food
+	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_colony_foraging.c -o build/test_colony_foraging
+	./build/test_colony_foraging
+	python3 tools/test_colony_foraging_source.py
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_food_patch.c -o build/test_food_patch
 	./build/test_food_patch
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_editor_nest.c -o build/test_editor_nest

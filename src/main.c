@@ -14,6 +14,7 @@
 #include "editor_nest.h" // keep both queen starts distinct after Map Maker resizes
 #include "practice_queen.h" // protect the last queen heart at the actual hit site
 #include "newgame_presets.h" // quick guided/wild starts; existing game rules only
+#include "colony_foraging.h" // adjacent berries outrank empty trails
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 #include "font8.h"
@@ -939,12 +940,18 @@ static void step_ant(Ant *a) {
   if (a->carry) { u8 p = ph[a->y][a->x]; ph[a->y][a->x] = p > 215 ? 255 : p + 40; }
   for (d = 0; d < 4; d++) {
     if (!can_go(a->x, a->y, DX[d], DY[d])) continue;
-    tx = a->x + DX[d]; ty = a->y + DY[d]; dh = dnp[t][ty][tx]; de = dnp[e][ty][tx];
-    if (a->carry) sc = dh != NOPATH ? -12 * (s16)(dh > 2000 ? 2000 : dh) + (rnd() & 7) : -10 * (s16)(dist(tx, nestx[t]) + dist(ty, nesty[t])) + (rnd() & 15);
-    else if (soldier) sc = de != NOPATH ? -14 * (s16)(de > 2000 ? 2000 : de) + (rnd() & 7) : -14 * (s16)(dist(tx, nestx[e]) + dist(ty, nesty[e])) + (rnd() & 31);
-    else {                                       // worker: follow trails and food, drift away from home, do not turn straight back
-      sc = ph[ty][tx] + (food[ty][tx] ? 120 : 0) + (rnd() & 31) + (dh != NOPATH ? (dh < 12 ? dh : 12) * 2 : 0);
-      if (tx == px && ty == py) sc -= 24;
+    tx = a->x + DX[d]; ty = a->y + DY[d];
+    // Each role needs only one of the two EWRAM distance fields.
+    if (a->carry) {
+      dh = dnp[t][ty][tx];
+      sc = dh != NOPATH ? -12 * (s16)(dh > 2000 ? 2000 : dh) + (rnd() & 7) : -10 * (s16)(dist(tx, nestx[t]) + dist(ty, nesty[t])) + (rnd() & 15);
+    } else if (soldier) {
+      de = dnp[e][ty][tx];
+      sc = de != NOPATH ? -14 * (s16)(de > 2000 ? 2000 : de) + (rnd() & 7) : -14 * (s16)(dist(tx, nestx[e]) + dist(ty, nesty[e])) + (rnd() & 31);
+    } else {
+      dh = dnp[t][ty][tx];
+      sc = colony_forager_score(ph[ty][tx], food[ty][tx], (u8)(rnd() & 31), dh,
+                                (u8)(tx == px && ty == py));
     }
     if (sc > best_sc) { best_sc = sc; bd = d; found = 1; }
   }
