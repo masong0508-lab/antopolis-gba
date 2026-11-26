@@ -16,7 +16,7 @@ import tempfile
 
 def production_function(source: str, name: str) -> str:
     match = re.search(
-        r"IWRAM\s+static\s+void\s+" + re.escape(name) + r"\s*\([^)]*\)\s*\{",
+        r"(?:IWRAM\s+)?static\s+(?:void|u8)\s+" + re.escape(name) + r"\s*\([^)]*\)\s*\{",
         source,
     )
     assert match, f"missing production {name}"
@@ -47,7 +47,7 @@ typedef int16_t s16;
 typedef struct { s16 x,y; u16 tg; u8 hp,side,type,cd; } BAnt;
 typedef struct { s16 x,y,tx,ty; u8 t; } BShot;
 static BAnt ba[BMAX];
-static u16 bcount;
+static u16 bcount, bn[2], bal[2][BMAX/2];
 static BShot bsh[24];
 static u8 bshn;
 static u16 actual[240*160/2], reference[240*160/2];
@@ -82,13 +82,18 @@ static void fill_scenario(unsigned scenario) {
   unsigned i;
   bcount=(u16)(scenario%3u==0u ? BMAX : scenario%3u==1u ? 5u : 80u);
   bshn=(u8)(scenario%4u==0u ? 24u : 7u);
+  bn[0]=bn[1]=0;
   for(i=0;i<bcount;i++) {
     BAnt *a=&ba[i];
     int x=(int)(next_random()%247u)-3;
     int y=(int)(next_random()%167u)-3;
     a->x=(s16)(x*16); a->y=(s16)(y*16);
-    a->hp=(u8)((i%17u)==0u ? 0u : 1u);
-    a->side=(u8)(i&1u); a->type=(u8)((i+scenario)%3u);
+    /* Match the production spawn order: side 0 then side 1.
+       Test both light and heavy casualties, including uncompact dead slots. */
+    a->hp=(u8)(scenario%5u==0u ? (i%11u==0u) : (i%17u!=0u));
+    a->side=(u8)(i>=bcount/2u); a->type=(u8)((i+scenario)%3u);
+    if (i%7u==0u) { a->x=100*16; a->y=80*16; }
+    if (a->hp || (i%3u==0u)) bal[a->side][bn[a->side]++]=(u16)i;
   }
   for(i=0;i<bshn;i++) {
     BShot *s=&bsh[i];
@@ -125,7 +130,12 @@ int main(void) {
       return 1;
     }
   }
-  puts("GBA battle pixel pairs: 48 scenarios, up to 1000 ants, clipping, acid shots, all sprites EXACT");
+  puts("GBA battle pixel pairs: 48 scenarios, up to 1000 ants, clipping, overlap, compacted casualties, acid shots, all sprites EXACT");
+  for (unsigned a=0; a<=500; ++a) for (unsigned e=0; e<=500; ++e) {
+    bn[0]=(u16)a; bn[1]=(u16)e;
+    assert(battle_won()==(e==0u || (a>0u && a>=e)));
+  }
+  puts("Battle results: 251001 survivor combinations preserve returned result");
   return 0;
 }
 """
@@ -134,9 +144,11 @@ int main(void) {
 def main() -> None:
     root = Path(__file__).resolve().parents[1]
     source = (root / "src/battle.c").read_text()
+    assert "won = battle_won();" in source
+    assert "return battle_won();" in source
     bodies = "\n".join(
         production_function(source, name)
-        for name in ("vplot", "vplot_pair", "bdraw")
+        for name in ("vplot", "vplot_pair", "bdraw", "battle_won")
     )
     with tempfile.TemporaryDirectory(prefix="battle-pixels-") as directory:
         path = Path(directory) / "pixel_test.c"

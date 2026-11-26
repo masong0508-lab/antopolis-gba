@@ -110,9 +110,12 @@ IWRAM static void bstep(u8 par) {                  // one simulation step; par =
 }
 static void bcompact(void) { u8 s; u16 j, k; for (s = 0; s < 2; s++) { for (j = k = 0; j < bn[s]; j++) if (ba[bal[s][j]].hp) bal[s][k++] = bal[s][j]; bn[s] = k; } }
 IWRAM static void bdraw(volatile u16 *pg) {
-  u16 i; BAnt *a; int x, y; u8 c0, c1;
-  for (i = 0; i < bcount; i++) {
-    a = &ba[i]; if (!a->hp) continue;
+  u16 i; BAnt *a; int x, y; u8 c0, c1, s;
+  // Stable compaction preserves original spawn order within each side.
+  // Stop revisiting removed casualties on every redraw. Entries killed
+  // since the most recent compaction are still skipped by the HP check.
+  for (s = 0; s < 2; s++) for (i = 0; i < bn[s]; i++) {
+    a = &ba[bal[s][i]]; if (!a->hp) continue;
     x = a->x >> 4; y = a->y >> 4;
     c0 = a->side ? BC_EN : BC_ME; c1 = (u8)(c0 + 1);
     if (a->type == BT_M) {
@@ -138,6 +141,10 @@ static void bhud(u8 *dst) {                        // top line: YOU 312   287 RE
   bbtext(dst, 2, 2, "YOU", BC_TXT); bnum(b, bn[0]); bbtext(dst, 34, 2, b, BC_GOLD);
   bnum(b, bn[1]); bbtext(dst, 150, 2, b, BC_GOLD); bbtext(dst, 190, 2, ebat_name, BC_TXT);
   bbtext(dst, 98, 2, "VS", BC_TXT);
+}
+static u8 battle_won(void) {
+  // Preserve the existing returned result, including its tie rule.
+  return (u8)(bn[1] == 0 || (bn[0] > 0 && bn[0] >= bn[1]));
 }
 // Runs a battle. In: both armies (warriors, spitters, majors), the terrain, your towers nearby, whether to watch.
 // Out: survivors written back. Returns 1 if you won.
@@ -191,7 +198,7 @@ static u8 battle(u16 *aw, u16 *as, u16 *am, u16 *ew, u16 *es, u16 *em, u8 terr, 
       if (joy() & J_START) { while (bn[0] && bn[1] && fr < 3600) { bstep(0); bstep(1); fr++; if (!(fr & 7)) bcompact(); } bcompact(); break; }
     }
     bcompact();
-    won = bn[1] == 0 || bn[0] > bn[1];
+    won = battle_won();
     bhud(bbg);
     bbtext(bbg, won ? 84 : 92, 66, won ? "VICTORY!" : "DEFEAT", BC_GOLD);
     bbtext(bbg, 62, 84, "PRESS A", BC_TXT);
@@ -209,5 +216,5 @@ static u8 battle(u16 *aw, u16 *as, u16 *am, u16 *ew, u16 *es, u16 *em, u8 terr, 
   }
   sv = bside_count(0, BT_W); tw = bside_count(0, BT_S); *am = bside_count(0, BT_M); *aw = sv; *as = tw;
   *ew = bside_count(1, BT_W); *es = bside_count(1, BT_S); *em = bside_count(1, BT_M);
-  return (u8)(bn[1] == 0 || (bn[0] > 0 && bn[0] >= bn[1]));
+  return battle_won();
 }
