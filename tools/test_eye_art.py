@@ -74,3 +74,41 @@ assert "eye_decor_ground_center((s16)yg, (u16)SCB[m])" in world
 assert "eye_decor_visible((u8)(dist(x, vx) + dist(y, vy))" in world
 print("GBA ANT EYE art PASS: 200 unchanged-size 4bpp tiles rebuilt, segmented ants and living nest")
 print("GBA native-resolution ground-contact audit PASS: six decor shadows and grounded ant silhouettes")
+
+# Compile the production affine selector and compare to the old linear
+# scan. Every projected scale in the game is covered, including exact
+# midpoint ties and a wide margin outside the camera's scale range.
+import os
+import shlex
+import subprocess
+import tempfile
+scale_table = re.search(r"static const s16 SCB\[16\]\s*=\s*\{[^}]+\};", world).group(0)
+selector = re.search(r"static u8 scb_of\(s32 sc\) \{.*?\n\}", world, re.S).group(0)
+program = r"""
+#include <stdint.h>
+#include <assert.h>
+typedef uint8_t u8;
+typedef int16_t s16;
+typedef int32_t s32;
+""" + scale_table + "\n" + selector + r"""
+static u8 reference(s32 sc) {
+  u8 i;
+  for (i=15; i && SCB[i]>sc; --i) {}
+  if (i<15 && sc-SCB[i]>SCB[i+1]-sc) ++i;
+  return i;
+}
+int main(void) {
+  for (s32 scale=-8192; scale<=8192; ++scale)
+    assert(scb_of(scale)==reference(scale));
+  return 0;
+}
+"""
+with tempfile.TemporaryDirectory() as tmp:
+    src = Path(tmp) / "scale.c"
+    exe = Path(tmp) / "scale"
+    src.write_text(program)
+    subprocess.run(shlex.split(os.environ.get("HOSTCC", "cc")) +
+                   ["-std=c99", "-Wall", "-Wextra", "-Werror", "-pedantic", str(src), "-o", str(exe)], check=True)
+    subprocess.run([str(exe)], check=True)
+assert "eye_ant_stride(a->age, (u8)(a->x != a->ox || a->y != a->oy))" in world
+print("GBA render scale: 16385 equivalent input scales; overhead gait follows real movement")

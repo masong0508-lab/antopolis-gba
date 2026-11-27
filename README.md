@@ -1,3 +1,19 @@
+## Grounded ant gait and cheaper distance-scale selection (GBA)
+
+The overhead worker/soldier/carrying animation now uses the same
+movement-age stride helper as ANT EYE. A stationary ant guarding a
+nest or holding a target no longer plays its walking animation in
+place. Moving ants retain the same two authored frames for each role.
+
+The first-person affine sprite selector now binary-searches the
+midpoints of the existing 16 scale values instead of scanning from
+the largest scale. It chooses exactly the same index, including ties,
+with at most four midpoint comparisons. Native tests compare all
+16,385 integer inputs from -8192 to 8192 against the original selector
+and the existing motion tests cover the stride helper. No new sprite
+tiles, permanent RAM, save data or multiplayer protocol changes.
+Hardware frame-rate gains are not yet measured; ROM CI is required.
+
 ## Colony workers and soldiers act at their destination (GBA)
 
 Previously the autonomous movement loop always searched for a neighboring
