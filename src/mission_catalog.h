@@ -115,4 +115,16 @@ static inline uint8_t mission_progress_next_open(const volatile uint8_t *record,
   }
   return current;
 }
+/* Move to the first mission of the next distinct game mode, in the
+ * published mode order. Bonus expeditions stay at their saved indices. */
+static inline uint8_t mission_next_mode(uint8_t current) {
+  uint8_t kind, attempt, i;
+  if (current >= NMIS) current = 0;
+  kind = MIS[current].kind;
+  for (attempt = 0; attempt < MK_VERSE; ++attempt) {
+    kind = kind == MK_VERSE ? MK_CLASSIC : (uint8_t)(kind + 1);
+    for (i = 0; i < NMIS; ++i) if (MIS[i].kind == kind) return i;
+  }
+  return current;
+}
 #endif

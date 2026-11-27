@@ -263,6 +263,7 @@ static void missions_menu(void) {
     for (i = top; i < NMIS && i < top + 5; i++) { u8 y = (u8)(3 + (i - top) * 2); const Mis *q = &MIS[i];
       if (i == s) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
       pn(2, y, (u8)(i + 1), 10); ps(5, y, q->name, i == s ? 9 : 3); ps(21, y, MKN[q->kind], MKC[q->kind]); if (mis_done(i)) pc(29, y, '$', 9); }
+    ps(1, 12, "START: NEXT MODE", 10);
     pm_rule(13);
     ps(1, 14, m->s[0], 3); ps(1, 15, m->s[1], 3); ps(1, 16, m->s[2], 3);
     if (m->lim) { ps(1, 17, "LIMIT", 10); pnum(7, 17, m->kind >= MK_CITY ? (u32)(m->lim / 12) : m->lim, 9); ps(10, 17, m->kind >= MK_CITY ? "YEARS" : "MIN", 10); }
@@ -279,6 +280,7 @@ static void missions_menu(void) {
     if (emp_ & J_DOWN) s = (u8)(s + 1 >= NMIS ? 0 : s + 1);
     if (emp_ & J_L) s = (u8)(s >= 5 ? s - 5 : 0);
     if (emp_ & J_R) s = (u8)(s + 5 < NMIS ? s + 5 : NMIS - 1);
+    if (emp_ & J_START) { s = mission_next_mode(s); sfx_food(); continue; }
     /* Go to the next unbeaten goal using existing SRAM completion bits.
        SELECT never edits records or blocks manual UP/DOWN browsing. */
     if (emp_ & J_SEL) {

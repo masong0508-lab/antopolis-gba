@@ -104,6 +104,19 @@ int main(void) {
   assert(mission_progress_next_open(record, 51) == 52);
   assert(storage[0] == 0xa5 && storage[1] == 0xa5);
   assert(storage[sizeof(storage)-1] == 0xa5 && storage[sizeof(storage)-2] == 0xa5);
-  puts("GBA mission catalog PASS: 56 missions, next-open navigation and SRAM intact");
+  /* Every original and appended mission jumps to the next mode's
+     first entry; cycling all six modes returns to the same category. */
+  for (i = 0; i < NMIS; ++i) {
+    uint8_t next = mission_next_mode((uint8_t)i);
+    uint8_t kind = (uint8_t)((MIS[i].kind + 1u) % 6u);
+    assert(next < NMIS && MIS[next].kind == kind);
+    for (j = 0; j < next; ++j) assert(MIS[j].kind != kind);
+    for (j = 0; j < 5; ++j) next = mission_next_mode(next);
+    assert(MIS[next].kind == MIS[i].kind);
+  }
+  assert(mission_next_mode(255) == 5);
+  assert(mission_next_mode(51) == 0);
+  assert(mission_next_mode(52) == 9);
+  puts("GBA mission catalog PASS: 56 missions, next-open and next-mode navigation, SRAM intact");
   return 0;
 }
