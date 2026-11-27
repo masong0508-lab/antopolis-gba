@@ -972,6 +972,11 @@ static void step_ant(Ant *a) {
   }
   if (!a->carry && food[a->y][a->x]) { food[a->y][a->x] = 0; a->carry = 1; draw_dec(a->x, a->y); }
   if (a->carry) { u8 p = ph[a->y][a->x]; ph[a->y][a->x] = p > 215 ? 255 : p + 40; }
+  // A reached target is an action, not a reason to wander away.
+  // Loaded workers take priority over local defense and siege orders.
+  if (a->carry ? (a->x == nestx[t] && a->y == nesty[t]) :
+      guard < MAXA ? (a->x == ant[guard].x && a->y == ant[guard].y) :
+      (soldier && a->x == nestx[e] && a->y == nesty[e])) goto target_reached;
   for (d = 0; d < 4; d++) {
     if (!can_go(a->x, a->y, DX[d], DY[d])) continue;
     tx = a->x + DX[d]; ty = a->y + DY[d];
@@ -998,6 +1003,7 @@ static void step_ant(Ant *a) {
     }
     if (sc > best_sc) { best_sc = sc; bd = d; found = 1; }
   }
+target_reached:
   a->ox = a->x; a->oy = a->y;
   if (found) { a->x += DX[bd]; a->y += DY[bd]; a->age = 0; if (DX[bd]) a->fl = DX[bd] < 0; }
   if (a->carry && a->x == nestx[t] && a->y == nesty[t]) {

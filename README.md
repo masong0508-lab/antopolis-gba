@@ -1,3 +1,21 @@
+## Colony workers and soldiers act at their destination (GBA)
+
+Previously the autonomous movement loop always searched for a neighboring
+tile, even if a carrier was already at home or a soldier already shared
+its assigned target square. Workers now deliver at their home nest
+without stepping away; defenders can remain on their selected intruder
+tile for the existing combat pass, and active attackers can stay on
+the rival nest for the existing queen-attack rule. Carrying food takes
+precedence over combat. Normal path scores, terrain restrictions,
+practice queen protection, and saved fields remain unchanged.
+
+The lockstep revision is now A78; both linked cartridges must be
+updated together. No new map buffer or permanent RAM is required.
+Actual production arrival conditions are compiled and checked for both
+colonies in host tests. The full cartridge and emulator suites are
+required before release; siege balance and physical hardware are not
+yet measured.
+
 ## Campaign progress by game mode (GBA)
 
 The MISSIONS browser now displays the selected mode's completion count
