@@ -1,3 +1,15 @@
+## Campaign progress by game mode (GBA)
+
+The MISSIONS browser now displays the selected mode's completion count
+alongside START: NEXT MODE, in addition to total campaign completion.
+Classic, ANT EYE, Empire, City, Palace and Verse counts include their
+appended bonus expeditions. The counts refresh when browsing the menu,
+not during simulation, and read the original seven-byte mission bitmap
+without changing the save format or mission identities. Native tests
+cover all six modes, blank and complete saves, legacy 50-mission
+progress and every individually completed mission. Linked-ROM video
+checks cover the Classic, ANT EYE and Verse labels.
+
 ## Live progress for all 56 campaign goals (GBA)
 
 The campaign's **GOAL** option now opens a read-only **MISSION REPORT**

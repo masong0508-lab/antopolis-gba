@@ -115,6 +115,19 @@ static inline uint8_t mission_progress_next_open(const volatile uint8_t *record,
   }
   return current;
 }
+/* Count completion in the selected mode, including append-only bonus
+ * expeditions. Read the existing save bits; never mutate the record. */
+static inline void mission_progress_mode(const volatile uint8_t *record,
+                                         uint8_t kind, uint8_t *done, uint8_t *total) {
+  uint8_t i;
+  *done = 0;
+  *total = 0;
+  for (i = 0; i < NMIS; ++i) {
+    if (MIS[i].kind != kind) continue;
+    ++*total;
+    *done += mission_progress_done(record, i);
+  }
+}
 /* Move to the first mission of the next distinct game mode, in the
  * published mode order. Bonus expeditions stay at their saved indices. */
 static inline uint8_t mission_next_mode(uint8_t current) {
