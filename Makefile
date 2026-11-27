@@ -49,6 +49,7 @@ test:
 	python3 tools/test_city_access.py
 	python3 tools/test_city_growth_accounting.py
 	python3 tools/test_city_fires.py
+	python3 tools/test_city_emergency_navigation.py
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_chase_logic.c -o build/test_chase_logic
 	./build/test_chase_logic
 	python3 tools/test_world_art.py

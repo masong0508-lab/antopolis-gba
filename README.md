@@ -1,3 +1,20 @@
+## City emergency navigation and live disaster status (GBA)
+
+The city map's SELECT shortcut can now find an active fire or flooded
+district after the initial alert has expired. Recent alerts and a live
+giant beetle retain their original priority. Otherwise the shortcut
+chooses the nearest valid burning tile, then the nearest active flood
+cell, and finally falls back to the previous nest/army/rival cycle.
+No AP or money is spent. The CHAOS menu shows the active fire count,
+flood status and the beetle's remaining HP.
+
+The bounded search runs only on a deliberate SELECT release and uses
+existing fire and flood arrays, with no new saved or permanent RAM
+state. Native tests compile the production locator for 18,432 cursor
+positions plus stale slots, invalid packed coordinates, priorities
+and stable ties. City co-op uses matching A7C link revisions. Full
+ROM and emulator verification remain required before merging.
+
 ## Nearer berries and scenery remain visible under ANT EYE object pressure (GBA)
 
 The fixed 80-object first-person pool previously kept whichever food
