@@ -112,3 +112,23 @@ with tempfile.TemporaryDirectory() as tmp:
     subprocess.run([str(exe)], check=True)
 assert "eye_ant_stride(a->age, (u8)(a->x != a->ox || a->y != a->oy))" in world
 print("GBA render scale: 16385 equivalent input scales; overhead gait follows real movement")
+
+axial=check("EYEAX",ns["EYE_AXIAL"],512)
+# New poses are real different 4bpp frames, not reused static images.
+for base, original in ((0,32),(16,48),(32,32),(48,32)):
+    diff=sum(pixel(axial,base,x,y)!=pixel(eye,original,x,y)
+             for x in range(32) for y in range(32))
+    assert diff>=10,(base,diff)
+    # Shell, eyes and upper antennae are not modified by walking.
+    assert all(pixel(axial,base,x,y)==pixel(eye,original,x,y)
+               for x in range(32) for y in range(21))
+    assert any(pixel(axial,base,x,y) for x in range(32) for y in range(27,31))
+assert axial[32:48]!=axial[48:64]
+for base in (32,48):
+    assert pixel(axial,base,15,22)==6 and pixel(axial,base,15,24)==5
+assert "#define EYEAXT 360" in world
+assert "sizeof(EYEAX) / 4" in world
+assert "mv && fr ? EYEAXT + 16 : EY2T + 48" in world
+assert "EYEAXT + (mv && fr ? 48 : 32)" in world
+assert "mv && fr ? EYEAXT : EY2T + 32" in world
+print("GBA axial ant poses: 64 new tiles, intact shell and antennae, walking and visible frontal berry")

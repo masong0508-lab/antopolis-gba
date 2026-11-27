@@ -1,3 +1,19 @@
+## Front and rear ANT EYE walking animations (GBA)
+
+Ants approaching or leaving the first-person camera now alternate a
+second authored leg pose instead of reusing the same stationary
+frontal/rear silhouette. Carrying ants approaching the camera show a
+golden berry in their jaws in both gait frames. The previously polished
+shells, eyes and antennae are retained. Side-facing animations and
+stationary ants use the existing frames.
+
+Four additional 32x32 4bpp frames occupy previously unused OBJ tiles
+360..423 (2048 bytes of art). No additional OAM objects, affine
+matrices, permanent WRAM, collision, saves or multiplayer state.
+The generated atlas is rebuilt and checked byte-for-byte by the
+existing art regression, including the new poses and renderer wiring.
+Full cartridge and emulator verification remain required.
+
 ## Continuous map and menu controls (GBA)
 
 Classic, City, Empire, multiplayer and editor cursor loops now recycle

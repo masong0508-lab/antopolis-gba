@@ -1436,6 +1436,7 @@ static u8 tsel;                                    // NEW GAME rows: 0 LEVEL, 1 
 #define BIGT 24
 #define ORN  764                                       // 764 rule, 765/766 centre diamond, 767/768 pip on/off, 769 arrow
 #define EY2T 224                                   // ANT EYE 2.0 sprites (see EYE2 in art2.h)
+#define EYEAXT 360                                 // four new axial frames, through tile 423
 #define ICNT_T 96                                  // OBJ tiles of the home screen icons: book 96, map 112, trophy 128, gear 144
 // ---------- MAP PICTURE: the whole world drawn into 12 x 12 BG tiles (96 x 96 pixels), palette bank 6 ----------
 // Used by the NEW GAME preview and the pause menu's MAP. Scale: 1, 2 or 3 pixels per cell so the map fills the box.
@@ -2048,8 +2049,11 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
     case 0: {
       u8 view = o->b & 3, mv = (o->b >> 2) & 1, car = (o->b >> 3) & 1, fr = (o->b >> 4) & 1;
       m = scb_of(sc); pal = o->a;
-      if (view == 1) tile = EY2T + 48; else if (view == 2) tile = EY2T + 32;
-      else tile = (u16)(mv && fr ? EY2T + (car ? 16 : 0) : BIGT + (car ? 16 : 0));
+      if (view == 1) tile = (u16)(mv && fr ? EYEAXT + 16 : EY2T + 48);
+      else if (view == 2) {
+        if (car) tile = (u16)(EYEAXT + (mv && fr ? 48 : 32));
+        else tile = (u16)(mv && fr ? EYEAXT : EY2T + 32);
+      } else tile = (u16)(mv && fr ? EY2T + (car ? 16 : 0) : BIGT + (car ? 16 : 0));
       if (view == 3) m = (u8)(m + 16);
       espr(xx, yg - (13 * SCB[m & 15] >> 8) - (mv && fr ? 1 : 0), tile, pal, 2, m);
       espr(xx, yg - (13 * SCB[m & 15] >> 8), EY2T + 64, 6, 2, m & 15);   // its shadow, just behind it
@@ -3395,6 +3399,7 @@ static void gfx_init(void) {                          // palettes, tiles, maps, 
   for (k = 0; k < 24 * 8; k++) OBJT32[k] = SPRT[k];                                    // sprites
   for (k = 0; k < 64 * 8; k++) OBJT32[BIGT * 8 + k] = BIGS[k];                         // ANT EYE big sprites
   for (k = 0; k < sizeof(ICNT) / 4; k++) OBJT32[ICNT_T * 8 + k] = ICNT[k];
+  for (k = 0; k < sizeof(EYEAX) / 4; k++) OBJT32[EYEAXT * 8 + k] = EYEAX[k];
   for (k = 0; k < sizeof(EYE2) / 4; k++) OBJT32[EY2T * 8 + k] = EYE2[k];                 // ANT EYE 2.0 sprites                       // home screen icons
   for (i = 0; i < 16; i++) {
     BGPAL[176 + i] = PAL_TERR[i]; BGPAL[192 + i] = PAL_DEC[i];
