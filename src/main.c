@@ -1314,7 +1314,9 @@ static void draw_sprites(void) {
     a = &ant[i];
     if (!a->alive) { spr_hide(i); continue; }
     tl = a->carry ? 5 : a->sol ? 7 : 3;
-    if (a->age < 8 && ((frc >> 2) + i) & 1) tl++;
+    // Use the actual movement phase, as in ANT EYE. A worker holding
+    // its nest or target should not continue cycling walking frames.
+    if (eye_ant_stride(a->age, (u8)(a->x != a->ox || a->y != a->oy))) tl++;
     place_px(i, tl, a->team, a->ox * 8 + (a->x - a->ox) * a->age, a->oy * 8 + (a->y - a->oy) * a->age, a->fl);
   }
   for (i = 0; i < 2; i++) {
@@ -1920,7 +1922,18 @@ static const s16 SCB[16] = {20, 25, 31, 38, 47, 59, 73, 90, 112, 139, 172, 213, 
 // Perspective matrix factors are immutable: precompute the 16 divisions once
 // as 32 bytes of ROM data instead of making the ARM7 divide 16 times/frame.
 static const s16 EYSCALE[16] = {3276, 2621, 2114, 1724, 1394, 1110, 897, 728, 585, 471, 381, 307, 248, 199, 161, 130};
-static u8 scb_of(s32 sc) { u8 i; for (i = 15; i && SCB[i] > sc; i--) {} if (i < 15 && sc - SCB[i] > SCB[i + 1] - sc) i++; return i; }
+/* Nearest of the same sixteen affine scales, ties to the lower scale.
+   Binary search the integer midpoints: at most four comparisons rather
+   than walking all the way down from index 15 for distant objects. */
+static u8 scb_of(s32 sc) {
+  u8 lo = 0, hi = 15;
+  while (lo < hi) {
+    u8 mid = (u8)((lo + hi) >> 1);
+    if (sc > ((SCB[mid] + SCB[mid + 1]) >> 1)) lo = (u8)(mid + 1);
+    else hi = mid;
+  }
+  return lo;
+}
 static void eo_add(s32 rx, s32 ry, u8 kind, u8 a, u8 b, s32 fx, s32 fy, s32 cs, s32 sn) {
   s32 dx = rx - fx, dy = ry - fy, d = (dx * cs + dy * sn) >> 8, sd;
   u8 j, i;
