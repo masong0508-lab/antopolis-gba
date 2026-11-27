@@ -20,6 +20,19 @@ int main(void) {
           assert(berry==old+336 && berry>max_empty);
           ++cases;
         }
-  printf("GBA foraging: %u scent/roll/distance/backtrack combinations PASS\n",cases);
+  for (unsigned attack=0; attack<2; ++attack) {
+    const int32_t unseen = colony_nest_score(UINT16_MAX,0,(uint8_t)attack,31);
+    for (unsigned d=0; d<65535u; ++d) {
+      int32_t low = colony_nest_score((uint16_t)d,0,(uint8_t)attack,0);
+      int32_t high = colony_nest_score((uint16_t)d,0,(uint8_t)attack,7);
+      assert(low == -(int32_t)(attack ? 14 : 12) * (int32_t)d);
+      assert(high == low+7 && low > unseen);
+      if (d) assert(colony_nest_score((uint16_t)(d-1),0,(uint8_t)attack,0)>high);
+      if (d <= 2000) assert(high == -(int32_t)(attack ? 14 : 12)*(int32_t)d+7);
+    }
+    assert(colony_nest_score(UINT16_MAX,1,(uint8_t)attack,0) >
+           colony_nest_score(UINT16_MAX,3,(uint8_t)attack,0));
+  }
+  printf("GBA foraging: %u scent/roll/distance/backtrack combinations PASS; full uint16 route range PASS\n",cases);
   return 0;
 }
