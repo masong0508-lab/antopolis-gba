@@ -71,3 +71,10 @@ with tempfile.TemporaryDirectory() as tmp:
                    ["-std=c99", "-Wall", "-Wextra", "-Werror", str(src), "-o", str(exe)], check=True)
     subprocess.run([str(exe)], check=True)
 print("Live colony arrival guard: workers, defense and siege passed")
+
+assert "s32 sc, best_sc = -1100000L;" in step
+assert "sc = colony_nest_score(dh," in step and "sc = colony_nest_score(de," in step
+assert "dh > 2000" not in step and "de > 2000" not in step
+bfs = source.split("static void bfs_run(u16 budget)",1)[1].split("static void bfs_tick",1)[0]
+assert bfs.index("h = g[c];") < bfs.index("if (!h) continue;") < bfs.index("BFS_TRY(x + 1 < w, 1)")
+print("Full-distance nest scoring and flooded queue-node guard wired into live simulation")

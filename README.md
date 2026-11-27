@@ -1,3 +1,18 @@
+## Long maze routes and flood-aware path expansion (GBA)
+
+Returning workers and offensive soldiers now follow the complete nest
+distance instead of flattening every route beyond 2000 steps into a
+random tie. The 32-bit score preserves ordinary route priorities and
+random masks; every finite distance outranks an unknown route. A BFS
+cell flooded while waiting in the sliced queue is no longer expanded
+as a dry origin. Terrain edits still trigger another rebuild; this is
+not a claim that a changing world has an instantaneous complete map.
+
+No extra path buffer, permanent RAM or save fields. The native tests
+exercise the entire finite 16-bit distance range for both roles, and
+source checks verify the production call sites. Link revision A79
+requires both cartridges to match. Full ROM tests remain release gates.
+
 ## Colony workers and soldiers act at their destination (GBA)
 
 Previously the autonomous movement loop always searched for a neighboring
