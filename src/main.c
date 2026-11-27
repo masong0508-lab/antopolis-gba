@@ -813,6 +813,9 @@ IWRAMF static void bfs_run(u16 budget) {           // expand up to budget cells 
   u16 hd = bj_hd, tl = bj_tl, c, v, *d = &bj_d[0][0], ni; u8 x, y, h, nh, w = mw, hh = mh; const u8 *g = &hgt[0][0];
   while (hd < tl && budget--) {
     c = bq[hd++]; y = (u8)(c >> 7); x = (u8)(c & 127); v = (u16)(d[c] + 1); h = g[c];
+    // A queued tile may have flooded since the previous slice.
+    // Never expand a water origin; the dirty flag schedules another map.
+    if (!h) continue;
 #define BFS_TRY(cond, off) if (cond) { ni = (u16)(c + (off)); nh = g[ni]; if (nh && nh + 1 >= h && nh <= h + 1 && d[ni] == NOPATH) { d[ni] = v; bq[tl++] = ni; } }
     BFS_TRY(x + 1 < w, 1) BFS_TRY(x > 0, -1) BFS_TRY(y + 1 < hh, MAXW) BFS_TRY(y > 0, -MAXW)
   }
@@ -958,7 +961,7 @@ static void refresh_defense(void) {
 }
 static void step_ant(Ant *a) {
   u8 d, t = a->team, e = t ^ 1, found = 0, bd = 0, tx, ty, px = a->ox, py = a->oy; u16 dh, de;
-  s16 sc, best_sc = -32000;
+  s32 sc, best_sc = -1100000L;
   static const u8 RTH[3] = {12, 8, 5}, MTH[3] = {5, 8, 12};
   u8 soldier = !a->carry && qhp[e] && ncnt[t] >= (t ? RTH[O(O_REDATK)] : MTH[O(O_MYATK)]) && a->sol && !(t && cht[8]);
   u8 guard = MAXA;
@@ -981,21 +984,18 @@ static void step_ant(Ant *a) {
     if (!can_go(a->x, a->y, DX[d], DY[d])) continue;
     tx = a->x + DX[d]; ty = a->y + DY[d];
     // Each role needs only one of the two EWRAM distance fields.
-    // Prefer ANY reachable nest route over a NOPATH candidate. The
-    // 29000 penalty is below the worst clamped valid score (-28000)
-    // and still fits s16 at the largest 96x96 map (190 tiles apart).
-    // If every neighbor is NOPATH, retain the old relative fallback
-    // scores and random draws while the distance fields rebuild.
+    // Keep the complete route distance even in very long authored mazes.
+    // Known routes always beat the fallback while the maps rebuild.
     if (a->carry) {
       dh = dnp[t][ty][tx];
-      sc = dh != NOPATH ? -12 * (s16)(dh > 2000 ? 2000 : dh) + (rnd() & 7) : -29000 - 10 * (s16)(dist(tx, nestx[t]) + dist(ty, nesty[t])) + (rnd() & 15);
+      sc = colony_nest_score(dh, dh == NOPATH ? (u16)(dist(tx, nestx[t]) + dist(ty, nesty[t])) : 0, 0, (u8)rnd());
     } else if (guard < MAXA) {
       // Chase a nearby intruder using legal neighbors; no new path buffer.
       Ant *intruder = &ant[guard];
       sc = -14 * (s16)(dist(tx, intruder->x) + dist(ty, intruder->y)) + (rnd() & 7);
     } else if (soldier) {
       de = dnp[e][ty][tx];
-      sc = de != NOPATH ? -14 * (s16)(de > 2000 ? 2000 : de) + (rnd() & 7) : -29000 - 14 * (s16)(dist(tx, nestx[e]) + dist(ty, nesty[e])) + (rnd() & 31);
+      sc = colony_nest_score(de, de == NOPATH ? (u16)(dist(tx, nestx[e]) + dist(ty, nesty[e])) : 0, 1, (u8)rnd());
     } else {
       dh = dnp[t][ty][tx];
       sc = colony_forager_score(ph[ty][tx], food[ty][tx], (u8)(rnd() & 31), dh,

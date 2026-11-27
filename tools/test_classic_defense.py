@@ -29,6 +29,7 @@ typedef uint8_t u8;
 typedef uint16_t u16;
 typedef int8_t s8;
 typedef int16_t s16;
+typedef int32_t s32;
 typedef struct { u8 x,y,team,alive,carry,sol,ox,oy,age,fl; } Ant;
 #define MAXA 48
 #define MAXW 32
@@ -99,7 +100,7 @@ static void check(u8 t) {
 }
 static void route_test(u8 t) {
   // The only reachable neighbor is east, even though west looks
-  // geometrically closer. Test the maximum clamped route score too.
+  // geometrically closer. Test beyond the former 2000-step clamp too.
   for (unsigned k=0;k<2;++k) {
     setup(t);
     ant[0].x=20; ant[0].carry=1;
@@ -119,9 +120,18 @@ static void route_test(u8 t) {
   setup(t); ant[0].x=20; ncnt[t]=12;
   maps[t^1][10][21]=maps[t^1][10][19]=maps[t^1][9][20]=maps[t^1][11][20]=NOPATH;
   step_ant(&ant[0]); assert(ant[0].x==19 && rng_calls==4);
-  // No overflow or best-score rejection at maximum map extent.
-  assert(-29000-14*190 > -32000);
-  assert(-29000+31 < -28000);
+  // Two valid routes beyond the old clamp must retain their gradient.
+  // East is enumerated first; the shorter western route must still win.
+  setup(t); ant[0].x=20; ant[0].carry=1;
+  maps[t][10][21]=5001; maps[t][10][19]=5000;
+  maps[t][9][20]=maps[t][11][20]=NOPATH;
+  step_ant(&ant[0]); assert(ant[0].x==19 && rng_calls==4);
+  setup(t); ant[0].x=20; ncnt[t]=12;
+  maps[t^1][10][21]=5001; maps[t^1][10][19]=5000;
+  maps[t^1][9][20]=maps[t^1][11][20]=NOPATH;
+  step_ant(&ant[0]); assert(ant[0].x==19 && rng_calls==4);
+  assert(colony_nest_score(NOPATH,190,1,0)>-1100000L);
+  assert(colony_nest_score(NOPATH,0,1,31)<colony_nest_score(9215,0,1,0));
 }
 int main(void) {
   check(0); check(1);

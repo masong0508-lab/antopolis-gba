@@ -11,4 +11,14 @@ static inline int16_t colony_forager_score(uint8_t scent, uint8_t berry,
   return (int16_t)((int16_t)scent + (int16_t)(roll & 31u) +
       (berry ? 336 : 0) + bias - (backtrack ? 24 : 0));
 }
+/* Use full BFS distance, not a saturated 2000-step proxy. Even the
+   theoretical uint16_t finite range fits int32_t. Every known route
+   outranks the unreachable fallback, whose Manhattan argument is <=190. */
+static inline int32_t colony_nest_score(uint16_t distance,
+    uint16_t manhattan, uint8_t attack, uint8_t roll) {
+  if (distance == UINT16_MAX)
+    return -1000000L - (int32_t)(attack ? 14 : 10) * manhattan +
+           (roll & (attack ? 31u : 15u));
+  return -(int32_t)(attack ? 14 : 12) * distance + (roll & 7u);
+}
 #endif

@@ -63,10 +63,15 @@ static u8 cash_paid(u8 t) { return ecity == 1 || t >= 100 || city_b(t); }
 
 // ---------- per-cell helpers ----------
 static u8 has_access(u8 x, u8 y) {                 // a tunnel (or the nest) within 2 squares
-  s8 a, b;
+  u8 a, b, x0, x1, y0, y1;
   if (dist(x, nestx[0]) <= 3 && dist(y, nesty[0]) <= 3) return 1;
-  for (b = (s8)(y - 2); b <= y + 2; b++) for (a = (s8)(x - 2); a <= x + 2; a++)
-    if (a >= 0 && b >= 0 && a < W && b < H && ETUN(b, a)) return 1;
+  // Clamp the search rectangle once, not once per candidate. Keep
+  // precisely the same row order and square (including diagonal) range.
+  x0 = x > 2 ? x - 2 : 0; y0 = y > 2 ? y - 2 : 0;
+  x1 = x + 2 < W ? x + 2 : W - 1;
+  y1 = y + 2 < H ? y + 2 : H - 1;
+  for (b = y0; b <= y1; b++) for (a = x0; a <= x1; a++)
+    if (ETUN(b, a)) return 1;
   return 0;
 }
 static u8 in_fire(u8 x, u8 y) { u8 i; u16 c = (u16)((y << 7) | x); for (i = 0; i < NFIRE; i++) if (ftime[i] && fcell[i] == c) return 1; return 0; }
