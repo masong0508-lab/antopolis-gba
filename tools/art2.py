@@ -350,6 +350,52 @@ for kind, xs in enumerate(FOOT_SHADOWS):
         tile[7][x % 8] = 1
 
 
+# Axial ANT EYE animation: use the polished front/rear body, redraw
+# the visible outer leg strokes, and show a small berry in the jaws.
+# Body, eye and shell pixels are identical to the original artwork.
+def axial_frame(start, rear=False, stride=False, carry=False):
+    A = [[EYE2[start + (y//8)*4 + x//8][y%8][x%8]
+          for x in range(32)] for y in range(32)]
+    if stride:
+        # Repose only dark strokes outside the shell. Preserve the
+        # original ant's feet in the ground-contact rows 23..30.
+        orig = [row[:] for row in A]
+        for y in range(21,31):
+            for x in range(32):
+                body = (ell_in(x,y,15.5,20,8,7.5) if rear
+                        else ell_in(x,y,15.5,23,4.5,4))
+                if orig[y][x] == 1 and not body and (x < 10 or x > 21):
+                    A[y][x] = 0
+        for y in range(21,31):
+            for x in range(32):
+                body = (ell_in(x,y,15.5,20,8,7.5) if rear
+                        else ell_in(x,y,15.5,23,4.5,4))
+                if orig[y][x] != 1 or body or not (x < 10 or x > 21):
+                    continue
+                # Move alternate leg groups in opposite directions,
+                # rather than bobbing the entire body off the ground.
+                phase = ((y-21)//3 + (x>21)) & 1
+                nx = max(0,min(31,x + (1 if phase else -1)))
+                ny = y if y < 24 else max(21,min(30,y + (1 if phase else -1)))
+                if A[ny][nx] == 0:
+                    A[ny][nx] = 1
+                # Keep the root/uppermost stroke attached.
+                if y <= 23 and A[y][x] == 0:
+                    A[y][x] = 1
+    if carry:
+        # Amber berry held between the frontal mandibles. The original
+        # body remains visible behind the berry, including both eyes.
+        ell(A,15.5,23.5,3.5,3.0,1)
+        ell(A,15.5,23.5,2.5,2.0,5)
+        A[22][15]=6
+    return split32(A)
+
+# Four extra 32x32 frames, 64 tiles. OBJ 360..423 was unused.
+EYE_AXIAL = (axial_frame(32,stride=True) +
+             axial_frame(48,rear=True,stride=True) +
+             axial_frame(32,carry=True) +
+             axial_frame(32,stride=True,carry=True))
+
 # ---------------- ANT EYE panorama: 256x64 px, wraps around; far hills, trees, clouds (BG0 in the eye view, palette bank 5) ----------------
 import math, random
 random.seed(7)
@@ -681,6 +727,7 @@ with open(sys.argv[1], "w") as f:
     f.write("static const u16 PANOM[256] = {" + ",".join(str(v & 0xFFFF) for v in PANO_MAP) + "};\n")
     f.write(emit_pal("PAL_PANO", PANO_PAL) + "\n")
     f.write("// EYE2: ANT EYE 2.0 sprites (OBJ tiles 224..375): ant walk 2 (16), carrying walk 2 (16), front (16), back (16) [ant palette];\n//   shadow (16), nest mound (16), 6 small decor 16x16 (tuft flower pebble rock mushroom reed, 4 each) [decor palette]; jaw (16) [ant palette]\n" + emit("EYE2", EYE2) + "\n")
+    f.write("// EYEAX: four new 32x32 axial ant frames (OBJ tiles 360..423): front step, back step, front carry, front carry step\n" + emit("EYEAX", EYE_AXIAL) + "\n")
     f.write("// ICNT: home screen icons 32x32: book, map, trophy, gear, city, antverse, 2 players (OBJ tiles 96..207, decor palette)\n" + emit("ICNT", ICONS) + "\n")
     f.write("// ARMT: EMPIRE MODE army banner 16x16 (OBJ tiles 88..91, ant palettes)\n" + emit("ARMT", ARMY) + "\n")
     f.write("// EMPT: EMPIRE MODE building tiles (decor palette), loaded at charblock 2 tile 512+\n" + emit("EMPT", EMP) + "\n")
