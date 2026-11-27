@@ -1,3 +1,24 @@
+## Large rendering and city optimization pass (GBA)
+
+First-person rendering reserves hardware sprite capacity for every
+remaining primary object before adding optional shadows. Crowded
+colonies therefore no longer lose actual creatures, berries and
+scenery merely because nearer objects consume two OAM slots each.
+The renderer also stops projection once the hardware budget is full.
+
+The two city history graphs normalize each of at most 48 samples
+once, rather than repeating variable division on each of 3,840
+pixels per graph. Column segments, signed money colors and the zero
+line are prepared once, retaining exact original output. The graph
+uses 336 temporary stack bytes, not permanent map memory.
+
+Food recounting groups four bytes per iteration, preserving exact
+original totals and arbitrary row widths without a stale cached
+count or new state. No simulation RNG, save format or link revision
+change. Native regressions compare old and new graph tiles across
+392 histories, all 9,216 food-grid dimensions and every primary
+sprite budget. Full ROM and emulator checks required.
+
 ## Front and rear ANT EYE walking animations (GBA)
 
 Ants approaching or leaving the first-person camera now alternate a

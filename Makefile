@@ -65,6 +65,7 @@ test:
 	./build/test_eye_scene_motion
 	python3 tools/test_eye_art.py
 	python3 tools/test_eye_object_budget.py
+	python3 tools/test_large_optimization_pass.py
 	python3 tools/test_classic_outcomes.py
 	python3 tools/test_eye_world_integrity.py
 	python3 tools/test_eye_compass.py

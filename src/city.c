@@ -749,18 +749,32 @@ static void city_data(void) {
 // ---------- GRAPHS: population and money over the last 4 years ----------
 static void graph(u8 row0, u8 which) {
   u8 tx, ty, y, x, i, n = (u8)(nh2 < 2 ? 2 : nh2); s32 mx = 1, mn = 0; u32 w;
+  u8 heights[48], low[96], high[96], ink[96], zero = 255;
   for (i = 0; i < nh2; i++) { s32 v = which ? hcash[i] : hpop[i]; if (v > mx) mx = v; if (v < mn) mn = v; }
+  // Project each history point only once; retain the original integer
+  // rounding, signed cash colors, axis and zero-line placement.
+  for (i = 0; i < nh2; i++) {
+    s32 v = which ? hcash[i] : hpop[i];
+    heights[i] = (u8)(38 - (v - mn) * 37 / (mx - mn));
+  }
+  if (which && mn < 0) zero = (u8)(38 - (0 - mn) * 37 / (mx - mn));
+  for (i = 0; i < 96u; ++i) {
+    u8 k = (u8)((u16)i * (n - 1) / 95), k0 = (u8)((u16)(i ? i - 1 : 0) * (n - 1) / 95);
+    ink[i] = 0; low[i] = high[i] = 0;
+    if (k < nh2) {
+      u8 a1 = heights[k], a0 = heights[k0];
+      low[i] = a1 < a0 ? a1 : a0; high[i] = a1 < a0 ? a0 : a1;
+      ink[i] = which ? (u8)(hcash[k] < 0 ? 7 : 10) : 6;
+    }
+  }
   for (ty = 0; ty < 5; ty++) for (tx = 0; tx < 12; tx++) {
     for (y = 0; y < 8; y++) {
       u8 py = (u8)(ty * 8 + y); w = 0;
       for (x = 0; x < 8; x++) {
         u8 px = (u8)(tx * 8 + x), c = (py == 39 || px == 0) ? 11 : ((py & 7) == 0 && (px & 1)) ? 12 : 1;
-        u8 k = (u8)((u16)px * (n - 1) / 95), k0 = (u8)((u16)(px ? px - 1 : 0) * (n - 1) / 95);
-        if (k < nh2) {
-          s32 v1 = which ? hcash[k] : hpop[k], v0 = which ? hcash[k0] : hpop[k0];
-          u8 a1 = (u8)(38 - (v1 - mn) * 37 / (mx - mn)), a0 = (u8)(38 - (v0 - mn) * 37 / (mx - mn)), lo = a1 < a0 ? a1 : a0, hi = a1 < a0 ? a0 : a1;
-          if (py >= lo && py <= hi) c = which ? (u8)(v1 < 0 ? 7 : 10) : 6;
-          if (which && mn < 0 && py == (u8)(38 - (0 - mn) * 37 / (mx - mn)) && c == 1) c = 12;
+        if (ink[px]) {
+          if (py >= low[px] && py <= high[px]) c = ink[px];
+          if (py == zero && c == 1) c = 12;
         }
         w |= (u32)c << (4 * x);
       }
