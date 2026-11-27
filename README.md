@@ -1,3 +1,18 @@
+## Reliable city fires and firefighting (GBA)
+
+The fire simulation now keeps a burning slot occupied until its
+original fire finishes, even if it spreads on the last tick. Previously
+the spread could reuse the same slot, skipping the original destruction
+and corrupting the active-fire count. A flooded or cleared lot no longer
+continues spreading a fire without fuel. Dew pumps retain their existing
+protection and trophy. Disaster alerts only announce a successful
+ignition, not a duplicate, blocked or full-table start.
+
+No new saved state, permanent RAM or map buffers. Native tests compile
+the actual disaster functions with deterministic spread, expiry,
+full-table, pump and false-alert cases. The integrated link revision is
+A7B; both linked GBA cartridges must match. ROM CI is required.
+
 ## Consistent monthly zone growth accounting (GBA)
 
 The City and Antverse monthly scan now reads a lot's actual development
