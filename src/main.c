@@ -1937,11 +1937,25 @@ static u8 scb_of(s32 sc) {
 static void eo_add(s32 rx, s32 ry, u8 kind, u8 a, u8 b, s32 fx, s32 fy, s32 cs, s32 sn) {
   s32 dx = rx - fx, dy = ry - fy, d = (dx * cs + dy * sn) >> 8, sd;
   u8 j, i;
-  if (d < 200 || d > 16 * 256 || eon >= EOMAX) return;
+  if (d < 200 || d > 16 * 256) return;
+  if (eon >= EOMAX && (kind != 4 && kind != 5)) return;
+  if (eon >= EOMAX && d >= eo[eord[eon - 1]].d) return;
   sd = (-dx * sn + dy * cs) >> 8;
-  if (sd > d * 3 / 2 + 256 || sd < -d * 3 / 2 - 256) return;       // well outside the view
-  i = eon++; eo[i].rx = rx; eo[i].ry = ry; eo[i].d = (s16)d; eo[i].sd = (s16)sd; eo[i].kind = kind; eo[i].a = a; eo[i].b = b;
-  for (j = i; j > 0 && eo[eord[j - 1]].d > d; j--) eord[j] = eord[j - 1];
+  if (sd > d * 3 / 2 + 256 || sd < -d * 3 / 2 - 256) return;
+  if (eon < EOMAX) { i = eon++; j = i; }
+  else {
+    // Preserve all earlier gameplay categories. When food or scenery
+    // fills its share of the pool, replace only its farthest member.
+    // Nearer objects should not disappear merely due to map scan order.
+    j = eon;
+    do {
+      if (!j) return;
+      i = eord[--j];
+    } while (eo[i].kind != kind);
+    if (d >= eo[i].d) return; // stable ties and already-closer objects
+  }
+  eo[i].rx = rx; eo[i].ry = ry; eo[i].d = (s16)d; eo[i].sd = (s16)sd; eo[i].kind = kind; eo[i].a = a; eo[i].b = b;
+  for (; j > 0 && eo[eord[j - 1]].d > d; j--) eord[j] = eord[j - 1];
   eord[j] = i;
 }
 static u8 ehash(u8 x, u8 y) { u16 h = (u16)(x * 73 + y * 151 + (x ^ y) * 29); h ^= h >> 5; return (u8)(h * 157 >> 3); }

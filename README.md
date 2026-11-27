@@ -1,3 +1,20 @@
+## Nearer berries and scenery remain visible under ANT EYE object pressure (GBA)
+
+The fixed 80-object first-person pool previously kept whichever food
+and scenery were visited first by the map scan. If the pool filled,
+closer visible berries or plants could disappear even though farther
+ones were retained. A nearer visible candidate now replaces only the
+farthest member of its own category, leaving workers, queens, nests
+and other gameplay objects intact. Equal-depth ties retain the original
+candidate. The hardware sprite budget, collision, save data and
+multiplayer protocol are unchanged.
+
+Native tests compile the actual projection pool and exercise dense
+food/scenery submissions, sorted order, ties, offscreen rejection and
+protected gameplay objects. This is a visibility improvement, not a
+measured FPS increase or a guarantee of unlimited hardware sprites.
+Full cartridge and emulator testing remains necessary.
+
 ## Reliable city fires and firefighting (GBA)
 
 The fire simulation now keeps a burning slot occupied until its
