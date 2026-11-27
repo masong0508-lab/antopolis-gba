@@ -170,7 +170,7 @@ static void pz_month(void) {
   PZ_.edmon = (u8)(cost > 250 ? 250 : cost);
   if (cmoney != 3) cash -= cost;
   if (PZ_.fest && !--PZ_.fest) { PZ_.ed &= (u16)~(1 << E_FEST); say("THE FESTIVAL IS OVER"); }
-  if (PZ_.skim) { s16 in = (s16)(inc_r + inc_w + inc_f); if (in > 0) { u32 k = (u32)in * PZ_.skim / 100; PZ_.stash += k; if (cmoney != 3) cash -= (s32)k; if (PZ_.stash >= 10000) ach_get(58); if (PZ_.whis < 250) PZ_.whis = (u8)(PZ_.whis + PZ_.skim / 5); } }
+  if (PZ_.skim) { s32 in = inc_r + inc_w + inc_f; if (in > 0) { u32 k = (u32)in * PZ_.skim / 100; PZ_.stash += k; if (cmoney != 3) cash -= (s32)k; if (PZ_.stash >= 10000) ach_get(58); if (PZ_.whis < 250) PZ_.whis = (u8)(PZ_.whis + PZ_.skim / 5); } }
   else if (PZ_.whis) PZ_.whis--;
   if (PZ_.whis > 40 && !(rnd() % 6)) { PZ_.mood[F_TRADE] = (s8)(PZ_.mood[F_TRADE] - 15); PZ_.mood[F_SCHOL] = (s8)(PZ_.mood[F_SCHOL] - 10); PZ_.whis = 10; say("WHISPERS ABOUT THE PALACE MONEY"); }
   // rebels: the angry join them in the hills; guards and amnesty thin them out

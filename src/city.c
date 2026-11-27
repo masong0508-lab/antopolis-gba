@@ -23,7 +23,7 @@ static u16 ctun, cnoacc, cmon, cyears_lim;         // tunnels, zoned squares wit
 static s8 dR, dF, dW;                              // demand -100..100
 static u8 taxR = 9, taxF = 9, taxW = 9, cmile, cdis_on, chunger, cmoney = 1, cscen = 255, csmog, ccrime, cvl, cbroke, cfires_n, cnews;
 static u16 claws;                                  // laws (ordinances) switched on, one bit each
-static s16 inc_r, inc_f, inc_w, inc_x, exp_s, exp_t, exp_l, exp_n;   // last month's budget
+static s32 inc_r, inc_f, inc_w, inc_x, exp_s, exp_t, exp_l, exp_n;   // last month's budget; large cities exceed signed 16-bit
 static u8 cloan;                                   // months of loan left to pay
 static u16 cscan;                                  // incremental map scan: next row
 static u8 cchg, cmaxc = 8, cquiet;                         // zone changes this month, and the most allowed
@@ -340,6 +340,24 @@ static s8 clamp100(s32 v) { return (s8)(v < -100 ? -100 : v > 100 ? 100 : v); }
 
 // ---------- the month ----------
 static void city_end(u8 win, u8 why) { if (!eend) { eend = (u8)(win ? 1 : 2); ewhy = why; } }
+/* Retain the previous stage order and integer rounding, but never
+   narrow tax receipts before tax holidays, cheats or palace modifiers. */
+static void city_tax_month(void) {
+  inc_r = (s32)(cpop * taxR / 150);
+  inc_w = (s32)(cjw * taxW / 100);
+  inc_f = (s32)(cjf * taxF / 120);
+  if (law(7)) { inc_r = inc_r * 8 / 10; inc_w = inc_w * 8 / 10; inc_f = inc_f * 8 / 10; }
+  if (cht[18]) { inc_r *= 1 + cht[18]; inc_w *= 1 + cht[18]; inc_f *= 1 + cht[18]; }
+  if (PZ_.on) {
+    s16 m = (s16)(100 + PZ_.m_inc + (pz_ed(E_TAXRICH) ? 10 : 0) + (PZ_.con[4] == 1 ? 8 : 0));
+    if (m < 20) m = 20;
+    inc_r = inc_r * m / 100; inc_f = inc_f * m / 100;
+    inc_w = inc_w * (m - (pz_ed(E_GREEN) ? 10 : 0)) / 100;
+  }
+}
+static s32 city_income(void) { return inc_r + inc_w + inc_f + inc_x; }
+static s32 city_expenses(void) { return exp_s + exp_t + exp_l + exp_n; }
+static s32 city_net_income(void) { return city_income() - city_expenses(); }
 static void city_cycle(void) {
   u8 i, x, y; s32 workers, jobs, need, v;
   while (cscan < H) scan_rows(8);                  // finish the scan if the month came early
@@ -355,7 +373,7 @@ static void city_cycle(void) {
     chunger = v < 0; rf = (u16)(v < 0 ? 0 : v > 999 ? 999 : v);
     if (efarm_t && !--efarm_t) efarm_mod = 0;
   } else { radd(&rf, (s16)(cfood_p > 200 ? 200 : cfood_p)); chunger = rf == 0; radd(&rd, (s16)(cjw / 20 > 50 ? 50 : cjw / 20)); if (czn[3][3]) radd(&ra, (s16)(czn[3][3] / 4 + 1)); }
-  inc_x = 0; if (rf > 400) { inc_x = (s16)((rf - 400) / (law(5) ? 1 : 2)); rf = 400; }
+  inc_x = 0; if (rf > 400) { inc_x = (s32)((rf - 400) / (law(5) ? 1 : 2)); rf = 400; }
   // demand
   workers = (s32)(cpop / 2); jobs = (s32)(cjw + cjf);
   dR = clamp100(40 + (jobs * 2 - (s32)cpop) * 60 / ((s32)cpop + 40) - taxR * 3 - (chunger ? 40 : 0) + (law(7) ? 15 : 0) + (cmile >= 3 ? 5 : 0));
@@ -366,16 +384,12 @@ static void city_cycle(void) {
   cmaxc = (u8)(6 + cpop / 250 > 60 ? 60 : 6 + cpop / 250); if (cht[9]) cmaxc = (u8)(cmaxc * ZONEV[cht[9]] > 200 ? 200 : cmaxc * ZONEV[cht[9]]);
   if (PZ_.on && PZ_.m_grow) { s16 g = (s16)(cmaxc * (100 + PZ_.m_grow) / 100); cmaxc = (u8)(g < 2 ? 2 : g > 200 ? 200 : g); }
   // money
-  inc_r = (s16)(cpop * taxR / 150); inc_w = (s16)(cjw * taxW / 100); inc_f = (s16)(cjf * taxF / 120);
-  if (law(7)) { inc_r = (s16)(inc_r * 8 / 10); inc_w = (s16)(inc_w * 8 / 10); inc_f = (s16)(inc_f * 8 / 10); }
-  if (cht[18]) { inc_r = (s16)(inc_r * (1 + cht[18])); inc_w = (s16)(inc_w * (1 + cht[18])); inc_f = (s16)(inc_f * (1 + cht[18])); }
-  if (PZ_.on) { s16 m = (s16)(100 + PZ_.m_inc + (pz_ed(E_TAXRICH) ? 10 : 0) + (PZ_.con[4] == 1 ? 8 : 0)); if (m < 20) m = 20;
-    inc_r = (s16)(inc_r * m / 100); inc_f = (s16)(inc_f * m / 100); inc_w = (s16)(inc_w * (m - (pz_ed(E_GREEN) ? 10 : 0)) / 100); }
-  if (law(4)) { u8 pk = 0; for (i = 0; i < nbl; i++) if (ebl[i].t == B_PARK || ebl[i].t == B_GARDEN || ebl[i].t == B_STADIUM) pk++; inc_x += (s16)(pk >= 3 ? cpop / 100 + pk * 3 : 0); }
+  city_tax_month();
+  if (law(4)) { u8 pk = 0; for (i = 0; i < nbl; i++) if (ebl[i].t == B_PARK || ebl[i].t == B_GARDEN || ebl[i].t == B_STADIUM) pk++; inc_x += (s32)(pk >= 3 ? cpop / 100 + pk * 3 : 0); }
   exp_s = 0; for (i = 0; i < nbl; i++) if (cash_paid(ebl[i].t) && ebl[i].t != B_NEST) exp_s += cupk(ebl[i].t);
-  exp_t = (s16)(ctun / 10); exp_l = 0; for (i = 0; i < NLAW; i++) if (law(i)) exp_l += LAWC[i];
+  exp_t = (s32)(ctun / 10); exp_l = 0; for (i = 0; i < NLAW; i++) if (law(i)) exp_l += LAWC[i];
   exp_n = cloan ? 110 : 0; if (cloan) cloan--;
-  if (cmoney != 3) cash += inc_r + inc_w + inc_f + inc_x - exp_s - exp_t - exp_l - exp_n; else cash = 99999;
+  if (cmoney != 3) cash += city_net_income(); else cash = 99999;
   if (cash > 999999) cash = 999999;
   if (cash < -1000 && cmoney != 3) { if (++cbroke >= 12) city_end(0, 20); else if (cbroke == 1 || !(cbroke % 3)) say("IN DEBT! RAISE TAXES OR CUT COSTS"); } else cbroke = 0;
   // antverse: the empire's workforce comes from the city
@@ -408,7 +422,7 @@ static void city_cycle(void) {
   if (cpop >= 2000) ach_get(14); if (ezbuilt >= 10) ach_get(25);
   if (cash >= 20000) ach_get(37); if (cmile >= 5) ach_get(38);
   if (cpop >= 2000 && csmog < 10) ach_get(39); if (cpop >= 2000 && ccrime < 10) ach_get(40);
-  if (czn[1][3] >= 50) ach_get(50); if (inc_r + inc_w + inc_f + inc_x - exp_s - exp_t - exp_l - exp_n >= 500) ach_get(51);
+  if (czn[1][3] >= 50) ach_get(50); if (city_net_income() >= 500) ach_get(51);
   pz_month(); mis_tick();
   scan_reset();
 }
@@ -634,7 +648,7 @@ static u8 city_info(void) {                        // returns 1 if the player wa
 
 // ---------- BUDGET: taxes, money in and out, a loan ----------
 static void city_budget(void) {                    // taxes on top, the month's money below; R flips to the details
-  u8 sel = 0, page = 0; s16 net, in, out;
+  u8 sel = 0, page = 0; s32 net, in, out;
   ewait_clear();
   for (;;) {
     ov_fill(1, 3, 0, 19); ui_full(); big(0, "BUDGET");
@@ -646,7 +660,7 @@ static void city_budget(void) {                    // taxes on top, the month's 
     { u8 y = 9; if (sel == 3) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
       ps(3, y, cloan ? "PAYING A LOAN" : "TAKE A LOAN +2000", sel == 3 ? 9 : 3); if (cloan) { pn(19, y, cloan, 8); ps(22, y, "MONTHS", 10); } }
     pm_rule(10);
-    in = (s16)(inc_r + inc_f + inc_w + (inc_x > 0 ? inc_x : 0)); out = (s16)(exp_s + exp_t + exp_l + exp_n); net = (s16)(in - out);
+    in = city_income(); out = city_expenses(); net = city_net_income();
     if (!page) {
       ps(3, 11, "MONEY IN", 10); pc(17, 11, '+', 13); pnum(18, 11, (u32)in, 13);
       ps(3, 13, "MONEY OUT", 10); pc(17, 13, '-', 8); pnum(18, 13, (u32)out, 8);
@@ -774,7 +788,7 @@ static void city_advice(void) {
   for (b = 0; b < (H + 3) / 4; b++) for (a = 0; a < (W + 3) / 4; a++) { cvt++; if (ccov[b][a] & CV_AIR) cvn++; if (ccov[b][a] & CV_CLINIC) cl++; if (ccov[b][a] & CV_SCHOOL) scl++; }
   ewait_clear();
   ov_fill(1, 3, 0, 19); ui_full(); big(0, "ADVISORS");
-  { s16 net = (s16)(inc_r + inc_f + inc_w + inc_x - exp_s - exp_t - exp_l - exp_n);
+  { s32 net = city_net_income();
     ps(1, y, "MONEY", 9); ps(9, y++, cash < 0 ? "WE ARE IN DEBT!" : net < 0 ? "LOSING MONEY!" : cash > 5000 ? "RICH! BUILD BIG" : "MONEY IS FINE", cash < 0 || net < 0 ? 8 : 13);
     if (net < 0) ps(9, y++, "RAISE TAX, CUT LAWS", 3); y++; }
   ps(1, y, "TOWN", 9);
@@ -1048,7 +1062,7 @@ static u8 city_input(u8 p, u16 k) {                // one player's buttons this 
   if (dirs != s->last) { s->rep = 0; s->last = dirs; }
   if (dirs) {
     fire = (s->rep == 0) || (s->rep >= CDLY[O(O_CURSOR)] && ((s->rep - CDLY[O(O_CURSOR)]) % CRAT[O(O_CURSOR)]) == 0);
-    if (s->rep < 250) s->rep++;
+    if (++s->rep == 250u) s->rep = 40u; // 210 preserves 5/3/2-poll phases
     if (fire) {
       if ((dirs & J_LEFT) && cx > 0) cx--;
       if ((dirs & J_RIGHT) && cx < W - 1) cx++;

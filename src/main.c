@@ -1496,7 +1496,10 @@ static void map_view(void) {                       // pause menu > MAP: the whol
   ps(1, 17, "BLACK: YOUR ANTS  RED: FOES", 3); ps(1, 18, "YELLOW: FOOD  WHITE: HOME", 3);
   for (;;) {
     vsync(); fr++; k = joy(); p = k & ~prev; prev = k;
-    if (k & (J_UP | J_DOWN | J_LEFT | J_RIGHT)) { if (++rep > 12 && (fr & 1)) p |= k; } else rep = 0;
+    if (k & (J_UP | J_DOWN | J_LEFT | J_RIGHT)) {
+      if (rep < 13u) ++rep;
+      if (rep > 12u && (fr & 1)) p |= k & (J_UP | J_DOWN | J_LEFT | J_RIGHT);
+    } else rep = 0;
     if (p & J_LEFT && mx) mx--; if (p & J_RIGHT && mx < W - 1) mx++;
     if (p & J_UP && my) my--; if (p & J_DOWN && my < H - 1) my++;
     if (p & J_B) break;
@@ -2914,7 +2917,7 @@ static void options_screen(void) {
   for (;;) {
     vsync(); k = joy(); p = k & ~prev; prev = k;
     if ((k & (J_UP | J_DOWN)) != last) { rep = 0; last = k & (J_UP | J_DOWN); }
-    if (last && ++rep > 14 && !(rep & 3)) p |= last;   // hold UP / DOWN to scroll
+    if (last) { if (++rep == 252u) rep = 16u; if (rep > 14 && !(rep & 3)) p |= last; }
     if (!p) continue;
     if (p & (J_START | J_B)) break;
     if (p & J_UP)   { sel = sel ? sel - 1 : NOPT - 1; sfx_food(); }
@@ -3286,7 +3289,7 @@ static void play(void) {
     if (dirs != last) { rep = 0; last = dirs; }
     if (dirs) {
       fire = (rep == 0) || (rep >= CDLY[O(O_CURSOR)] && ((rep - CDLY[O(O_CURSOR)]) % CRAT[O(O_CURSOR)]) == 0);
-      if (rep < 250) rep++;
+      if (++rep == 250u) rep = 40u; // 210 preserves all three repeat phases
       if (fire) {
         if ((dirs & J_LEFT) && cx > 0) cx--;
         if ((dirs & J_RIGHT) && cx < W - 1) cx++;
@@ -3590,7 +3593,7 @@ static u8 editor(void) {                            // returns 1 = play MY MAP n
     if (dirs != last) { rep = 0; last = dirs; }
     if (dirs) {
       fire = (rep == 0) || (rep >= CDLY[O(O_CURSOR)] && ((rep - CDLY[O(O_CURSOR)]) % CRAT[O(O_CURSOR)]) == 0);
-      if (rep < 250) rep++;
+      if (++rep == 250u) rep = 40u; // 210 preserves all three repeat phases
       if (fire) {
         if ((dirs & J_LEFT) && cx > 0) cx--;
         if ((dirs & J_RIGHT) && cx < W - 1) cx++;
