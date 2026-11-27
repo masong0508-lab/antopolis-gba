@@ -16,7 +16,7 @@ import json
 import pathlib
 import re
 
-from linked_smoke import A, DOWN, LEFT, UP, SELECT
+from linked_smoke import A, DOWN, LEFT, UP, SELECT, START
 from test_editor_roundtrip import EditorEmulator
 
 MSO = 9350
@@ -76,6 +76,13 @@ def run(rom, core, out):
         expect_text(emulator, 6, 2, "50", "old_progress_loaded")
         expect_text(emulator, 12, 2, "56", "mission_total")
         expect_text(emulator, 1, 18, "COMPLETED", "initial_complete_label")
+        expect_text(emulator, 1, 12, "START: NEXT MODE", "next_mode_help")
+        emulator.press(START, released=80)
+        expect_text(emulator, 2, 11, "6", "next_mode_number")
+        expect_text(emulator, 5, 11, "THROUGH THE EYE", "next_mode_title")
+        for _ in range(5):
+            emulator.press(START, released=80)
+        expect_text(emulator, 5, 3, "FIRST STEPS", "mode_cycle_wrap")
         # SELECT skips the first 50 saved successes and highlights #51.
         # A second page is not required: this is one deliberate button press.
         emulator.press(SELECT, released=80)
