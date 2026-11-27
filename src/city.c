@@ -440,6 +440,27 @@ static void city_fires_tick(void) {
     }
   }
 }
+/* Find an active disaster even after its initial warning has expired.
+   Prioritize fires over flood cells, and choose the nearest tile within
+   that category. No new state: the current cursor is the search origin. */
+static u8 city_active_hazard(u8 *cxp, u8 *cyp) {
+  u8 i, x, y, bx = 0, by = 0, kind = 0;
+  u16 best = 0xFFFF, cell, distance;
+  for (i = 0; i < NFIRE; ++i) if (ftime[i]) {
+    cell = fcell[i]; x = (u8)(cell & 127); y = (u8)(cell >> 7);
+    if (x >= W || (cell >> 7) >= H || !hgt[y][x] || !burnable(x, y)) continue;
+    distance = (u16)(dist(x, *cxp) + dist(y, *cyp));
+    if (distance < best) { best = distance; bx = x; by = y; kind = 1; }
+  }
+  if (!kind && fltime) for (i = 0; i < NFLOOD; ++i) {
+    cell = flcell[i]; x = (u8)(cell & 127); y = (u8)(cell >> 7);
+    if (x >= W || (cell >> 7) >= H) continue;
+    distance = (u16)(dist(x, *cxp) + dist(y, *cyp));
+    if (distance < best) { best = distance; bx = x; by = y; kind = 2; }
+  }
+  if (kind) { *cxp = bx; *cyp = by; }
+  return kind;
+}
 static u8 city_goal_ok(void);
 static void city_tick(void) {                      // every game tick: the scan, fires, the flood, the beetle, AP
   scan_rows((u8)((H + 23) / 24));
@@ -777,7 +798,12 @@ static void city_disasters(void) {
     ps(1, 2, "START ONE... IF YOU DARE", 10);
     for (i = 0; i < 5; i++) { u8 y = (u8)(4 + i * 2);
       if (i == sel) BGMAP1[y * 32 + 1] = (u16)((ORN + 5) | (9 << 12));
-      ps(3, y, DN[i], i == sel ? 9 : 3); if (i == 4) ps(21, y, cdis_on ? "ON" : "OFF", cdis_on ? 8 : 13); }
+      ps(3, y, DN[i], i == sel ? 9 : 3);
+      if (i == 0 && cfires_n) { ps(16, y, "ACTIVE", 8); pn(23, y, cfires_n, 8); }
+      else if (i == 1 && fltime) ps(16, y, "ACTIVE", 8);
+      else if (i == 3 && bt_on) { ps(16, y, "HP", 8); pn(20, y, bt_hp, 8); }
+      else if (i == 4) ps(21, y, cdis_on ? "ON" : "OFF", cdis_on ? 8 : 13); }
+    ps(1, 14, "ON MAP: SEL TO FIND HAZARDS", 10);
     ps(1, 16, "DEW PUMPS STOP FIRES. GUARDS", 3); ps(1, 17, "FIGHT THE BEETLE.", 3);
     ps(1, 19, "\1 DO IT   \2 BACK", 10);
     while (!ekey()) {}
@@ -1034,10 +1060,14 @@ static u8 city_input(u8 p, u16 k) {                // one player's buttons this 
   else if (s->selprev && !s->selused) {
     if (alt) { cx = alx; cy = aly; alt = 0; }
     else if (bt_on) { cx = bt_x; cy = bt_y; say("THE BEETLE"); }
-    else { u8 i; s->jj = (u8)((s->jj + 1) % 3);
+    else {
+      u8 hazard = city_active_hazard(&cx, &cy);
+      if (hazard) say(hazard == 1 ? "ACTIVE FIRE" : "FLOODED DISTRICT");
+      else { u8 i; s->jj = (u8)((s->jj + 1) % 3);
       if (s->jj == 0) { cx = nestx[0]; cy = nesty[0]; say("THE NEST"); }
       else if (s->jj == 1) { for (i = 0; i < EAN; i++) if (ea[i].alive && !ea[i].team) { cx = ea[i].x; cy = ea[i].y; say("YOUR ARMY"); break; } if (i == EAN) s->jj = 2; }
       if (s->jj == 2) { for (i = 0; i < enriv; i++) if (ralive[i]) { cx = rx[i]; cy = ry[i]; say("RIVAL NEST"); break; } if (!enriv) { cx = nestx[0]; cy = nesty[0]; } } }
+    }
     sfx_spawn();
   }
   s->selprev = (u8)(k & J_SEL);

@@ -18,7 +18,7 @@ static const char *const MPD[6] = {"BLACK ANTS AGAINST RED ANTS", "ONE EMPIRE, T
 static const u8 MPORD[6] = {0, 4, 5, 1, 2, 3};       // DUAL VIEW appears alongside the familiar Classic games
 // Stable on-wire protocol revision. Build timestamps must NEVER decide whether two identical ROMs can link.
 // Bump this 12-bit value only when game state, input packets or lobby settings become incompatible.
-#define MP_BUILD 0xA7Bu // city growth and fire lifecycle change shared simulation
+#define MP_BUILD 0xA7Cu // shared city cursor emergency shortcut
 static u8 mp_locked(u8 k) { return (k == 1 && !emp_unlocked()) || (k == 3 && !verse_unlocked()); }
 
 // ---------- VERSUS (classic) ----------
