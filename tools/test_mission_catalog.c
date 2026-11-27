@@ -117,6 +117,38 @@ int main(void) {
   assert(mission_next_mode(255) == 5);
   assert(mission_next_mode(51) == 0);
   assert(mission_next_mode(52) == 9);
-  puts("GBA mission catalog PASS: 56 missions, next-open and next-mode navigation, SRAM intact");
+  /* All six mode totals include appended bonus missions, and counts
+     never write to battery data, even with an invalid save header. */
+  {
+    const uint8_t totals[6] = {6, 5, 10, 10, 13, 12};
+    const uint8_t old_done[6] = {5, 4, 9, 9, 13, 10};
+    uint8_t done, total, before[sizeof storage];
+    for (i = 0; i <= MK_VERSE; ++i) {
+      memcpy(record, old_fifty, sizeof old_fifty);
+      memcpy(before, storage, sizeof storage);
+      mission_progress_mode(record, (uint8_t)i, &done, &total);
+      assert(total == totals[i] && done == old_done[i]);
+      assert(!memcmp(storage, before, sizeof storage));
+      memcpy(record, all_fifty_six, sizeof all_fifty_six);
+      mission_progress_mode(record, (uint8_t)i, &done, &total);
+      assert(total == totals[i] && done == total);
+      memset(record, 0xff, sizeof old_fifty);
+      mission_progress_mode(record, (uint8_t)i, &done, &total);
+      assert(total == totals[i] && done == 0);
+    }
+    for (i = 0; i < NMIS; ++i) {
+      memset(record, 0, sizeof old_fifty);
+      mission_progress_mark(record, (uint8_t)i);
+      memcpy(before, storage, sizeof storage);
+      for (j = 0; j <= MK_VERSE; ++j) {
+        mission_progress_mode(record, (uint8_t)j, &done, &total);
+        assert(total == totals[j] && done == (MIS[i].kind == j));
+      }
+      assert(!memcmp(storage, before, sizeof storage));
+    }
+    mission_progress_mode(record, 255, &done, &total);
+    assert(done == 0 && total == 0);
+  }
+  puts("GBA mission catalog PASS: 56 missions, mode progress, next-open and next-mode navigation, SRAM intact");
   return 0;
 }
