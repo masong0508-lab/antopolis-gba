@@ -1,3 +1,50 @@
+## Nearer berries and scenery remain visible under ANT EYE object pressure (GBA)
+
+The fixed 80-object first-person pool previously kept whichever food
+and scenery were visited first by the map scan. If the pool filled,
+closer visible berries or plants could disappear even though farther
+ones were retained. A nearer visible candidate now replaces only the
+farthest member of its own category, leaving workers, queens, nests
+and other gameplay objects intact. Equal-depth ties retain the original
+candidate. The hardware sprite budget, collision, save data and
+multiplayer protocol are unchanged.
+
+Native tests compile the actual projection pool and exercise dense
+food/scenery submissions, sorted order, ties, offscreen rejection and
+protected gameplay objects. This is a visibility improvement, not a
+measured FPS increase or a guarantee of unlimited hardware sprites.
+Full cartridge and emulator testing remains necessary.
+
+## Reliable city fires and firefighting (GBA)
+
+The fire simulation now keeps a burning slot occupied until its
+original fire finishes, even if it spreads on the last tick. Previously
+the spread could reuse the same slot, skipping the original destruction
+and corrupting the active-fire count. A flooded or cleared lot no longer
+continues spreading a fire without fuel. Dew pumps retain their existing
+protection and trophy. Disaster alerts only announce a successful
+ignition, not a duplicate, blocked or full-table start.
+
+No new saved state, permanent RAM or map buffers. Native tests compile
+the actual disaster functions with deterministic spread, expiry,
+full-table, pump and false-alert cases. The integrated link revision is
+A7B; both linked GBA cartridges must match. ROM CI is required.
+
+## Consistent monthly zone growth accounting (GBA)
+
+The City and Antverse monthly scan now reads a lot's actual development
+level after its growth or decline is processed. New homes, farms and
+works contribute at that level immediately during the scan; upgraded
+or downgraded lots use the same level for zone counts, population,
+employment, farm production, industrial smog and residential density.
+
+The existing sliced scan, growth conditions, save format and world
+buffers are retained. Native tests compile the production scan and
+cell counters with controlled level changes across all zone types.
+Because the corrected statistics influence shared city gameplay, the
+link revision is A7A and both linked GBAs must use matching ROMs.
+Full build and emulator tests are required before merge.
+
 ## Grounded ant gait and cheaper distance-scale selection (GBA)
 
 The overhead worker/soldier/carrying animation now uses the same

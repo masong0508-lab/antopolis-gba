@@ -196,15 +196,26 @@ static u8 city_do(u8 t, u8 x, u8 y) {
 }
 
 // ---------- disasters ----------
-static void fire_start(u8 x, u8 y) {
+static u8 fire_start(u8 x, u8 y) {
   u8 i;
-  if (cht[19] || in_fire(x, y) || !hgt[y][x]) return;
-  for (i = 0; i < NFIRE; i++) if (!ftime[i]) { fcell[i] = (u16)((y << 7) | x); ftime[i] = (u8)(40 + (rnd() & 15)); cfires_n++; emp_dec(x, y); return; }
+  if (cht[19] || cfires_n >= NFIRE || in_fire(x, y) || !hgt[y][x]) return 0;
+  for (i = 0; i < NFIRE; i++) if (!ftime[i]) {
+    fcell[i] = (u16)((y << 7) | x);
+    ftime[i] = (u8)(40 + (rnd() & 15));
+    cfires_n++; emp_dec(x, y); return 1;
+  }
+  return 0;
 }
 static u8 burnable(u8 x, u8 y) { return ELV(y, x) || (ebi[y][x] && ebl[ebi[y][x] - 1].t != B_NEST); }
 static void fire_any(void) {                       // set a random grown square on fire
   u16 k; u8 x, y;
-  for (k = 0; k < 400; k++) { x = (u8)(rnd() % W); y = (u8)(rnd() % H); if (burnable(x, y)) { fire_start(x, y); alt = 240; alx = x; aly = y; say("FIRE! \6 LOOK  DEW PUMPS HELP"); sfx_alarm(); return; } }
+  if (cht[19] || cfires_n >= NFIRE) return;
+  for (k = 0; k < 400; k++) {
+    x = (u8)(rnd() % W); y = (u8)(rnd() % H);
+    if (burnable(x, y) && fire_start(x, y)) {
+      alt = 240; alx = x; aly = y; say("FIRE! \6 LOOK  DEW PUMPS HELP"); sfx_alarm(); return;
+    }
+  }
 }
 static void flood_any(void) {
   u16 k; u8 x, y, n = 0; s8 a, b;
@@ -263,8 +274,10 @@ static void scan_rows(u8 n) {
       if (!hgt[y][x]) cwat[by][bx] = 1;
       if (ETUN(y, x)) { a_tun++; continue; }
       if (!z) continue;
+      // Growth can change the level in this very scan. Count the
+      // resulting lot consistently for residents, jobs, smog and density.
+      if (cmon) { grow_try(x, y); l = ELV(y, x); }
       a_zn[z][l]++;
-      if (cmon) grow_try(x, y);
       if (!l) { if (!has_access(x, y)) a_noacc++; continue; }
       cell_info(x, y, &p, &j, &f);
       a_pop += p; if (z == 3) a_jw += j; else if (z == 2) { a_jf += j; a_fp += f; }
@@ -399,23 +412,39 @@ static void city_cycle(void) {
   pz_month(); mis_tick();
   scan_reset();
 }
-static u8 city_goal_ok(void);
-static void city_tick(void) {                      // every game tick: the scan, fires, the flood, the beetle, AP
+static void city_fires_tick(void) {
   u8 i, k;
-  scan_rows((u8)((H + 23) / 24));
-  if ((gt & 15) == 0 && mana < MANA_MAX && ecity == 2) mana++;
-  if (cfires_n && (gt & 3) == 0) for (i = 0; i < NFIRE; i++) if (ftime[i]) {
-    u8 x = (u8)(fcell[i] & 127), y = (u8)(fcell[i] >> 7), pumped = (ccov[y >> 2][x >> 2] & CV_PUMP) != 0;
-    ftime[i] = (u8)(ftime[i] > (pumped ? 6 : 1) ? ftime[i] - (pumped ? 6 : 1) : 0);
-    if (!pumped && !(rnd() % (law(6) ? 16 : 7))) { k = (u8)(rnd() & 3); { s8 a = (s8)x + DX[k], b = (s8)y + DY[k]; if (a >= 0 && b >= 0 && a < W && b < H && burnable((u8)a, (u8)b)) fire_start((u8)a, (u8)b); } }
-    if (!ftime[i]) {
+  for (i = 0; i < NFIRE; i++) if (ftime[i]) {
+    u8 x = (u8)(fcell[i] & 127), y = (u8)(fcell[i] >> 7);
+    u8 pumped = (ccov[y >> 2][x >> 2] & CV_PUMP) != 0;
+    u8 remaining = (u8)(ftime[i] > (pumped ? 6 : 1) ? ftime[i] - (pumped ? 6 : 1) : 0);
+    // Land edits, flooding and demolition can remove the fuel.
+    if (!hgt[y][x] || !burnable(x, y)) {
+      ftime[i] = 0; cfires_n--; emp_dec(x, y); continue;
+    }
+    // Keep this slot occupied until its original fire is resolved.
+    // Otherwise a final-tick spread can overwrite it before cleanup.
+    if (!pumped && !(rnd() % (law(6) ? 16 : 7))) {
+      s8 a, b;
+      k = (u8)(rnd() & 3); a = (s8)x + DX[k]; b = (s8)y + DY[k];
+      if (a >= 0 && b >= 0 && a < W && b < H && burnable((u8)a, (u8)b))
+        (void)fire_start((u8)a, (u8)b);
+    }
+    ftime[i] = remaining;
+    if (!remaining) {
       cfires_n--;
-      if (pumped) { if (++c_fout >= 10) ach_get(41); emp_dec(x, y); say("THE DEW PUMPS SAVED IT!"); continue; }   // pumps put it out in time
+      if (pumped) { if (++c_fout >= 10) ach_get(41); emp_dec(x, y); say("THE DEW PUMPS SAVED IT!"); continue; }
       if (ebi[y][x]) { EB *e = &ebl[ebi[y][x] - 1]; if (e->t != B_NEST) { del_b((u8)(ebi[y][x] - 1)); terr_calc(); } }
       else if (ELV(y, x)) set_lv(y, x, 0);
       eredraw(x, y, 1); fx_add(x, y, FX_PUFF);
     }
   }
+}
+static u8 city_goal_ok(void);
+static void city_tick(void) {                      // every game tick: the scan, fires, the flood, the beetle, AP
+  scan_rows((u8)((H + 23) / 24));
+  if ((gt & 15) == 0 && mana < MANA_MAX && ecity == 2) mana++;
+  if (cfires_n && (gt & 3) == 0) city_fires_tick();
   if (fltime && !--fltime) { win_all(); say("THE FLOOD IS GONE"); }
   if (bt_on && bt_age < 8) bt_age++;
   if (bt_on && (gt % 3) == 0) {                    // the beetle walks, eats what it steps on, guards bite it
