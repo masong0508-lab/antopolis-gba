@@ -1230,7 +1230,7 @@ static u8 emp_input(u8 p, u16 k) {                 // one player's buttons this 
   if (dirs != s->last) { s->rep = 0; s->last = dirs; }
   if (dirs) {
     fire = (s->rep == 0) || (s->rep >= CDLY[O(O_CURSOR)] && ((s->rep - CDLY[O(O_CURSOR)]) % CRAT[O(O_CURSOR)]) == 0);
-    if (s->rep < 250) s->rep++;
+    if (++s->rep == 250u) s->rep = 40u; // 210 preserves 5/3/2-poll phases
     if (fire) {
       if ((dirs & J_LEFT) && cx > 0) cx--;
       if ((dirs & J_RIGHT) && cx < W - 1) cx++;
