@@ -263,8 +263,10 @@ static void scan_rows(u8 n) {
       if (!hgt[y][x]) cwat[by][bx] = 1;
       if (ETUN(y, x)) { a_tun++; continue; }
       if (!z) continue;
+      // Growth can change the level in this very scan. Count the
+      // resulting lot consistently for residents, jobs, smog and density.
+      if (cmon) { grow_try(x, y); l = ELV(y, x); }
       a_zn[z][l]++;
-      if (cmon) grow_try(x, y);
       if (!l) { if (!has_access(x, y)) a_noacc++; continue; }
       cell_info(x, y, &p, &j, &f);
       a_pop += p; if (z == 3) a_jw += j; else if (z == 2) { a_jf += j; a_fp += f; }

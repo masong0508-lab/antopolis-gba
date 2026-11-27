@@ -1,3 +1,18 @@
+## Consistent monthly zone growth accounting (GBA)
+
+The City and Antverse monthly scan now reads a lot's actual development
+level after its growth or decline is processed. New homes, farms and
+works contribute at that level immediately during the scan; upgraded
+or downgraded lots use the same level for zone counts, population,
+employment, farm production, industrial smog and residential density.
+
+The existing sliced scan, growth conditions, save format and world
+buffers are retained. Native tests compile the production scan and
+cell counters with controlled level changes across all zone types.
+Because the corrected statistics influence shared city gameplay, the
+link revision is A7A and both linked GBAs must use matching ROMs.
+Full build and emulator tests are required before merge.
+
 ## Grounded ant gait and cheaper distance-scale selection (GBA)
 
 The overhead worker/soldier/carrying animation now uses the same

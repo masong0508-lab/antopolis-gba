@@ -47,6 +47,7 @@ test:
 	./build/test_empire_zone_scan
 	python3 tools/test_empire_zone_source.py
 	python3 tools/test_city_access.py
+	python3 tools/test_city_growth_accounting.py
 	$(HOSTCC) -std=c99 -Wall -Wextra -Werror -pedantic tools/test_chase_logic.c -o build/test_chase_logic
 	./build/test_chase_logic
 	python3 tools/test_world_art.py
