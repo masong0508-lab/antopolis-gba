@@ -15,6 +15,7 @@
 #include "practice_queen.h" // protect the last queen heart at the actual hit site
 #include "newgame_presets.h" // quick guided/wild starts; existing game rules only
 #include "colony_foraging.h" // adjacent berries outrank empty trails
+#include "colony_growth.h" // one-time population rewards
 
 typedef uint8_t u8; typedef uint16_t u16; typedef uint32_t u32; typedef int8_t s8; typedef int16_t s16; typedef int32_t s32;
 #include "font8.h"
@@ -858,6 +859,7 @@ static u8 spawn(u8 team) {
 }
 static void count(u8 *c) { u8 i; c[0] = c[1] = 0; for (i = 0; i < MAXA; i++) if (ant[i].alive) c[ant[i].team]++; }
 
+static u8 mis_on; // active campaign mission; no free-play rewards
 static u16 st_food, st_kill, st_lost, st_flood; static u8 st_peak, nhist, hmask;   // end-of-game stats
 static u8 hist[2][64];                            // colony sizes over time (yours, red) for the end graph
 static void hist_add(void) {
@@ -1051,7 +1053,20 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
   if ((gt & 3) == 0) for (y = slice; y < H; y += 8) for (x = 0; x < W; x++) if (ph[y][x]) ph[y][x]--;
   if (++slice < 8) return;
   slice = 0; gt++;
-  count(ncnt); refresh_defense(); if (ncnt[0] > st_peak) st_peak = ncnt[0]; if ((gt & hmask) == 0) hist_add();
+  count(ncnt); refresh_defense();
+  if (ncnt[0] > st_peak) {
+    // The existing lifetime population peak prevents repeat rewards
+    // after casualties or hatch-counter wrap. No campaign/link changes.
+    if (!mp_on && !tut && !sandbox && !cheat && !mis_on) {
+      u8 bonus = colony_growth_bonus(st_peak, ncnt[0]);
+      if (bonus) {
+        mana = (u8)(mana + bonus > MANA_MAX ? MANA_MAX : mana + bonus);
+        say("COLONY GROWTH: BONUS AP"); sfx_mana();
+      }
+    }
+    st_peak = ncnt[0];
+  }
+  if ((gt & hmask) == 0) hist_add();
   for (i = 0; i < 2; i++) {
     if (!qhp[i]) continue;
     cst = i ? hc1 : hc0;
@@ -2889,7 +2904,6 @@ static void options_screen(void) {
 
 /* Campaign objective screen is defined after the included Empire/City modes,
    but may be opened from the earlier Classic pause menu. */
-static u8 mis_on;
 static void mis_progress_screen(void);
 // ---------- PAUSE MENU (START): live colony status + a menu (UP DOWN, A; START or B resumes) ----------
 #define PM_N 9
