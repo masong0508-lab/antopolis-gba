@@ -1,3 +1,16 @@
+## Large-city budget accounting (GBA)
+
+Monthly taxes, income, expenses and net receipts now use signed 32-bit
+values throughout the City/Antverse economy, budget screen, advisors,
+surplus achievement and palace skimming calculations. Large industrial
+cities no longer wrap positive income into a negative signed 16-bit
+value. Existing rate, holiday, cheat and palace modifier order and
+integer rounding are retained. Eight widened budget counters use 16
+additional RAM bytes, without changing the save format. City co-op
+uses matching A7D link revisions. Native regression compiles the actual
+tax and totals functions across city sizes, rates and modifiers.
+Cartridge and emulator verification remain required.
+
 ## City emergency navigation and live disaster status (GBA)
 
 The city map's SELECT shortcut can now find an active fire or flooded
