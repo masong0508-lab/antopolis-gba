@@ -78,7 +78,8 @@ def run(rom, core, out):
         expect_text(emulator, 1, 18, "COMPLETED", "initial_complete_label")
         expect_text(emulator, 1, 12, "START: NEXT MODE", "next_mode_help")
         emulator.press(START, released=80)
-        expect_text(emulator, 2, 11, "6", "next_mode_number")
+        # pn right-aligns single digits in its two-cell numeric field.
+        expect_text(emulator, 3, 11, "6", "next_mode_number")
         expect_text(emulator, 5, 11, "THROUGH THE EYE", "next_mode_title")
         for _ in range(5):
             emulator.press(START, released=80)
