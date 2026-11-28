@@ -48,6 +48,7 @@ test:
 	python3 tools/test_empire_zone_source.py
 	python3 tools/test_city_access.py
 	python3 tools/test_city_growth_accounting.py
+	python3 tools/test_city_block_optimization.py
 	python3 tools/test_city_fires.py
 	python3 tools/test_city_emergency_navigation.py
 	python3 tools/test_city_budget_range.py
