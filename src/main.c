@@ -1063,8 +1063,8 @@ static void tick_slice(void) {                    // 1/8 of the ants per call; e
     step_ant(&ant[i]);
   }
   for (i = slice; i < MAXA; i += 8)
-    if (ant[i].alive) for (j = i + 1; j < MAXA; j++)
-      if (ant[j].alive && ant[i].team != ant[j].team && ant[i].x == ant[j].x && ant[i].y == ant[j].y && i != eye_ctl && j != eye_ctl && i != eye_ctl2 && j != eye_ctl2)
+    if (ant[i].alive && i != eye_ctl && i != eye_ctl2) for (j = i + 1; j < MAXA; j++)
+      if (ant[j].alive && j != eye_ctl && j != eye_ctl2 && ant[i].team != ant[j].team && ant[i].x == ant[j].x && ant[i].y == ant[j].y)
         { u8 iw = (u8)(rnd() & 1);
           if (cht[11] && ant[i].team != ant[j].team) {     // STRONG ANTS: your ant wins more often
             static const u8 SW[4] = {50, 67, 80, 100}; u8 mine_i = (u8)(ant[i].team == 0);

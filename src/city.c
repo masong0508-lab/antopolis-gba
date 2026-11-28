@@ -268,12 +268,14 @@ static void grow_try(u8 x, u8 y) {
 static void scan_rows(u8 n) {
   u8 x, y; u16 p, j; u8 f;
   for (; n && cscan < H; n--, cscan++) {
-    y = (u8)cscan;
+    u8 by;
+    y = (u8)cscan; by = (u8)(y >> 2);
     for (x = 0; x < W; x++) {
-      u8 z = EZN(y, x), l = ELV(y, x), bx = (u8)(x >> 2), by = (u8)(y >> 2);
+      u8 z = EZN(y, x), l, bx = (u8)(x >> 2);
       if (!hgt[y][x]) cwat[by][bx] = 1;
       if (ETUN(y, x)) { a_tun++; continue; }
       if (!z) continue;
+      l = ELV(y, x);
       // Growth can change the level in this very scan. Count the
       // resulting lot consistently for residents, jobs, smog and density.
       if (cmon) { grow_try(x, y); l = ELV(y, x); }
@@ -297,8 +299,16 @@ static void cover(u8 x, u8 y, u8 r, u8 bit) {      // mark blocks within r squar
   if (x < r) bx0 = 0; if (y < r) by0 = 0;
   for (b = by0; b <= by1 && b < CBW; b++) for (a = bx0; a <= bx1 && a < CBW; a++) { if (bit) ccov[b][a] |= bit; else if (cpk[b][a] < 9) cpk[b][a]++; }
 }
+static u16 city_source_column(const u8 *above, const u8 *middle, const u8 *below, u8 x) {
+  u16 sum = middle[x];
+  if (above) sum += above[x];
+  if (below) sum += below[x];
+  return sum;
+}
 static void blocks_calc(void) {                    // land value, smog, crime and coverage for every block
-  u8 a, b, i; s16 v; s8 dx, dy; u16 nb = 0; u32 sp = 0, sc = 0;
+  u8 a, b, i; s16 v; u16 nb = 0; u32 sp = 0, sc = 0;
+  const u8 clean_air = law(0), guard_law = law(1), civic_law = law(2), night_law = law(3);
+  const u8 politics = PZ_.on, martial = (u8)(politics && pz_mart());
   for (b = 0; b < CBW; b++) for (a = 0; a < CBW; a++) { ccov[b][a] = 0; cpk[b][a] = 0; }
   cover(nestx[0], nesty[0], 6, CV_AIR | CV_GUARD);
   for (i = 0; i < nbl; i++) {
@@ -317,22 +327,33 @@ static void blocks_calc(void) {                    // land value, smog, crime an
     case B_ACAD: case B_ARCH: if (ecity == 2) cover(e->x, e->y, 7, CV_SCHOOL); break;
     }
   }
-  for (b = 0; b < CBW; b++) for (a = 0; a < CBW; a++) {
-    u16 s = (u16)csrc[b][a] * 3;
-    for (dy = -1; dy <= 1; dy++) for (dx = -1; dx <= 1; dx++) if ((dx || dy) && a + dx >= 0 && b + dy >= 0 && a + dx < CBW && b + dy < CBW) s += csrc[b + dy][a + dx];
+  /* Slide a three-column window over the three valid source rows.
+     A vertical sum is built once per column, then reused at the next
+     two blocks. Add the extra two centre weights before the original
+     integer division. No extra world-sized buffer or changed edges. */
+  for (b = 0; b < CBW; b++) {
+    const u8 *middle = csrc[b], *above = b ? csrc[b - 1] : 0;
+    const u8 *below = b + 1 < CBW ? csrc[b + 1] : 0;
+    u16 left = 0, center = city_source_column(above, middle, below, 0);
+    u16 right = city_source_column(above, middle, below, 1);
+    for (a = 0; a < CBW; a++) {
+    u16 s = (u16)(left + center + right + (u16)middle[a] * 2u);
     v = (s16)(s / 3) - cpk[b][a] * 4;
-    if (law(0)) v = (s16)(v * 7 / 10);
-    if (law(3)) v = (s16)(v * 11 / 10);
-    if (PZ_.on) v += PZ_.m_smog;
+    if (clean_air) v = (s16)(v * 7 / 10);
+    if (night_law) v = (s16)(v * 11 / 10);
+    if (politics) v += PZ_.m_smog;
     cpol[b][a] = (u8)(v < 0 ? 0 : v > 100 ? 100 : v);
-    v = (s16)(cden[b][a] * 3 + cpol[b][a] / 4 - ((ccov[b][a] & CV_GUARD) ? 55 : 0) - (law(1) ? 20 : 0));
-    if (PZ_.on) { v += PZ_.m_crime; if (pz_mart()) v -= 30; }
+    v = (s16)(cden[b][a] * 3 + cpol[b][a] / 4 - ((ccov[b][a] & CV_GUARD) ? 55 : 0) - (guard_law ? 20 : 0));
+    if (politics) { v += PZ_.m_crime; if (martial) v -= 30; }
     ccri[b][a] = (u8)(v < 0 ? 0 : v > 100 ? 100 : v);
     v = (s16)(40 + cwat[b][a] * 12 + (cpk[b][a] > 4 ? 4 : cpk[b][a]) * 8 + ((ccov[b][a] & CV_GUARD) ? 6 : 0) + ((ccov[b][a] & CV_CLINIC) ? 6 : 0)
-      + ((ccov[b][a] & CV_SCHOOL) ? 8 : 0) + ((ccov[b][a] & CV_PUMP) ? 4 : 0) + (law(2) ? 6 : 0) - cpol[b][a] * 6 / 10 - ccri[b][a] * 4 / 10);
-    if (PZ_.on) v += PZ_.m_lv;
+      + ((ccov[b][a] & CV_SCHOOL) ? 8 : 0) + ((ccov[b][a] & CV_PUMP) ? 4 : 0) + (civic_law ? 6 : 0) - cpol[b][a] * 6 / 10 - ccri[b][a] * 4 / 10);
+    if (politics) v += PZ_.m_lv;
     clv[b][a] = (u8)(v < 0 ? 0 : v > 100 ? 100 : v);
     if (cden[b][a] || csrc[b][a]) { nb++; sp += cpol[b][a]; sc += ccri[b][a]; }
+    left = center; center = right;
+    right = a + 2 < CBW ? city_source_column(above, middle, below, (u8)(a + 2)) : 0;
+    }
   }
   csmog = (u8)(nb ? sp / nb : 0); ccrime = (u8)(nb ? sc / nb : 0);
 }
