@@ -296,7 +296,8 @@ static void scan_reset(void) {
 }
 static void cover(u8 x, u8 y, u8 r, u8 bit) {      // mark blocks within r squares
   s8 bx0 = (s8)((x - r) >> 2), bx1 = (s8)((x + r) >> 2), by0 = (s8)((y - r) >> 2), by1 = (s8)((y + r) >> 2), a, b;
-  if (x < r) bx0 = 0; if (y < r) by0 = 0;
+  if (x < r) bx0 = 0;
+  if (y < r) by0 = 0;
   for (b = by0; b <= by1 && b < CBW; b++) for (a = bx0; a <= bx1 && a < CBW; a++) { if (bit) ccov[b][a] |= bit; else if (cpk[b][a] < 9) cpk[b][a]++; }
 }
 static u16 city_source_column(const u8 *above, const u8 *middle, const u8 *below, u8 x) {
