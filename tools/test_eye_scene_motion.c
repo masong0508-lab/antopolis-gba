@@ -57,6 +57,20 @@ int main(void) {
     }
     assert(visible==(distance<=6?4u:distance<=10?3u:1u));
   }
-  puts("GBA ANT EYE motion PASS: gait age, 256-frame plants and biome-grounded decor");
+  // For every possible pool size, every primary submission remains
+  // possible even if ALL prior objects ask for an optional shadow.
+  for(unsigned total=0;total<=80;total++) {
+    unsigned used=3, shadows=0;
+    for(unsigned i=0;i<total;i++) {
+      assert(used<128);++used;
+      if(eye_shadow_room((uint8_t)used,(uint8_t)i,(uint8_t)total)) {
+        ++used;++shadows;
+      }
+      assert(used+total-i-1<=128);
+    }
+    assert(used<=128 && used==3+total+shadows);
+    assert(shadows==(total<125-total?total:125-total));
+  }
+  puts("GBA ANT EYE motion PASS: gait age, 256-frame plants, grounded decor and reserved primary sprites");
   return 0;
 }

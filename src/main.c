@@ -1022,9 +1022,23 @@ target_reached:
     else if (stock[e]) { stock[e]--; a->carry = 1; sfx_fight(); if (e == 0) alert(a->x, a->y, "FOOD STOLEN!  \6 LOOK"); }
   }
 }
+/* Count the existing food grid in four-byte groups. Keep the sum
+   and row boundaries identical, without an extra cached counter
+   that could drift when the editor or a disaster changes terrain. */
+static u16 count_food_grid(void) {
+  u8 x, y;
+  u16 total = 0;
+  for (y = 0; y < H; ++y) {
+    const u8 *row = food[y];
+    for (x = 0; x + 3u < W; x += 4u)
+      total += (u16)(row[x] + row[x+1u] + row[x+2u] + row[x+3u]);
+    for (; x < W; ++x) total += row[x];
+  }
+  return total;
+}
 static void grow_food(void) {                    // food regrows, mostly around the berry patches
   u8 i; s8 x, y;
-  for (nfood = 0, y = 0; y < H; y++) for (x = 0; x < W; x++) nfood += food[y][x];
+  nfood = count_food_grid();
   for (i = 0; i < 2 && nfood < (30 + (u16)W * H / 40) * (O(O_FOOD) + 1) / 2; i++) {
     if (npatch && (rnd() & 3)) { u8 k = (u8)(rnd() % npatch); x = (s8)(pfx[k] + (s8)(rnd() % 5) - 2); y = (s8)(pfy[k] + (s8)(rnd() % 5) - 2); }
     else { x = (s8)(rnd() % W); y = (s8)(rnd() % H); }
@@ -2042,7 +2056,7 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
     oam[4] = (u16)((96 + bob) & 0xFF); oam[5] = (u16)(((120 + open) & 0x1FF) | 0x1000 | (2 << 14)); oam[6] = (u16)((EY2T + 120) | (0 << 10));
     if (vi < MAXA && ant[vi].alive && ant[vi].carry) { oam[8] = (u16)((86 + bob) & 0xFF); oam[9] = (u16)((104 & 0x1FF) | (2 << 14)); oam[10] = (u16)((BIGT + 48) | (6 << 12)); }
     eslot = 3; }
-  for (j = 0; j < eon; j++) {
+  for (j = 0; j < eon && eslot < 128u; j++) {
     EObj *o = &eo[eord[j]]; s32 d = o->d, sc = 251658 / d, xx = 120 + 192 * (s32)o->sd / d, yg = 64 + 8064 / d; u8 m; u16 tile; u8 pal = 6;
     if (yg > 127) yg = 127;
     switch (o->kind) {
@@ -2056,11 +2070,15 @@ static void eye_scene(u8 fa, s32 ux, s32 uy, u8 vi, u8 jaw, u8 bob) {
       } else tile = (u16)(mv && fr ? EY2T + (car ? 16 : 0) : BIGT + (car ? 16 : 0));
       if (view == 3) m = (u8)(m + 16);
       espr(xx, yg - (13 * SCB[m & 15] >> 8) - (mv && fr ? 1 : 0), tile, pal, 2, m);
-      espr(xx, yg - (13 * SCB[m & 15] >> 8), EY2T + 64, 6, 2, m & 15);   // its shadow, just behind it
+      if (eye_shadow_room(eslot, j, eon))
+        espr(xx, yg - (13 * SCB[m & 15] >> 8), EY2T + 64, 6, 2, m & 15);   // optional shadow
       break; }
     case 2: m = scb_of(sc * 3 / 2); espr(xx, yg - (13 * SCB[m] >> 8), BIGT + 32, o->a, 2, (u8)(o->a ? m + 16 : m)); break;
     case 3: m = scb_of(sc * 5 / 2); espr(xx, yg - (12 * SCB[m] >> 8), EY2T + 80, 6, 2, m); break;
-    case 4: m = scb_of(sc * 3 / 4); espr(xx, yg - (10 * SCB[m] >> 8), BIGT + 48, 6, 2, m); espr(xx, yg - (13 * SCB[m] >> 8), EY2T + 64, 6, 2, m); break;
+    case 4: m = scb_of(sc * 3 / 4);
+      espr(xx, yg - (10 * SCB[m] >> 8), BIGT + 48, 6, 2, m);
+      if (eye_shadow_room(eslot, j, eon)) espr(xx, yg - (13 * SCB[m] >> 8), EY2T + 64, 6, 2, m);
+      break;
     default: {
       static const u8 DSC[6] = {5, 4, 3, 6, 4, 6};          // size of each decor kind, in quarters of an ant
       m = scb_of(sc * DSC[o->a] / 4); tile = (u16)(EY2T + 96 + o->a * 4);

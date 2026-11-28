@@ -38,4 +38,10 @@ static uint8_t eye_ground_decor(uint8_t height,uint8_t noise,uint8_t shoreline) 
     return (uint8_t)(noise<42u?3u:noise<59u?2u:255u);
   return 255u;
 }
+/* Reserve one OAM slot for each later submitted object before adding
+   optional shadows. Offscreen objects may be culled by espr, so this
+   conservative bound cannot increase the original hardware limit. */
+static uint8_t eye_shadow_room(uint8_t used, uint8_t index, uint8_t total) {
+  return (uint8_t)((uint16_t)used + (uint16_t)(total - index - 1u) < 128u);
+}
 #endif
